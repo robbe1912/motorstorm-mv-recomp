@@ -19,7 +19,7 @@ def main():
                 errors.append(f'{page.relative_to(ROOT)}: broken local link {link}')
     coverage = json.loads((ROOT/'docs/source_coverage.json').read_text())
     if len(coverage) != 64 or len({row['note'] for row in coverage}) != 64:
-        errors.append('Expected exactly64 unique migrated-note owners')
+        errors.append('Expected exactly 64 unique migrated-note owners')
     archive = ROOT/'temp/legacy/documentation'
     for row in coverage:
         if not (ROOT/row['owner']).is_file():
@@ -30,7 +30,7 @@ def main():
                 errors.append('Preserved note missing/changed: '+row['note'])
     if errors:
         raise SystemExit('\n'.join(errors))
-    print(f'PASS: {len(pages)} documentation pages;64 unique source owners'+
+    print(f'PASS: {len(pages)} documentation pages; 64 unique source owners'+
           ('; original hashes verified' if archive.exists() else '; private archive not required'))
 
 

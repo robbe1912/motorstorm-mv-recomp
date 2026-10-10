@@ -6,11 +6,11 @@ Developer tooling, not a ready-to-play distribution. The initial embedded SPU st
 
 The current diagnostic target is named-US debug `EBOOT_MSMVdbgUS.ELF` with authentic launch-US BCUS98137 PS3_GAME data (VERSION 01.00/FW 1.80). ELF SHA256: `3e68c72f8fbd6a30ef30d4535462cf70f1cc86d111f56574adb7dd2c255e0706`. BCES00006 Complete APP_VER 03.10 is a separate revision; do not mix generated trees or assume address/data compatibility. External original inputs remain at their configured paths and need not be duplicated.
 
-The native architecture is statically translated guest code plus compatible host services, including real host media decoding. A Bevy/engine replacement remains parked until native works. No original game-code patches, title-specific runtime bypasses, fabricated assets or suppressed errors establish acceptance. The current fatal/resource evidence belongs to [Havok/reference](research/HAVOK_REFERENCE.md); pending work belongs to [GitHub issues](https://github.com/robbe1912/motorstorm-mv-recomp/issues).
+The native architecture is statically translated guest code plus compatible host services, including real host media decoding. No original game-code patches, title-specific runtime bypasses, fabricated assets or suppressed errors establish acceptance. The current fatal/resource evidence belongs to [Havok/reference](research/HAVOK_REFERENCE.md); pending work belongs in [GitHub issues](https://github.com/robbe1912/motorstorm-mv-recomp/issues).
 
 ## Dependencies
 
-Windows x64; Visual Studio 2022 Build Tools Desktop C++/Windows SDK; LLVM/clang-cl, Ninja and CMake>=3.20 on PATH; Python 3.10+ and `python -m pip install -r requirements.txt`. The wrapper imports vcvars64 through vswhere. Supply an LGPL **shared** FFmpeg development distribution with matching `include/`, import libraries in `lib/`, DLLs in `bin/` (avcodec, avutil, swscale). D3D12/DXGI/D3DCompiler/DXGUID and Windows audio libraries are linked.
+Windows x64; Visual Studio 2022 Build Tools Desktop C++/Windows SDK; LLVM/clang-cl, Ninja and CMake 3.20 or newer on PATH; Python 3.10+ and `python -m pip install -r requirements.txt`. The wrapper imports vcvars64 through vswhere. Supply an LGPL **shared** FFmpeg development distribution with matching `include/`, import libraries in `lib/`, DLLs in `bin/` (avcodec, avutil, swscale). D3D12/DXGI/D3DCompiler/DXGUID and Windows audio libraries are linked.
 
 RPCS3 and Ghidra are optional research/reference dependencies, not the native runner. The asset-name audit requires an explicitly supplied RA/LZH reader; it is not bundled.
 
@@ -40,17 +40,17 @@ C builds require two user-supplied headers in `game/private_keys/` or `--keys-di
 
 Provide actual private bytes; no placeholder keys are distributed. Missing headers intentionally fail configure. Content may also require its own EDAT license key via the original interface.
 
-Python extraction reads `PS3_KEYS_FILE`: an absolute path to private JSON with `SDAT_KEY`, `EDAT_KEY_0`, `PS3_GPKG_KEY`, `PSP_PKG_KEY`, each holding your own 32 hexadecimal characters (16 bytes). Set `$env:PS3_KEYS_FILE` before invoking vendor tools. Missing/invalid keys fail explicitly. Current local material is retained in the ignored directory; captured instruction fixtures are in `temp/legacy/vendor_test_source/` and are not needed to compile.
+Python extraction reads `PS3_KEYS_FILE`: an absolute path to private JSON with `SDAT_KEY`, `EDAT_KEY_0`, `PS3_GPKG_KEY`, `PSP_PKG_KEY`, each holding your own 32 hexadecimal characters (16 bytes). Set `$env:PS3_KEYS_FILE` before invoking vendor tools. Missing/invalid keys fail explicitly. Captured instruction fixtures are not needed to compile.
 
 ## Configure
 
 From the repository root, replacing these example paths with your own:
 
 ```powershell
-python scripts/project.py setup --elf 'F:/YourDump/EBOOT_MSMVdbgUS.ELF' --disc 'F:/YourDump/PS3_GAME' --ffmpeg 'temp/deps/ffmpeg' --keys-dir 'game/private_keys'
+python scripts/project.py setup --elf 'D:/YourDump/EBOOT_MSMVdbgUS.ELF' --disc 'D:/YourDump/PS3_GAME' --ffmpeg 'temp/deps/ffmpeg' --keys-dir 'game/private_keys'
 ```
 
-This validates ELF/disc/FFmpeg presence and writes local.json. The public example describes the schema. Presence is not executable/disc compatibility; verify identities. The migrated user config deliberately keeps F: originals.
+This validates ELF/disc/FFmpeg presence and writes local.json. The public example describes the schema. Presence is not executable/disc compatibility; verify identities.
 
 Install the local staged-source protection once: `python scripts/install_hooks.py`. Before committing, run `python scripts/check_repository.py` and `python scripts/check_docs.py`; see [repository audit](REPOSITORY.md).
 

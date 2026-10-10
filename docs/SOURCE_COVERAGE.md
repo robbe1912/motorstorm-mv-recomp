@@ -1,11 +1,10 @@
 # Source coverage and local archive
 
-All64 original notes remain unchanged in `temp/legacy/documentation/`;62 migration hashes were rechecked against the prior manifest, and MASTER/FREEZE were preserved separately. This table is provenance/ownership, not64 competing instructions. Full source hashes are in `source_coverage.json`.
+All 64 original notes remain unchanged in `temp/legacy/documentation/`; 62 migration hashes were rechecked against the prior manifest, and MASTER/FREEZE were preserved separately. This table is provenance/ownership, not 64 competing instructions. Full source hashes are in `source_coverage.json`.
 
 The full old workspace, knowledge/findings and outputs remain in `temp/legacy/recomp/`. Old root output/audio/misc files are in neighboring legacy folders. Private tests are in `temp/legacy/vendor_test_source/`; historical vendor docs/helper are in `temp/legacy/vendor_reference/`. No original history is inherited.
 
-Important evidence caveats: native_havokcap3.* was overwritten by cap4, so resourcesystem938 survives in its atomic note only. Older interpfix stdout/CSV were overwritten; snapshots survive. Repeated m33 underscore/hyphen handoffs and mislabeled HANDOFF_save_data are historical summaries, not independent save proofs. A successful11214-byte AUTOSAVE.DAT read does not establish round-trip integrity.
-
+Important evidence caveats: native_havokcap3.* was overwritten by cap4, so resourcesystem 938 survives in its atomic note only. Older interpfix stdout/CSV were overwritten; snapshots survive. Repeated m33 underscore/hyphen handoffs and mislabeled HANDOFF_save_data are historical summaries, not independent save proofs. A successful 11214-byte AUTOSAVE.DAT read does not establish round-trip integrity.
 
 | Original note (private) | Canonical owner |
 |---|---|
