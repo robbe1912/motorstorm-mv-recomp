@@ -18,6 +18,7 @@
 #include "ps3emu/nid.h"      /* ps3_compute_nid */
 #include "ps3emu/guest_call.h" /* ps3_invoke_guest: AIO completion is a guest OPD */
 #include "sdata_decrypt.h"   /* SDATA/EDAT (NPD) decryption for cellFsSdataOpen */
+#include "ps3emu/loadtime_trace.h"   /* #11 load-stage timing (observer) */
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -206,8 +207,13 @@ static void cellFsOpen(ppu_context* ctx)
     /* NPDRM: see the note in sys_fs.c -- an EDAT is decrypted once into a cache
      * file and that is opened in its place. */
     { char dec_path[1200];
+      unsigned long long ed0 = loadtime_on() ? loadtime_us() : 0;
       const char* use = edat_resolve(hpath, dec_path, sizeof dec_path);
-      if (use != hpath) snprintf(hpath, sizeof hpath, "%s", use); }
+      if (use != hpath) {
+          snprintf(hpath, sizeof hpath, "%s", use);
+          if (loadtime_on()) { char d[1100];
+              snprintf(d, sizeof d, "path=%s dur_us=%llu", gpath, loadtime_us() - ed0);
+              loadtime_event("fs_edat_decrypt", d); } } }
 
     /* fopen() mode strings can't express the PS3/POSIX open semantics (e.g.
      * O_WRONLY without create+truncate, or O_CREAT without O_TRUNC), so build
@@ -252,6 +258,9 @@ static void cellFsOpen(ppu_context* ctx)
     int hfd = open(hpath, oflags | O_BINARY, 0666);
     if (hfd < 0) {
         fprintf(stderr, "[fs] open FAIL '%s' -> '%s'\n", gpath, hpath);
+        if (loadtime_on()) { char d[1100];
+            snprintf(d, sizeof d, "path=%s rc=ENOENT", gpath);
+            loadtime_event("fs_open_fail", d); }
         ctx->gpr[3] = (uint64_t)(int64_t)CELL_FS_ENOENT; return;
     }
     const char* fmode = (acc == CELL_FS_O_RDWR)
@@ -267,6 +276,9 @@ static void cellFsOpen(ppu_context* ctx)
     int fd = fd_alloc_file(f);
     if (fd < 0) { fclose(f); ctx->gpr[3] = (uint64_t)(int64_t)CELL_FS_EIO; return; }
     if (fd_ptr) vm_write32(fd_ptr, (uint32_t)fd);
+    if (loadtime_on()) { char d[1100];
+        snprintf(d, sizeof d, "fd=%d path=%s", fd, gpath);
+        loadtime_event("fs_open", d); }
     g_fd_usm[fd] = (strstr(gpath, ".usm") != nullptr) ? 1 : 0;
     /* FS_CALLER=1: name the guest function that opened each file. A title whose
      * streaming layer opens a file and never reads it (You Don't Know Jack's
@@ -338,9 +350,14 @@ static void cellFsSdataOpen(ppu_context* ctx)
      * without a handle" here while the very same file opened fine through
      * cellFsOpen. One decryptor, reached from both doors. */
     { char dec_path[1200];
+      unsigned long long ed0 = loadtime_on() ? loadtime_us() : 0;
       const char* use = edat_resolve_klic(hpath, dec_path, sizeof dec_path,
                                           guest_klic, guest_klic ? "arg" : nullptr);
-      if (use != hpath) snprintf(hpath, sizeof hpath, "%s", use); }
+      if (use != hpath) {
+          snprintf(hpath, sizeof hpath, "%s", use);
+          if (loadtime_on()) { char d[1100];
+              snprintf(d, sizeof d, "path=%s dur_us=%llu", gpath, loadtime_us() - ed0);
+              loadtime_event("fs_edat_decrypt", d); } } }
 
     int hfd = open(hpath, O_RDONLY | O_BINARY, 0666);
     if (hfd < 0) {
@@ -364,8 +381,13 @@ static void cellFsSdataOpen(ppu_context* ctx)
         size_t rd = enc ? fread(enc, 1, (size_t)enc_sz, f) : 0;
         fclose(f);
         size_t dec_sz = 0;
+        unsigned long long sd0 = loadtime_on() ? loadtime_us() : 0;
         uint8_t* dec = (enc && rd == (size_t)enc_sz) ? sdata_decrypt(enc, rd, &dec_sz) : nullptr;
         free(enc);
+        if (loadtime_on()) { char d[1100];
+            snprintf(d, sizeof d, "path=%s in=%zu out=%zu dur_us=%llu",
+                     gpath, rd, dec_sz, loadtime_us() - sd0);
+            loadtime_event("fs_sdata_decrypt", d); }
         if (!dec) {
             fprintf(stderr, "[fs] SdataOpen '%s' NPD decrypt FAILED (no valid "
                     "klicense: guest arg %s, env/.rifkey exhausted); returning "
@@ -409,6 +431,9 @@ static void cellFsClose(ppu_context* ctx)
         if (g_fd_usm[fd] && getenv("PS3_FSLOG_READS")) fprintf(stderr, "[USMRD] CLOSE usm fd=%d\n", fd);
         fclose(g_files[fd]); g_files[fd] = nullptr; g_fd_usm[fd] = 0;
     }
+    if (loadtime_on()) { char d[64];
+        snprintf(d, sizeof d, "fd=%d", fd);
+        loadtime_event("fs_close", d); }
     ctx->gpr[3] = CELL_OK;
 }
 
@@ -443,9 +468,14 @@ static void cellFsRead(ppu_context* ctx)
     if (fd < 0 || fd >= FS_MAX || !g_files[fd]) { ctx->gpr[3] = (uint64_t)(int64_t)CELL_FS_EIO; return; }
     uint64_t raw_nbytes = ctx->gpr[5];
     long fpos_before = ftell(g_files[fd]);
+    unsigned long long rd0 = loadtime_on() ? loadtime_us() : 0;
     if (ppu_vm_size && (uint64_t)buf + nbytes > ppu_vm_size) nbytes = ppu_vm_size - buf;
     fs_prefault(buf, nbytes);
     size_t n = fread(vm_base + buf, 1, (size_t)nbytes, g_files[fd]);   /* raw bytes, no swap */
+    if (loadtime_on()) { char d[256];
+        snprintf(d, sizeof d, "fd=%d want=%llu got=%zu pos=%ld dur_us=%llu",
+                 fd, (unsigned long long)raw_nbytes, n, fpos_before, loadtime_us() - rd0);
+        loadtime_event("fs_read", d); }
     /* PS3_FSLOG_EOF=<fd>,<bytes>: report end-of-file past <bytes> on one descriptor.
      * The intro cinematic is 28 seconds and this port renders it at a few frames
      * a second, so it cannot be watched to its end -- truncating the stream makes
@@ -654,6 +684,9 @@ static void cellFsStat(ppu_context* ctx)
                                            : (CELL_FS_S_IFREG | 0x1B6);
     if (sb) write_stat(sb, mode, (uint64_t)st.st_size);
     if (getenv("PS3_FSLOG") && strstr(gpath,".toc")) fprintf(stderr,"[FSDBG] cellFsStat('%s') -> size=0x%llX\n",gpath,(unsigned long long)st.st_size);
+    if (loadtime_on()) { char d[1100];
+        snprintf(d, sizeof d, "path=%s size=%lld", gpath, (long long)st.st_size);
+        loadtime_event("fs_stat", d); }
     ctx->gpr[3] = CELL_OK;
 }
 

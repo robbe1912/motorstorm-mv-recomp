@@ -8,6 +8,7 @@
 #include "spu_workload.h"
 #include "spu_lifted_job.h"   /* spu_run_lifted_job */
 #include "../ps3_log.h"      /* ps3_log_verbose */
+#include "ps3emu/loadtime_trace.h"   /* #11 load-stage timing (observer) */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -342,7 +343,12 @@ int spu_workload_dispatch(const uint8_t* image, uint32_t image_size,
         "[spu_workload] dispatch HIT fp=0x%016llX entry=0x%05X args=0x%08X image=%d -> running\n",
         (unsigned long long)fp, entry, args_ea, image_id);
 
-    spu_run_lifted_job_img(fn, ls, args_ea, image_id);
+    { unsigned long long d0 = loadtime_on() ? loadtime_us() : 0;
+      spu_run_lifted_job_img(fn, ls, args_ea, image_id);
+      if (loadtime_on()) { char d[128];
+          snprintf(d, sizeof d, "fp=%016llX image=%d dur_us=%llu",
+                   (unsigned long long)fp, image_id, loadtime_us() - d0);
+          loadtime_event("spu_dispatch", d); } }
 
     free(ls);
     return 1;
@@ -783,6 +789,7 @@ static unsigned s_async_disp[64], s_async_ret[64];
 
 static void spu_async_run(spu_async_job* j)
 {
+    unsigned long long ar0 = loadtime_on() ? loadtime_us() : 0;
     spu_taskset_mark(j->taskset_ea, j->taskid, 1);
     /* Persistent per-taskset LS: acquire (+serialize) the taskset's LS, or fall
      * back to a fresh per-dispatch LS when disabled / no taskset. */
@@ -1102,9 +1109,14 @@ static void spu_async_run(spu_async_job* j)
             spu_run_opts phantom_opts;
             memset(&phantom_opts, 0, sizeof phantom_opts);
             phantom_opts.spu_id = j->phantom_tid;
+            unsigned long long r0 = loadtime_on() ? loadtime_us() : 0;
             int32_t rc = spu_run_lifted_job_abi(j->fn, ls, j->args_ea, j->image_id,
                                                 1, j->have_r3 ? j->r3 : 0,
                                                 j->phantom_tid ? &phantom_opts : 0);
+            if (loadtime_on()) { char d[160];
+                snprintf(d, sizeof d, "image=%d taskset=0x%08X task=%u rc=%d dur_us=%llu",
+                         j->image_id, j->taskset_ea, j->taskid, rc, loadtime_us() - r0);
+                loadtime_event("spu_task_run", d); }
             if (j->phantom_tid) { extern void spu_thread_publish_ctx(uint32_t, void*);
                 spu_thread_publish_ctx(j->phantom_tid, NULL); }
             /* YDKJ_CRI_RESUME: a real SPURS task is PERSISTENT -- on yield (num=0)
@@ -1190,6 +1202,10 @@ static void spu_async_run(spu_async_job* j)
         pthread_mutex_unlock(&ts_slot->lock);
 #endif
     }
+    if (loadtime_on()) { char d[160];
+        snprintf(d, sizeof d, "image=%d taskset=0x%08X task=%u dur_us=%llu",
+                 j->image_id, j->taskset_ea, j->taskid, loadtime_us() - ar0);
+        loadtime_event("spu_async", d); }
     free(j);
 }
 

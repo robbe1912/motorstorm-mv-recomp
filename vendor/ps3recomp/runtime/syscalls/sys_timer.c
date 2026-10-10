@@ -3,6 +3,7 @@
  */
 
 #include "sys_timer.h"
+#include "ps3emu/loadtime_trace.h"   /* #11 load-stage timing (observer) */
 #include "sys_event.h"
 #include "../memory/vm.h"
 #include <stdlib.h>   /* getenv -- an implicit decl returns int, truncating the pointer */
@@ -110,6 +111,11 @@ static void write_be64(uint32_t addr, uint64_t val)
 int64_t sys_timer_usleep(ppu_context* ctx)
 {
     uint64_t usec = LV2_ARG_U64(ctx, 0);
+    if (loadtime_on() && usec >= 10000) { char d[128];
+        snprintf(d, sizeof d, "usec=%llu lr=0x%08llX tid=%llu",
+                 (unsigned long long)usec, (unsigned long long)ctx->lr,
+                 (unsigned long long)ctx->thread_id);
+        loadtime_event("wait_usleep", d); }
     { extern unsigned long long ps3_qpc_us(void);
       static unsigned n=0; if (n++ < 60 || (n % 2000) == 0)
         fprintf(stderr, "[WAIT] t=%lluus timer_usleep(%llu us) lr=0x%08llX cia=0x%08llX #%u\n", ps3_qpc_us(),
@@ -286,6 +292,11 @@ int64_t sys_timer_usleep(ppu_context* ctx)
 int64_t sys_timer_sleep(ppu_context* ctx)
 {
     uint32_t sec = LV2_ARG_U32(ctx, 0);
+    if (loadtime_on()) { char d[128];
+        snprintf(d, sizeof d, "sec=%u lr=0x%08llX tid=%llu",
+                 sec, (unsigned long long)ctx->lr,
+                 (unsigned long long)ctx->thread_id);
+        loadtime_event("wait_sleep", d); }
 
 #ifdef _WIN32
     Sleep(sec * 1000);

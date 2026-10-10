@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include "ps3emu/loadtime_trace.h"   /* #11 load-stage timing (observer) */
 
 static std::atomic<unsigned> havok_probe_events{0};
 static std::atomic<size_t> havok_probe_bytes{0};
@@ -35,6 +36,11 @@ static uint32_t havok_probe_word(uint32_t ea)
 static void havok_record_raw_oct10(ppu_context* ctx)
 {
     havok_raw_length=0;
+    if (loadtime_on()) { char d[128];
+        snprintf(d, sizeof d, "object=0x%08llX ea=0x%08llX lr=0x%08llX",
+                 (unsigned long long)ctx->gpr[20], (unsigned long long)ctx->gpr[31],
+                 (unsigned long long)ctx->lr);
+        loadtime_event("havok_raw_ctor", d); }
     if (!getenv("CAP_HAVOK_DIR")) return;
     uint32_t object=(uint32_t)ctx->gpr[20];
     uint32_t length=havok_probe_word(object+0x20);
@@ -76,6 +82,11 @@ static void havok_probe_string(FILE* meta, const char* label, uint32_t ea)
 
 static void havok_probe_oct10(ppu_context* ctx, const char* stage)
 {
+    if (loadtime_on()) { char d[160];
+        snprintf(d, sizeof d, "stage=%s lr=0x%08llX r20=0x%08llX r31=0x%08llX",
+                 stage, (unsigned long long)ctx->lr,
+                 (unsigned long long)ctx->gpr[20], (unsigned long long)ctx->gpr[31]);
+        loadtime_event("havok_stage", d); }
     const char* dir = getenv("CAP_HAVOK_DIR");
     if (!dir || !*dir) return;
     unsigned event = havok_probe_events.fetch_add(1);

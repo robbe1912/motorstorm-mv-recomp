@@ -8,6 +8,7 @@
 #include "../memory/vm.h"
 #include "../spu/spu_workload.h"   /* spu_elf_image_size, spu_workload_dispatch_async */
 #include <string.h>
+#include "ps3emu/loadtime_trace.h"   /* #11 load-stage timing (observer) */
 #include <stdlib.h>               /* getenv */
 /* RD_PROBE_THREADSTATES: blocked-on tagging (sys_ppu_thread.c) */
 extern void ppu_thread_wait_begin(ppu_context* ctx, const char* kind, uint64_t a, uint64_t b);
@@ -294,6 +295,11 @@ int64_t sys_event_queue_receive(ppu_context* ctx)
     uint32_t queue_id    = LV2_ARG_U32(ctx, 0);
     uint32_t event_addr  = LV2_ARG_PTR(ctx, 1);
     uint64_t timeout_us  = LV2_ARG_U64(ctx, 2);
+    if (loadtime_on() && (timeout_us == 0 || timeout_us >= 10000)) { char d[128];
+        snprintf(d, sizeof d, "q=%u timeout=%llu lr=0x%08llX tid=%llu",
+                 queue_id, (unsigned long long)timeout_us,
+                 (unsigned long long)ctx->lr, (unsigned long long)ctx->thread_id);
+        loadtime_event("wait_event", d); }
     /* PPU_THREADGATE: the creating thread is now blocking -> workers may run
      * (PS3 priority semantics). Their job objects are fully initialized by now. */
     { extern void ydkj_release_pending_threads(void); ydkj_release_pending_threads(); }
