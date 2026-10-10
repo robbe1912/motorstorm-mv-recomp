@@ -1,6 +1,18 @@
 # WWS policy, ownership and CPU evidence
 
-WWS job-list header: manager+0, list-size+4, BE16 hint+10, taken+12, six BE16 minActive markers+14. PM atomic publication sites 3180/32FC/3330. PPU wait is genuine. Native main SPURS 4003F380 with five physical SPUs/wids 0..3; audio 1027DC00. Heap EAs vary; 108D0100 is reservation payload, not a module (observed module 100E6F80).
+WWS job-list header uses hexadecimal offsets: policy-module EA +0x0, policy-module byte length +0x4, BE16 hint +0x10, taken +0x12, six BE16 minActive markers +0x14. PM atomic publication sites 3180/32FC/3330. PPU wait is genuine. Native main SPURS 4003F380 with five physical SPUs/wids 0..3; audio 1027DC00. Heap EAs vary; 108D0100 is reservation payload, not a module (observed module 100E6F80).
+
+## Current native producer binding
+
+The muted run starting at 2026-10-10T22:40:10Z stopped at the malformed MOHAWK INDIANA bike menu. Only three of four recorded PAD_FILE presses were acknowledged; the race-start press remained unconsumed. This is a menu stall, not a verified race-load attempt. No Havok fatal or playable race occurred. EXE SHA256 was `627f27bd2c03c8cec5c496bb8b9373630e916a7ec339396537ce0d0b8f6b1195`, using the named-US debug ELF and launch-US disc. The matched EXE/PDB CodeView identity and prelaunch config/userdata identities remain private.
+
+Two matched minidumps, with sequential guest/LS samples 80.741 s apart, bind the wait to native thread 31380. PE unwind metadata reaches C5C424 through actual sampled native PCs. The matched executable's argument-spill instructions locate its PPU context without scanning candidate pointers: r3 is 0x40044410, r4 requests marker 8, and r8 is queue 0x40044480. The sampled object pointer at r3 +0x4 agrees. Both queue samples have hint/taken 8 and minActive `[FFFF, FFFF, FFFF, FFFF, 6, FFFF]`; their identical SHA256 is `8ea4f17d008a10a974529a14a4eadf218ec9e21264c49b736ebfcb209c7e11fd`.
+
+The same metadata procedure binds native thread 27668's `spu_pm_interp_trampoline` argument to registry context slot 21. Its LS field at 0x1340 records physical SPU index 4, corresponding to the queue's active marker 6. Registry slot 21 is not a physical SPU number. Its job records at LS 0x1450 and 0x1470 reference this queue and markers 6 and 7 respectively. Queue descriptor 6 points to command-list EA 0x4C6AAA00, with descriptor word 0x00500001 specifying 80 command bytes. The manager EA is 0x10135E00.
+
+The two complete LS reads for that context have SHA256 `38e0edbd1441eb5af9a509f4fe5e7156142fccb26d896f05e63bf8f91ccd8e0a`. Their diagnostic context PCs differ (0x1A20 and 0x2C88); these fields are not promoted to actual sampled guest instructions. The original ELF's PT_LOAD mapping independently supplies the 11136-byte policy at file offset 16539136, SHA256 `44c7436c82f40ced9377ed6abf3293d6792e70e1b34923c4572bb2a3fcc4d616`. Its load base is LS 0xA00. Both captured publication spans 0x3180..0x33A7 match those original bytes, without reinterpreting the previously exonerated CPU spans. A private offline check reports the captured blocked wait with exit 2 for both samples; this checks the actual captured context/header relationship, not a repaired execution.
+
+[Issue #8](https://github.com/robbe1912/motorstorm-mv-recomp/issues/8) remains open. The outstanding job and active native producer are identified, but sequential reads do not establish instruction or writer chronology. The next trace must distinguish an unfinished job/service, a returned job without retirement, and retirement whose queue publication did not persist. No wait bypass, runtime fix, Havok causal link or performance result follows from this binding.
 
 ## Allocations and retention
 
