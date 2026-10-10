@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
-TOP = {'.gitignore', 'README.md', 'LICENSE', 'CMakeLists.txt', 'requirements.txt'}
+TOP = {'.gitignore', 'README.md', 'AGENTS.md', 'LICENSE', 'CMakeLists.txt', 'requirements.txt'}
 DIRS = {'src', 'scripts', 'config', 'docs', 'vendor'}
 BAD = {'.elf','.self','.prx','.sprx','.bin','.edat','.rpk','.dat','.cnk','.psarc','.pkg','.sfo',
        '.exe','.dll','.pdb','.obj','.lib','.ogg','.mp3','.at3','.wav','.f32','.mp4','.pam',
