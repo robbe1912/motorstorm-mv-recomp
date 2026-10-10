@@ -19,7 +19,7 @@ All times are microseconds since the first traced event unless --origin is
 given. Waits are guest-requested sleeps/event blocking, counted separately from
 useful work; the trace itself is observer-only and adds one line per event.
 """
-import argparse, json
+import argparse, json, re
 from collections import defaultdict
 from pathlib import Path
 
@@ -43,12 +43,17 @@ def load_events(run):
             line = line.strip()
             if not line:
                 continue
+            line = re.sub(r'"kind":""', '"kind":"', line)  # salvage pre-fix traces
             try:
                 e = json.loads(line)
             except json.JSONDecodeError:
                 continue
             e['_detail'] = parse_detail(e.get('detail', ''))
+            e['kind'] = e.get('kind', '').strip('"')
+            if 't_us' in e:
+                e['us'] = e['t_us']
             events.append(e)
+
     if not events:
         raise SystemExit('loadtime.jsonl contained no events')
     return events
@@ -70,17 +75,43 @@ def boundaries(run, events):
             polls = e['_detail'].get('polls', '?')
             names = '+'.join(nm for bit, nm in PRESS_MASKS.items() if mask & bit) or hex(mask)
             marks.append((f'press {names}', us, f'pad ack mask={hex(mask)} polls={polls} tid={e.get("tid")}'))
+        elif k == 'havok_stage' and e['_detail'].get('stage') == 'fatal177' and 'fatal' not in seen:
+            seen.add('fatal'); marks.append(('Havok fatal 177 (load failed)', us, 'physics/animation data missing'))
     frames = run / 'frames.csv'
     if frames.is_file():
         first = None
         for line in frames.open(encoding='utf-8', errors='replace'):
-            parts = line.split(',')
-            if parts and parts[0].replace('.', '', 1).isdigit():
-                first = float(parts[0]); break
+            parts = [p.strip() for p in line.split(',')]
+            if len(parts) >= 2 and parts[1].replace('.', '', 1).isdigit():
+                first = float(parts[1]); break
         if first is not None:
             marks.append(('first-frame', origin + int(first * 1e6), 'frames.csv row 1'))
     marks.sort(key=lambda m: m[1])
     return origin, marks
+
+def wait_union(events, lo, hi):
+    """Merged wall-time intervals covered by any guest wait (overlaps collapse)."""
+    spans = []
+    for e in events:
+        if not lo <= e['us'] <= hi:
+            continue
+        d = e['_detail']; k = e['kind']
+        if k == 'wait_usleep':
+            spans.append((e['us'], e['us'] + float(d.get('usec', 0))))
+        elif k == 'wait_sleep':
+            spans.append((e['us'], e['us'] + float(d.get('sec', 0)) * 1e6))
+        elif k == 'wait_event':
+            to = float(d.get('timeout', -1))
+            if to > 0:
+                spans.append((e['us'], e['us'] + to))
+    spans.sort()
+    merged = []
+    for s, t in spans:
+        if merged and s <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], t)
+        else:
+            merged.append([s, t])
+    return sum(t - s for s, t in merged)
 
 def stage_totals(events, lo, hi):
     t = defaultdict(lambda: defaultdict(float))
@@ -173,6 +204,9 @@ def main():
     print(f'- SPU job dispatches: {spu_runs} ({dict(counts["spu"]) or "none"}), {fmt(t["spu"]["run_us"])}')
     for wk, wv in sorted(t['wait'].items()):
         print(f'- Waits {wk}: {counts["wait"][wk]} calls, {fmt(wv)}')
+    span = end_us - origin
+    covered = wait_union(events, origin, end_us)
+    print(f'- Wait coverage (merged, all threads): {fmt(covered)} of {fmt(span)} span = {100*covered/span:.1f}%; unblocked wall time {fmt(span-covered)}')
     print(f'- Havok raw constructions observed: {counts["havok"]["raw_ctors"]}')
     # Resource sampler summary
     res = run / 'resources.jsonl'

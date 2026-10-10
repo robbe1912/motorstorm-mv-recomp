@@ -132,7 +132,7 @@ void loadtime_event(const char* kind, const char* detail)
 #else
     pthread_mutex_lock(&g_lock);
 #endif
-    fprintf(g_out, "{\"t_us\":%llu,\"tid\":%u,\"kind\":\"",
+    fprintf(g_out, "{\"t_us\":%llu,\"tid\":%u,\"kind\":",
             loadtime_us(), lt_tid());
     lt_write_escaped(g_out, kind ? kind : "");
     fputs(",\"detail\":", g_out);   /* kind label is closed by escape's quote */

@@ -39,4 +39,32 @@ while watching the window; they are user-acknowledged boundaries, not timed scri
 Waits are counted separately from useful work; the observer adds one JSONL line per
 event and is inert unless the environment variable is set.
 
-<!-- loadtime-numbers: inserted after measured runs -->
+Measured 2026-10-11, debug builds `94d408a3…` (run A) and `de9aef3b…` (run B),
+decrypted US 1.80 debug ELF, one Windows host (single NVMe, D3D12 window,
+muted audio, `SPU_PM_INTERP=1`, six wedge probes zeroed). Two bounded no-input
+boots, 25,329 and 26,877 traced events:
+
+| Boundary (no input) | Run A | Run B |
+|---|---|---|
+| Trace span | 242.65 s to Havok fatal 177 | 421.92 s to run bound |
+| Outcome | load failed (fatal 177, labeled failed) | no menu advance, no fatal (labeled no-progress) |
+| Guest cellFsRead work | 10,399 reads, 212.9 MB, 162.5 ms | 2,160 reads, 23.5 MB, 25.3 ms |
+| sdata/edat decrypt | 0 | 0 |
+| SPU job runs | 512 runs, 647.1 ms | 0 |
+| Havok raw constructors | 155 | 28 |
+| Merged guest-wait coverage | 234.30 s / 242.65 s = 96.6% | 409.14 s / 421.92 s = 97.0% |
+| Unblocked wall time | 8.35 s | 12.78 s |
+| Host sampler | CPU mean 284%, disk 0.9 MB/s | CPU mean 208%, disk 0.1 MB/s |
+
+Dominant actionable limit on this configuration: the guest load state machine is
+sleep-paced, not resource-bound. File reads, decryption and SPU jobs together
+cost under 1 s of the 242 s failed load; PPU threads spend about 97% of wall
+time in guest-requested `sys_timer_usleep` (mostly the 16,666 us frame cadence).
+Run A's top resource is `USRDIR/cache_ps3.dat` (211.8 MB of 212.9 MB read).
+Run A reached a race-menu draw signature at about 140 s without input and
+failed during attract-mode race load; run B stayed on an early select screen
+for the full bound, so the no-input path is nondeterministic. The press-driven
+PLAY boundary was not captured in these two runs; historical evidence puts the
+accepted PLAY press at 225 s with fatal at about 323 s. Numbers are per this
+debug build and host; they are not retail performance, and the observer adds
+one JSONL line per event (25,329-26,877 lines over 242-422 s).
