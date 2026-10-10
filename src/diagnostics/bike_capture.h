@@ -61,8 +61,17 @@ static void bike_probe_entry(ppu_context* ctx, const char* stage)
 {
     const char* dir = getenv("CAP_BIKE_DIR");
     if (!dir || !*dir) return;
+    /* High-frequency resource stages fire all through boot; late-gate them to
+     * the observed selection-screen window so rare stages keep their slots. */
+    static ULONGLONG boot_tick = GetTickCount64();
+    bool frequent = !strcmp(stage,"rsload") || !strcmp(stage,"rsfind");
+    if (frequent && GetTickCount64() - boot_tick < 240000) return;
     unsigned event = bike_probe_events.fetch_add(1);
     if (event>=1024) return;
+    static unsigned stage_seen[16];
+    unsigned slot = (unsigned)(stage[0] | (stage[1]<<8));
+    slot &= 15;
+    if (++stage_seen[slot] > 64) return;
     char path[1024];
     snprintf(path,sizeof(path),"%s/%04u_%s.txt",dir,event,stage);
     FILE* f=fopen(path,"wb");
