@@ -14,6 +14,12 @@ The two complete LS reads for that context have SHA256 `38e0edbd1441eb5af9a509f4
 
 [Issue #8](https://github.com/robbe1912/motorstorm-mv-recomp/issues/8) remains open. The outstanding job and active native producer are identified, but sequential reads do not establish instruction or writer chronology. The next trace must distinguish an unfinished job/service, a returned job without retirement, and retirement whose queue publication did not persist. No wait bypass, runtime fix, Havok causal link or performance result follows from this binding.
 
+## Chronological probe limits
+
+The isolated muted probe starting at 2026-10-10T23:30:06Z stopped explicitly after 108.375 s. Its EXE SHA256 was `62c0bcbcd733a9cf527e875743494679f57c9f46ac86a98721a4e571cf984197`; sampled dump, EXE and PDB CodeView identities matched. The observer recorded 100000 actual fetched instructions for queue 0x40044480 on physical SPU 4, all matching the independently mapped original ELF policy bytes. The trace includes 171 visits each to publication sites 0x3180 and 0x3330..0x333C, but its job-record markers are only 0, 1 and FFFF. The budget exhausted before the requested-8/job-6 case. These early publication visits do not establish the missing operation in that later stall.
+
+Screenshots reached language selection; one eight-poll CROSS was acknowledged, followed by a black screen. Normal PLAY, race load and Havok failure were not reached. This diagnostic run reused compiled game objects and added read-only runtime observers; it is neither a clean-build proof nor a performance measurement. An earlier probe was rejected because its file sharing and thread-ID reuse caused capture failures. Corrected disabled/enabled/filter fixtures verified no context or LS writes, but they do not replay the game defect. The temporary runtime hooks were removed, and matching sources, binaries, identities, traces and dumps remain private. A narrower marker filter was prepared but not run; its coverage must be validated before drawing absence-of-event conclusions. Issue #8 remains open.
+
 ## Allocations and retention
 
 Initial reserved pages 0..15 and 248..255 = 24. Reserve C00 at 108D0100 requests 16..156 = 141; C10 at 9D580100 requests 157..244 = 88. Union 253, only 245..247 free. PM allocation commit 1B04/1B0C writes page maps, 1B14 descriptor, 1B1C command; new-job reset 2FA4..2FF8 clears selected descriptor/gather/logical maps **without clearing page maps**. Growth 1FF0/1FF4/classification 1FF8/1FFC; baseline removal 2CFC/2D00; release 20CC/20D8/20DC; retire 3130/314C/3150.
