@@ -23,3 +23,20 @@ PPU callback ABI/TOC and nonlocal stack fixes are preserved. Historical RSX sysc
 Older F-fix 12/15 broad PM claim/cadence/retire wedge theories are superseded for the pre-menu issue by the six default-on probe controls documented in operations. Revert/adopt anecdotes are not a durable concurrency proof. Legal DMA-alignment rules and actual MFC EAs require hardware-shaped counterexamples; do not infer causes from capped logs or aliased probe addresses.
 
 PM sequential walk-in enters staged code at 16270 without an indirect-call hook; exact registration does not cover middle-function resume. Experimental native handoff produced 7.8M redispatches/FPS 0 and stays default OFF. A release needs demonstrated continuation/parity, not disabling development interpretation. [SPURS](SPURS.md) narrows actual CPU/ownership findings; [graphics/audio](GRAPHICS_AUDIO.md) owns decoder/renderer seams.
+
+## Normal PLAY load-time boundaries (#11)
+
+Method: `scripts/run.py --loadtime-trace` runs the muted native build with the
+observer-only `LOADTIME_TRACE` hook set (vendor/ps3recomp/runtime/diag/loadtime_trace.c).
+It timestamps boot seams (VM allocation, ELF load, service registration, guest entry),
+every acknowledged pad press, file I/O (`cellFsOpen`/`cellFsRead`/`cellFsSdataOpen`),
+sdata/edat decryption, SPU job dispatches (`spu_task_run`, `spu_async`, `spurs_job`,
+`spu_dispatch`), guest waits (`sys_timer_usleep`, `sys_timer_sleep`,
+`sys_event_queue_receive`) and Havok constructor probes. `scripts/analysis/loadtime_report.py`
+groups events into stages between observed boundaries (boot, elf, services, entry,
+each pad press, first presented frame). Presses are written to the owned `pad.txt`
+while watching the window; they are user-acknowledged boundaries, not timed scripts.
+Waits are counted separately from useful work; the observer adds one JSONL line per
+event and is inert unless the environment variable is set.
+
+<!-- loadtime-numbers: inserted after measured runs -->
