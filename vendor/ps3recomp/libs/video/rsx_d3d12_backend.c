@@ -3422,7 +3422,7 @@ static int vp_upload_tex_slot(u32 off, u32 w, u32 h, u32 fmt, int cube, u32 mips
     /* TEX_SAVE=1: dump the first few converted ARGB uploads as BMPs (rgb +
      * alpha channel separately) -- ground-truth for "is the guest texture
      * wrong or is the sampling wrong" questions (wave's hue palette). */
-    if (argb && _f + 1 == _nfaces && getenv("TEX_SAVE")) { static int _ts = 0; if (_ts < 8) { _ts++;
+    if (argb && _f + 1 == _nfaces && getenv("TEX_SAVE")) { int _cap = atoi(getenv("TEX_SAVE")); if (_cap <= 0) _cap = 8; static int _ts = 0; if (_ts < _cap) { _ts++;
         /* For a cube, write every face: the point of the dump is to check the
          * assumed 6-face layout against the game's cubemap art. */
         for (u32 _face = 0; _face < _nfaces; _face++)
@@ -3460,6 +3460,28 @@ static int vp_upload_tex_slot(u32 off, u32 w, u32 h, u32 fmt, int cube, u32 mips
             }
         }
     } }
+    /* TEX_RAWDBG=1: dump the RAW guest bytes of compressed uploads. DXT
+     * payloads stay block-compressed, so the open swizzle question -- is the
+     * block order linear rows or Morton over 4x4 blocks -- is answered
+     * offline by decoding the dump both ways against the converted BMP.
+     * No pixel path is touched. */
+    if (tl.compressed && getenv("TEX_RAWDBG")) {
+        static u32 _ro[32]; static int _rn = 0;
+        int _known = 0;
+        for (int _i = 0; _i < _rn; _i++) if (_ro[_i] == off) { _known = 1; break; }
+        if (!_known && _rn < 32) { _ro[_rn++] = off;
+            char _pn[128];
+            snprintf(_pn, sizeof(_pn), "raw_%08X_%ux%u.bin", off, w, h);
+            FILE* _rf = fopen(_pn, "wb");
+            if (_rf) {
+                fwrite(vm_base + off, 1, (size_t)_face_bytes, _rf);
+                fclose(_rf);
+                fprintf(stderr, "[TEX_RAW] %s bytes=%u block_bytes=%u guest_ln=%u\n",
+                        _pn, _face_bytes, tl.block_bytes,
+                        (unsigned)((fmt & 0x20u) ? 1u : 0u));
+            }
+        }
+    }
     /* TEX_AVGDBG=1: one line per distinct bound texture offset with its average
      * source colour. duck.tga is overwhelmingly yellow (avg ~243,191,23), so this
      * says whether the duck's image is bound at all -- and if it is, the duck is
