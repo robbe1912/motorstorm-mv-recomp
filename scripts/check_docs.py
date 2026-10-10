@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main():
     errors = []
-    pages = [ROOT/'README.md', *(ROOT/'docs').rglob('*.md')]
+    pages = [ROOT/'README.md', ROOT/'AGENTS.md', *(ROOT/'docs').rglob('*.md')]
     for page in pages:
         for link in re.findall(r'\]\(([^)]+)\)', page.read_text(encoding='utf-8')):
             if '://' in link or link.startswith('#'):

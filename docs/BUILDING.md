@@ -77,6 +77,8 @@ Guest inputs/output belong in ignored folders. Debug and retail modules are not 
 
 ## Build
 
+For an additional checkout, follow [private worktree setup](WORKTREES.md) before building. Required ignored inputs are not copied by Git.
+
 ```powershell
 python scripts/project.py build
 ```
