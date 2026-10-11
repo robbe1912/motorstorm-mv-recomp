@@ -30,7 +30,7 @@ static uint32_t havok_probe_word(uint32_t ea)
 {
     unsigned char b[4] = {};
     if (!havok_probe_read(ea, b, 4)) return 0;
-    return ((uint32_t)b[0]<<24)|((uint32_t)b[1]<<16)|((uint32_t)b[2]<<8)|b[3];
+    return ((uint32_t)b[0]<<24)|((uint32_t)b[1]<<16)|((uint32_t)b[2]<<8)|(uint32_t)b[3];
 }
 
 /* Private diagnostic cache: max four16MiB host buffers, no disk/log on success. */
@@ -72,7 +72,7 @@ static void havok_probe_string(FILE* meta, const char* label, uint32_t ea)
 {
     if (!ea) { fprintf(meta,"string %s ea=00000000 value=<null>\n",label); return; }
     char str[257] = {};
-    for (unsigned i=0; i<256; ++i) {
+    for (unsigned i=0;i<256;++i) {
         if (!havok_probe_read(ea+i, str+i, 1) || !str[i]) break;
         if ((unsigned char)str[i]<32 || (unsigned char)str[i]>126) str[i]='?';
     }
@@ -92,9 +92,9 @@ static void havok_probe_oct10(ppu_context* ctx, const char* stage, uint32_t site
     }
     char path[1024];
     snprintf(path,sizeof(path),"%s/%04u_%s.txt",dir,event,stage);
-    FILE* f=fopen(path,"wb");
+    FILE *f=fopen(path,"wb");
     if (!f) return;
-    fprintf(f,"stage=%s ctor=%u thread=%lu tick=%llu lr=%08llX\n",stage,havok_probe_id,
+    fprintf(f,"stage=%s site=%08X ctor=%u thread=%lu tick=%llu lr=%08llX\n",stage,site,havok_probe_id,
             GetCurrentThreadId(),(unsigned long long)GetTickCount64(),ctx->lr);
     for (unsigned i=0;i<32;++i) fprintf(f,"r%u=%016llX\n",i,ctx->gpr[i]);
     fprintf(f,"observer_site=%08X raw_site=%08X (explicit hook sites, not LR/CIA-derived PCs)\n",site,havok_raw_site);
@@ -116,7 +116,7 @@ static void havok_probe_oct10(ppu_context* ctx, const char* stage, uint32_t site
         if (havok_raw_length && havok_raw_object==(uint32_t)ctx->gpr[20]) {
             char raw_path[1024];
             snprintf(raw_path,sizeof(raw_path),"%s/%04u_pre_relocation_%08X.bin",dir,event,havok_raw_ea);
-            FILE* raw=fopen(raw_path,"wb");
+            FILE *raw=fopen(raw_path,"wb");
             if (raw) { fwrite(havok_raw_bytes,1,havok_raw_length,raw);fclose(raw); }
         }
     }
@@ -162,5 +162,5 @@ static void havok_probe_oct10(ppu_context* ctx, const char* stage, uint32_t site
         }
     }
     fclose(f);
-    fprintf(stderr,"[DEBUG-havok-oct10] event=%u ctor=%u stage=%s\n",event,havok_probe_id,stage);
+    fprintf(stderr,"[DEBUG-havok-oct10] event=%u ctor=%u stage=%s site=%08X\n",event,havok_probe_id,stage,site);
 }
