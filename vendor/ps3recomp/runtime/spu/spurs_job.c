@@ -37,6 +37,7 @@
 
 #include "spu_coherency.h"
 #include "spu_workload.h"
+#include "ps3emu/loadtime_trace.h"   /* #11 load-stage timing (observer) */
 #include "spu_context.h"
 
 #include <stdio.h>
@@ -356,7 +357,12 @@ int spu_run_spurs_job(spu_lifted_entry_fn entry, int image_id,
      * and trips its parameter guard, which HALTS -- ending the run. So the
      * HALT-ASSERT heqi 0x1650 seen once per jm2 job is NORMAL COMPLETION
      * noise, not a failure: the job's real work finished before the jump. */
-    spu_run_with_halt(entry, &ctx);
+    { unsigned long long j0 = loadtime_on() ? loadtime_us() : 0;
+      spu_run_with_halt(entry, &ctx);
+      if (loadtime_on()) { char d[128];
+          snprintf(d, sizeof d, "job_ea=0x%08X image=%d dur_us=%llu",
+                   job_ea, image_id, loadtime_us() - j0);
+          loadtime_event("spurs_job", d); } }
 
     /* Capture the job's outbound mailbox. These are LS POINTERS TO STRINGS for
      * the SPU printf service, NOT query results -- value 0x83C0 from the sound

@@ -23,3 +23,29 @@ PPU callback ABI/TOC and nonlocal stack fixes are preserved. Historical RSX sysc
 Older F-fix 12/15 broad PM claim/cadence/retire wedge theories are superseded for the pre-menu issue by the six default-on probe controls documented in operations. Revert/adopt anecdotes are not a durable concurrency proof. Legal DMA-alignment rules and actual MFC EAs require hardware-shaped counterexamples; do not infer causes from capped logs or aliased probe addresses.
 
 PM sequential walk-in enters staged code at 16270 without an indirect-call hook; exact registration does not cover middle-function resume. Experimental native handoff produced 7.8M redispatches/FPS 0 and stays default OFF. A release needs demonstrated continuation/parity, not disabling development interpretation. [SPURS](SPURS.md) narrows actual CPU/ownership findings; [graphics/audio](GRAPHICS_AUDIO.md) owns decoder/renderer seams.
+
+## Load-time observation groundwork (#11)
+
+`scripts/run.py --loadtime-trace` writes run-local monotonic JSONL events for
+boot, consumed PAD_FILE presses, resource operations, observed SPU dispatch
+windows, Havok hooks and first presentation. Paths are separate JSON fields.
+Wait begin/return records preserve requested arguments, result and measured call
+interval, including host and probe overhead. The interpreter and PPU work are
+not fully covered; nested and concurrent SPU windows must not be summed as
+useful-work wall time. First presentation does not establish visible content.
+
+The analyzer rejects malformed/nonmonotonic records with line numbers, uses the
+emitted boot vocabulary and preserves descriptor lifetime across stage boundaries.
+Only measured returned waits enter clipped per-thread unions. Unreturned waits,
+trace exhaustion and launcher outcomes are reported separately. Historical
+malformed labels require explicit `--legacy`; frames.csv has a first-present
+relative millisecond clock and cannot anchor a load trace.
+
+Prior no-input captures recorded under EXE prefixes `94d408a3` and
+`de9aef3b` ended in fatal177 and no-progress
+respectively. Their timeout-only wait logs do not measure blocking. The earlier
+96.6%/97% wait-coverage, unblocked-wall-time and sleep-paced-bottleneck conclusions
+are withdrawn; file-descriptor reuse and partial SPU coverage also invalidate
+cross-resource/useful-work inference. No normal PLAY latency or performance
+benchmark is accepted from these captures. Native boundary validation and the
+benchmark-checklist measurements remain open in #11.

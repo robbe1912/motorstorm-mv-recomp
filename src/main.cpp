@@ -38,6 +38,7 @@
  * names over pthreads and mmap, so the call sites below are written once. */
 #include "win32_compat.h"
 #include "thread_name.h"   /* ps3_thread_setname */
+#include "ps3emu/loadtime_trace.h"   /* #11 load-stage timing (observer) */
 
 #include <stdint.h>
 #include <stdio.h>
@@ -382,15 +383,20 @@ int main(int argc, char** argv)
         fprintf(stderr, "ERROR: could not allocate the guest address space\n");
         return 1;
     }
+    if (loadtime_on()) loadtime_event("boot", "stage=vm_alloc");
 
     uint32_t entry = ppu_load_elf(argv[1]);
     if (!entry) {
         fprintf(stderr, "ERROR: could not load %s\n", argv[1]);
         return 1;
     }
+    if (loadtime_on()) { char d[96];
+        snprintf(d, sizeof d, "stage=elf_loaded entry=0x%08X", entry);
+        loadtime_event("boot", d); }
 
     derive_vfs_root(argv[1]);
     printf("[boot] VFS root: %s\n", ppu_vfs_root);
+    if (loadtime_on()) loadtime_event("boot", "stage=vfs_root");
 
     /* MotorStorm imports the bare-name sys_net exports (connect, getsockname,
      * send, ...). Only the PS3_NET_ONLINE model registers them; without it
@@ -405,6 +411,7 @@ int main(int argc, char** argv)
     ppu_sysprx_register();   /* boot-critical CRT */
     ppu_fs_register();       /* cellFs over the game directory */
     lv2_init_syscalls();     /* the lv2 syscall table */
+    if (loadtime_on()) loadtime_event("boot", "stage=services_ready");
 
     /* Install the guest-callback hook, then start the frame clock. It no-ops
      * until the title registers its vblank and flip handlers during init. */
@@ -414,9 +421,15 @@ int main(int argc, char** argv)
 
     printf("\n[boot] dispatching entry OPD 0x%08X (stack top 0x%08X)\n\n",
            entry, STACK_TOP);
+    if (loadtime_on()) { char d[96];
+        snprintf(d, sizeof d, "stage=entry_dispatch opd=0x%08X", entry);
+        loadtime_event("boot", d); }
 
     int rc = ppu_run(entry, STACK_TOP);
     printf("\n[boot] ppu_run returned %d (entry function unwound)\n", rc);
+    if (loadtime_on()) { char d[96];
+        snprintf(d, sizeof d, "stage=ppu_run_return rc=%d", rc);
+        loadtime_event("boot", d); }
 
     /* A title that called sys_process_exit never reaches this line: that path
      * ends in the host exit(). Getting here means the entry function returned

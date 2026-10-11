@@ -18,6 +18,7 @@
 #include <math.h>
 #include "../../runtime/platform/win32_compat.h"   /* GetTickCount64 on POSIX */
 #include "../../runtime/ppu/ppu_memory.h"   /* GUEST_PTR, vm_write*: guest EA -> host */
+#include "ps3emu/loadtime_trace.h"   /* #11 load-stage timing (observer) */
 
 /* ---------------------------------------------------------------------------
  * Backend selection
@@ -712,7 +713,10 @@ skip_inject: ;
                       unsigned m = (unsigned)strtoul(buf, &rest, 0);
                       int n = (int)strtol(rest, 0, 0);
                       if (m) { held_mask = m; held_n = n > 0 ? n : 40;
-                               printf("[cellPad] PAD_FILE press 0x%04X\n", m); fflush(stdout); }
+                               printf("[cellPad] PAD_FILE press 0x%04X\n", m); fflush(stdout);
+                               if (loadtime_on()) { char d[64];
+                                   snprintf(d, sizeof d, "mask=0x%04X polls=%d", m, held_n);
+                                   loadtime_event("pad_press", d); } }
                   }
                   fclose(f);
                   if (held_n > 0) { FILE* w = fopen(pf_path, "wb"); if (w) fclose(w); }

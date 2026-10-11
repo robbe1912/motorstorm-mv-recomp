@@ -15,6 +15,8 @@ FIXTURE = r'''#include <stdint.h>
 struct ppu_context { uint64_t gpr[32]; uint64_t lr; };
 unsigned char* vm_base;
 #include "@HEADER@"
+extern "C" int loadtime_on(void) { return 0; }
+extern "C" void loadtime_event(const char*,const char*) {}
 int main() {
  vm_base=(unsigned char*)VirtualAlloc(nullptr,65536,MEM_RESERVE|MEM_COMMIT,PAGE_READWRITE);
  if(!vm_base)return 10;
@@ -45,7 +47,7 @@ def main():
     env = build_environment()
     log = out/'compile.log'
     with log.open('wb') as stream:
-        result = subprocess.run([env['MV_CLANG'], '/std:c++17', str(source), '/Fe'+str(exe)], cwd=out, env=env, stdout=stream, stderr=subprocess.STDOUT, timeout=30)
+        result = subprocess.run([env['MV_CLANG'], '/std:c++17', '/I'+str(ROOT/'vendor/ps3recomp/include'), str(source), '/Fe'+str(exe)], cwd=out, env=env, stdout=stream, stderr=subprocess.STDOUT, timeout=30)
     print('Compiler diagnostics:', log, flush=True)
     if result.returncode:
         print(log.read_text(errors='replace'))

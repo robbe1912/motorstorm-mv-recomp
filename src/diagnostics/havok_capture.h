@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <atomic>
 #include <stdlib.h>
+#include "ps3emu/loadtime_trace.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -37,6 +38,7 @@ static uint32_t havok_probe_word(uint32_t ea)
 static void havok_record_raw_oct10(ppu_context* ctx, uint32_t site = 0)
 {
     (void)site;
+    if (loadtime_on()) { char d[96]; snprintf(d,sizeof d,"site=0x%08X obj=0x%08X",site,(unsigned)ctx->gpr[20]); loadtime_event("havok_raw_ctor",d); }
     havok_raw_length=0;
     if (!getenv("CAP_HAVOK_DIR")) return;
     uint32_t object=(uint32_t)ctx->gpr[20];
@@ -82,6 +84,7 @@ static void havok_probe_string(FILE* meta, const char* label, uint32_t ea)
 static void havok_probe_oct10(ppu_context* ctx, const char* stage, uint32_t site = 0)
 {
     (void)site;
+    if (loadtime_on()) { char d[192]; snprintf(d,sizeof d,"stage=%s site=0x%08X ctor=%u",stage,site,havok_probe_id); loadtime_event("havok_stage",d); }
     const char* dir = getenv("CAP_HAVOK_DIR");
     if (!dir || !*dir) return;
     unsigned event = havok_probe_events.fetch_add(1);
