@@ -1,229 +1,162 @@
-"""Stage-time report for issue #11: load time by resource and job boundary.
+"""Report observed load boundaries; no critical-path or minimum-FPS inference.
 
-Reads one owned run directory (scripts/run.py --loadtime-trace) and prints a
-markdown table of stage durations between observed boundaries, with per-resource
-subtotals (file I/O, decryption, SPU jobs, waits) inside each stage.
-
-Usage: python scripts/analysis/loadtime_report.py temp/runs/<RUN> [--origin first-event]
-
-Boundaries (each named stage runs from the previous boundary to this one):
-  boot            first traced event (VM allocation)
-  elf             ELF loaded into guest memory
-  services        HLE/syscall/filesystem registration complete
-  entry           guest entry point dispatched
-  press <mask>    observed pad press (mask + poll count); user-acked input
-  first-frame     first row in frames.csv (first presented frame)
-  last-event      final trace event (kill/exit flush)
-
-All times are microseconds since the first traced event unless --origin is
-given. Waits are guest-requested sleeps/event blocking, counted separately from
-useful work; the trace itself is observer-only and adds one line per event.
+Completed calls are assigned by their event timestamp. Wait intervals use measured
+entry/return times, including host/probe overhead. Concurrent/nested samples overlap.
 """
-import argparse, json, re
+import argparse
+import json
+import re
 from collections import defaultdict
 from pathlib import Path
 
-PRESS_MASKS = {0x0008: 'START', 0x4000: 'CROSS', 0x0010: 'UP', 0x0020: 'RIGHT', 0x0040: 'DOWN', 0x0080: 'LEFT'}
+SPU_KINDS = ('spu_task_run', 'spu_async', 'spu_dispatch', 'spurs_job')
+
 
 def parse_detail(text):
-    out = {}
-    for part in text.split():
-        if '=' in part:
-            k, v = part.split('=', 1)
-            out[k] = v
-    return out
+    matches = list(re.finditer(r'(?:^| )([A-Za-z_][A-Za-z_0-9]*)=', text))
+    return {m[1]: text[m.end():matches[i+1].start() if i+1 < len(matches) else len(text)].strip()
+            for i, m in enumerate(matches)}
 
-def load_events(run):
+
+def load_events(run, legacy=False):
     path = run / 'loadtime.jsonl'
-    if not path.is_file():
-        raise SystemExit(f'No loadtime.jsonl in {run}')
     events = []
-    with path.open(encoding='utf-8', errors='replace') as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
+    with path.open(encoding='utf-8') as stream:
+        for line_no, line in enumerate(stream, 1):
+            if not line.strip():
                 continue
-            line = re.sub(r'"kind":""', '"kind":"', line)  # salvage pre-fix traces
+            if legacy:
+                line = re.sub(r'"kind":""', '"kind":"', line)
             try:
                 e = json.loads(line)
-            except json.JSONDecodeError:
-                continue
+                if legacy:
+                    e['kind'] = e.get('kind', '').strip('"')
+                if type(e.get('t_us')) is not int or e['t_us'] < 0:
+                    raise ValueError('t_us must be a nonnegative integer')
+                if not isinstance(e.get('kind'), str) or not e['kind']:
+                    raise ValueError('kind must be a nonempty string')
+                if not isinstance(e.get('detail', ''), str):
+                    raise ValueError('detail must be a string')
+                if events and e['t_us'] < events[-1]['us']:
+                    raise ValueError('trace timestamps moved backwards')
+            except (json.JSONDecodeError, ValueError, TypeError) as exc:
+                raise ValueError(f'{path}:{line_no}: {exc}') from exc
+            e['us'] = e['t_us']
             e['_detail'] = parse_detail(e.get('detail', ''))
-            e['kind'] = e.get('kind', '').strip('"')
-            if 't_us' in e:
-                e['us'] = e['t_us']
             events.append(e)
-
     if not events:
-        raise SystemExit('loadtime.jsonl contained no events')
+        raise ValueError(f'{path}: empty trace')
     return events
+
 
 def boundaries(run, events):
     origin = events[0]['us']
-    marks = [('boot', origin, 'VM alloc')]
+    marks = [('trace-start', origin, 'observer anchor; VM allocation may precede it')]
     seen = set()
+    stages = {'elf_loaded': 'elf', 'services_ready': 'services', 'entry_dispatch': 'entry'}
     for e in events:
-        k, us = e['kind'], e['us']
-        if k == 'elf_loaded' and 'elf' not in seen:
-            seen.add('elf'); marks.append(('elf', us, 'ELF mapped'))
-        elif k == 'services_ready' and 'svc' not in seen:
-            seen.add('svc'); marks.append(('services', us, 'HLE+FS+syscalls registered'))
-        elif k == 'entry_dispatch' and 'entry' not in seen:
-            seen.add('entry'); marks.append(('entry', us, 'guest entry dispatched'))
+        k, us, d = e['kind'], e['us'], e['_detail']
+        stage = d.get('stage') if k == 'boot' else k
+        if stage in stages and stage not in seen:
+            seen.add(stage)
+            marks.append((stages[stage], us, 'emitted boot boundary'))
+        elif k == 'first_present' and k not in seen:
+            seen.add(k)
+            marks.append(('first-present', us, 'same trace clock; content unverified'))
         elif k == 'pad_press':
-            mask = int(e['_detail'].get('mask', '0'), 0) & 0xFFFF
-            polls = e['_detail'].get('polls', '?')
-            names = '+'.join(nm for bit, nm in PRESS_MASKS.items() if mask & bit) or hex(mask)
-            marks.append((f'press {names}', us, f'pad ack mask={hex(mask)} polls={polls} tid={e.get("tid")}'))
-        elif k == 'havok_stage' and e['_detail'].get('stage') == 'fatal177' and 'fatal' not in seen:
-            seen.add('fatal'); marks.append(('Havok fatal 177 (load failed)', us, 'physics/animation data missing'))
-    frames = run / 'frames.csv'
-    if frames.is_file():
-        first = None
-        for line in frames.open(encoding='utf-8', errors='replace'):
-            parts = [p.strip() for p in line.split(',')]
-            if len(parts) >= 2 and parts[1].replace('.', '', 1).isdigit():
-                first = float(parts[1]); break
-        if first is not None:
-            marks.append(('first-frame', origin + int(first * 1e6), 'frames.csv row 1'))
-    marks.sort(key=lambda m: m[1])
+            marks.append(('press ' + d.get('mask', '?'), us, 'PAD_FILE consumed; screen identity needs input log'))
+        elif k == 'havok_stage' and d.get('stage') == 'fatal177' and 'fatal' not in seen:
+            seen.add('fatal')
+            marks.append(('Havok fatal 177', us, 'fatal observer boundary; cause unresolved'))
+    marks.sort(key=lambda x: x[1])
     return origin, marks
 
-def wait_union(events, lo, hi):
-    """Merged wall-time intervals covered by any guest wait (overlaps collapse)."""
+
+def wait_union(events, lo, hi, tid=None):
+    """Union of measured returned syscall intervals, clipped to [lo,hi)."""
     spans = []
     for e in events:
-        if not lo <= e['us'] <= hi:
+        if not (e['kind'].startswith('wait_') and e['kind'].endswith('_end')):
             continue
-        d = e['_detail']; k = e['kind']
-        if k == 'wait_usleep':
-            spans.append((e['us'], e['us'] + float(d.get('usec', 0))))
-        elif k == 'wait_sleep':
-            spans.append((e['us'], e['us'] + float(d.get('sec', 0)) * 1e6))
-        elif k == 'wait_event':
-            to = float(d.get('timeout', -1))
-            if to > 0:
-                spans.append((e['us'], e['us'] + to))
-    spans.sort()
-    merged = []
-    for s, t in spans:
-        if merged and s <= merged[-1][1]:
-            merged[-1][1] = max(merged[-1][1], t)
-        else:
-            merged.append([s, t])
-    return sum(t - s for s, t in merged)
+        if tid is not None and e.get('tid') != tid:
+            continue
+        d = e['_detail']
+        start, end = int(d['start_us']), int(d['end_us'])
+        if end < start:
+            raise ValueError('wait return precedes entry')
+        a, b = max(lo, start), min(hi, end)
+        if b > a:
+            spans.append((a, b))
+    total, edge = 0, lo
+    for a, b in sorted(spans):
+        total += max(0, b - max(a, edge))
+        edge = max(edge, b)
+    return total
+
 
 def stage_totals(events, lo, hi):
-    t = defaultdict(lambda: defaultdict(float))
-    counts = defaultdict(lambda: defaultdict(int))
-    read_by_fd = {}
-    fd_path = {}
+    durations, counts = defaultdict(int), defaultdict(int)
+    fd_paths, reads = {}, defaultdict(int)
     for e in events:
-        if not lo <= e['us'] <= hi:
+        if e['us'] >= hi:
+            break
+        k, d = e['kind'], e['_detail']
+        if k == 'fs_open':
+            fd_paths[int(d['fd'])] = e.get('path', f'<fd {d["fd"]}: unstructured legacy path, opened at {e["us"]} us>')
+        elif k == 'fs_close':
+            fd_paths.pop(int(d['fd']), None)
+        if e['us'] < lo:
             continue
-        k = e['kind']; d = e['_detail']
+        counts[k] += 1
+        if k in ('fs_read', 'fs_sdata_decrypt', 'fs_edat_decrypt') + SPU_KINDS:
+            durations[k] += int(d.get('dur_us', 0))
         if k == 'fs_read':
-            fd = int(d.get('fd', '-1'))
-            got = float(d.get('got', 0)); dur = float(d.get('dur_us', 0))
-            t['fs']['read_us'] += dur; counts['fs']['reads'] += 1
-            read_by_fd[fd] = read_by_fd.get(fd, 0) + got
-        elif k == 'fs_open':
-            fd = int(d.get('fd', '-1')); fd_path[fd] = d.get('path', '?')
-            counts['fs']['opens'] += 1
-        elif k == 'fs_stat':
-            counts['fs']['stats'] += 1
-        elif k in ('fs_sdata_decrypt', 'fs_edat_decrypt'):
-            t['fs']['decrypt_us'] += float(d.get('dur_us', 0)); counts['fs']['decrypts'] += 1
-        elif k in ('spu_task_run', 'spu_async', 'spu_dispatch', 'spurs_job'):
-            t['spu']['run_us'] += float(d.get('dur_us', 0)); counts['spu'][k] += 1
-        elif k == 'wait_sleep':
-            t['wait'][k] += float(d.get('sec', 0)) * 1e6
-            counts['wait'][k] += 1
-        elif k in ('wait_usleep', 'wait_event'):
-            t['wait'][k] += float(d.get('dur_us', d.get('usec', d.get('timeout', 0))))
-            counts['wait'][k] += 1
-        elif k == 'havok_raw_ctor':
-            counts['havok']['raw_ctors'] += 1
-        elif k == 'spu_dispatch' or k == 'boot' or k in ('fs_close', 'fs_open_fail'):
-            pass
-    bytes_total = sum(read_by_fd.values())
-    files = sorted(((read_by_fd.get(fd, 0), fd_path.get(fd, f'fd{fd}')) for fd in read_by_fd), reverse=True)
-    return t, counts, bytes_total, files
+            fd = int(d['fd'])
+            reads[fd_paths.get(fd, f'<fd {fd}: open not observed>')] += int(d.get('got', 0))
+    return durations, counts, sum(reads.values()), sorted(((v, k) for k, v in reads.items()), reverse=True)
 
-def fmt(us):
-    if us >= 1e6:
-        return f'{us/1e6:.2f}s'
-    if us >= 1e3:
-        return f'{us/1e3:.1f}ms'
-    return f'{us:.0f}us'
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('run', type=Path)
-    ap.add_argument('--top', type=int, default=5, help='top files per stage')
+    ap.add_argument('--top', type=int, default=5)
+    ap.add_argument('--legacy', action='store_true', help='Explicit conversion of old malformed kind labels; results remain historical')
     args = ap.parse_args()
-    run = args.run
-    events = load_events(run)
-    origin, marks = boundaries(run, events)
-    end_us = events[-1]['us']
-    print(f'# Load-stage report: {run.name}')
-    print(f'Events: {len(events)}; trace span: {fmt(end_us-origin)}; boundaries: {len(marks)}')
-    print()
-    print('| Stage boundary | t (from boot) | Stage Δ | fs read | decrypt | SPU job | waits | note |')
-    print('|---|---|---|---|---|---|---|---|')
-    prev_name, prev_us = '(run start)', origin
-    for name, us, note in marks:
-        t, counts, nbytes, files = stage_totals(events, prev_us, us)
-        fs_read = fmt(t['fs']['read_us']); dec = fmt(t['fs']['decrypt_us'])
-        spu = fmt(t['spu']['run_us'])
-        wait_sum = sum(t['wait'].values())
-        waits = fmt(wait_sum)
-        print(f'| {name} | {fmt(us-origin)} | {fmt(us-prev_us)} | {nbytes/1048576:.1f}MB in {fs_read} | {dec} ({counts["fs"]["decrypts"]}) | {spu} ({sum(counts["spu"].values())} runs) | {waits} | {note} |')
-        prev_name, prev_us = name, us
-    # Tail: after final boundary to last event
-    if end_us > prev_us:
-        t, counts, nbytes, files = stage_totals(events, prev_us, end_us)
-        wait_sum = sum(t['wait'].values())
-        print(f'| (tail after {prev_name}) | {fmt(end_us-origin)} | {fmt(end_us-prev_us)} | {nbytes/1048576:.1f}MB in {fmt(t["fs"]["read_us"])} | {fmt(t["fs"]["decrypt_us"])} ({counts["fs"]["decrypts"]}) | {fmt(t["spu"]["run_us"])} ({sum(counts["spu"].values())} runs) | {fmt(wait_sum)} | to last event |')
-    print()
-    print('## Top files per stage')
-    prev_us = origin
-    for name, us, note in marks:
-        t, counts, nbytes, files = stage_totals(events, prev_us, us)
-        if files:
-            top = ', '.join(f'{p} ({b/1048576:.1f}MB)' for b, p in files[:args.top])
-            print(f'- **{name}** ({fmt(us-prev_us)}): {top}')
-        prev_us = us
-    # Whole-run totals
-    t, counts, nbytes, files = stage_totals(events, origin, end_us)
-    print()
-    print('## Whole-run totals (trace span)')
-    print(f'- Guest file reads: {counts["fs"]["reads"]} reads, {nbytes/1048576:.1f}MB, {fmt(t["fs"]["read_us"])} in cellFsRead')
-    print(f'- Decryption (sdata/edat): {counts["fs"]["decrypts"]} files, {fmt(t["fs"]["decrypt_us"])}')
-    spu_runs = sum(counts['spu'].values())
-    print(f'- SPU job dispatches: {spu_runs} ({dict(counts["spu"]) or "none"}), {fmt(t["spu"]["run_us"])}')
-    for wk, wv in sorted(t['wait'].items()):
-        print(f'- Waits {wk}: {counts["wait"][wk]} calls, {fmt(wv)}')
-    span = end_us - origin
-    covered = wait_union(events, origin, end_us)
-    print(f'- Wait coverage (merged, all threads): {fmt(covered)} of {fmt(span)} span = {100*covered/span:.1f}%; unblocked wall time {fmt(span-covered)}')
-    print(f'- Havok raw constructions observed: {counts["havok"]["raw_ctors"]}')
-    # Resource sampler summary
-    res = run / 'resources.jsonl'
-    if res.is_file():
-        rows = [json.loads(l) for l in res.open(encoding='utf-8', errors='replace') if l.strip()]
-        if rows:
-            def col(key):
-                vals = [r[key] for r in rows if r.get(key, -1) != -1]
-                return vals
-            cpu = col('cpu_percent'); thr = col('threads'); io = col('io_read_bytes')
-            line = f'- Host sampler ({len(rows)} samples every ~2s): '
-            if cpu: line += f'guest CPU mean {sum(cpu)/len(cpu):.0f}% (max {max(cpu):.0f}%); '
-            if thr: line += f'threads {min(thr)}..{max(thr)}; '
-            if io and len(io) > 1:
-                rate = (io[-1]-io[0])/(rows[-1]['elapsed']-rows[0]['elapsed'] or 1)
-                line += f'process disk read {rate/1048576:.1f}MB/s avg ({(io[-1]-io[0])/1048576:.0f}MB total)'
-            print(line)
+    events = load_events(args.run, args.legacy)
+    origin, marks = boundaries(args.run, events)
+    end = events[-1]['us']
+    truncated = any(e['kind'] == 'trace_truncated' for e in events)
+    print(f'Load-stage report: {args.run.name}; events={len(events)}; span={(end-origin)/1e6:.3f}s')
+    print('Observed intervals include probe overhead; concurrent/nested samples overlap.')
+    print('Interpreter/PPU work is not fully covered. No bottleneck, useful-work residual or FPS verdict follows.')
+    if args.legacy:
+        print('LEGACY CONVERSION enabled; historical observations only.')
+    if truncated:
+        print('INCOMPLETE: trace event budget exhausted.')
+    print('| Boundary | Elapsed s | Stage s | Completed reads/bytes | Returned wait calls | SPU samples by kind |')
+    print('|---|---:|---:|---|---:|---|')
+    prev = origin
+    for name, us, note in marks[1:] + [('last-event', end+1, 'trace end; not race readiness')]:
+        durations, counts, nbytes, files = stage_totals(events, prev, us)
+        returned = sum(v for k, v in counts.items() if k.startswith('wait_') and k.endswith('_end'))
+        spu = '; '.join(f'{k}={counts[k]} calls/{durations[k]/1000:.2f}ms' for k in SPU_KINDS if counts[k]) or 'none observed'
+        print(f'| {name} | {(min(us,end)-origin)/1e6:.3f} | {(us-prev)/1e6:.3f} | {counts["fs_read"]}/{nbytes} | {returned} | {spu} |')
+        for nbytes, path in files[:args.top]:
+            print(f'  resource: {path!r}: {nbytes} bytes')
+        print('  boundary note:', note)
+        prev = us
+    begins = sum(e['kind'].startswith('wait_') and e['kind'].endswith('_begin') for e in events)
+    returned = sum(e['kind'].startswith('wait_') and e['kind'].endswith('_end') for e in events)
+    old_requests = sum(e['kind'] in ('wait_usleep','wait_sleep','wait_event') for e in events)
+    print(f'Wait begin/end records={begins}/{returned}; unmatched={begins-returned}; historical timeout-only records={old_requests} (duration unknown).')
+    for tid in sorted({e.get('tid', 0) for e in events if e['kind'].startswith('wait_')}):
+        print(f'host thread {tid}: returned wait syscall union={wait_union(events,origin,end+1,tid)/1e6:.6f}s; not a critical-path measurement')
+    if (args.run/'final.json').is_file():
+        final = json.loads((args.run/'final.json').read_text(encoding='utf-8'))
+        print('Launcher outcome:', final.get('reason'), 'exit=', final.get('returncode'), 'guard=', final.get('terminated_by_guard'))
+    if truncated:
+        raise SystemExit(2)
+
 
 if __name__ == '__main__':
     main()

@@ -24,47 +24,28 @@ Older F-fix 12/15 broad PM claim/cadence/retire wedge theories are superseded fo
 
 PM sequential walk-in enters staged code at 16270 without an indirect-call hook; exact registration does not cover middle-function resume. Experimental native handoff produced 7.8M redispatches/FPS 0 and stays default OFF. A release needs demonstrated continuation/parity, not disabling development interpretation. [SPURS](SPURS.md) narrows actual CPU/ownership findings; [graphics/audio](GRAPHICS_AUDIO.md) owns decoder/renderer seams.
 
-## Normal PLAY load-time boundaries (#11)
+## Load-time observation groundwork (#11)
 
-Method: `scripts/run.py --loadtime-trace` runs the muted native build with the
-observer-only `LOADTIME_TRACE` hook set (vendor/ps3recomp/runtime/diag/loadtime_trace.c).
-It timestamps boot seams (VM allocation, ELF load, service registration, guest entry),
-every acknowledged pad press, file I/O (`cellFsOpen`/`cellFsRead`/`cellFsSdataOpen`),
-sdata/edat decryption, SPU job dispatches (`spu_task_run`, `spu_async`, `spurs_job`,
-`spu_dispatch`), guest waits (`sys_timer_usleep`, `sys_timer_sleep`,
-`sys_event_queue_receive`) and Havok constructor probes. `scripts/analysis/loadtime_report.py`
-groups events into stages between observed boundaries (boot, elf, services, entry,
-each pad press, first presented frame). Presses are written to the owned `pad.txt`
-while watching the window; they are user-acknowledged boundaries, not timed scripts.
-Waits are counted separately from useful work; the observer adds one JSONL line per
-event and is inert unless the environment variable is set.
+`scripts/run.py --loadtime-trace` writes run-local monotonic JSONL events for
+boot, consumed PAD_FILE presses, resource operations, observed SPU dispatch
+windows, Havok hooks and first presentation. Paths are separate JSON fields.
+Wait begin/return records preserve requested arguments, result and measured call
+interval, including host and probe overhead. The interpreter and PPU work are
+not fully covered; nested and concurrent SPU windows must not be summed as
+useful-work wall time. First presentation does not establish visible content.
 
-Measured 2026-10-11, debug builds `94d408a3…` (run A) and `de9aef3b…` (run B),
-decrypted US 1.80 debug ELF, one Windows host (single NVMe, D3D12 window,
-muted audio, `SPU_PM_INTERP=1`, six wedge probes zeroed). Two bounded no-input
-boots, 25,329 and 26,877 traced events:
+The analyzer rejects malformed/nonmonotonic records with line numbers, uses the
+emitted boot vocabulary and preserves descriptor lifetime across stage boundaries.
+Only measured returned waits enter clipped per-thread unions. Unreturned waits,
+trace exhaustion and launcher outcomes are reported separately. Historical
+malformed labels require explicit `--legacy`; frames.csv has a first-present
+relative millisecond clock and cannot anchor a load trace.
 
-| Boundary (no input) | Run A | Run B |
-|---|---|---|
-| Trace span | 242.65 s to Havok fatal 177 | 421.92 s to run bound |
-| Outcome | load failed (fatal 177, labeled failed) | no menu advance, no fatal (labeled no-progress) |
-| Guest cellFsRead work | 10,399 reads, 212.9 MB, 162.5 ms | 2,160 reads, 23.5 MB, 25.3 ms |
-| sdata/edat decrypt | 0 | 0 |
-| SPU job runs | 512 runs, 647.1 ms | 0 |
-| Havok raw constructors | 155 | 28 |
-| Merged guest-wait coverage | 234.30 s / 242.65 s = 96.6% | 409.14 s / 421.92 s = 97.0% |
-| Unblocked wall time | 8.35 s | 12.78 s |
-| Host sampler | CPU mean 284%, disk 0.9 MB/s | CPU mean 208%, disk 0.1 MB/s |
-
-Dominant actionable limit on this configuration: the guest load state machine is
-sleep-paced, not resource-bound. File reads, decryption and SPU jobs together
-cost under 1 s of the 242 s failed load; PPU threads spend about 97% of wall
-time in guest-requested `sys_timer_usleep` (mostly the 16,666 us frame cadence).
-Run A's top resource is `USRDIR/cache_ps3.dat` (211.8 MB of 212.9 MB read).
-Run A reached a race-menu draw signature at about 140 s without input and
-failed during attract-mode race load; run B stayed on an early select screen
-for the full bound, so the no-input path is nondeterministic. The press-driven
-PLAY boundary was not captured in these two runs; historical evidence puts the
-accepted PLAY press at 225 s with fatal at about 323 s. Numbers are per this
-debug build and host; they are not retail performance, and the observer adds
-one JSONL line per event (25,329-26,877 lines over 242-422 s).
+Prior no-input captures recorded under EXE prefixes `94d408a3` and
+`de9aef3b` ended in fatal177 and no-progress
+respectively. Their timeout-only wait logs do not measure blocking. The earlier
+96.6%/97% wait-coverage, unblocked-wall-time and sleep-paced-bottleneck conclusions
+are withdrawn; file-descriptor reuse and partial SPU coverage also invalidate
+cross-resource/useful-work inference. No normal PLAY latency or performance
+benchmark is accepted from these captures. Native boundary validation and the
+benchmark-checklist measurements remain open in #11.

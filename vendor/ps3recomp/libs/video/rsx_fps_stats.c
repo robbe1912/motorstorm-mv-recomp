@@ -11,6 +11,7 @@
 #include "rsx_fps_stats.h"
 
 #include <stdio.h>
+#include "ps3emu/loadtime_trace.h"
 #include <stdlib.h>
 
 #ifdef _WIN32
@@ -175,6 +176,7 @@ void rsx_fps_stats_on_present(void)
 
     now = fps_now_ns();
     if (!s_first_ns) {
+        if (loadtime_on()) loadtime_event("first_present","source=rsx_fps_stats");
         s_first_ns = now;
         s_win_t0 = now;
         fps_csv_open();

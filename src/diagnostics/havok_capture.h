@@ -4,9 +4,9 @@
 #include <windows.h>
 #include <atomic>
 #include <stdlib.h>
+#include "ps3emu/loadtime_trace.h"
 #include <stdio.h>
 #include <string.h>
-#include "ps3emu/loadtime_trace.h"   /* #11 load-stage timing (observer) */
 
 static std::atomic<unsigned> havok_probe_events{0};
 static std::atomic<size_t> havok_probe_bytes{0};
@@ -17,11 +17,13 @@ static thread_local unsigned char* havok_raw_bytes;
 static thread_local size_t havok_raw_length;
 static thread_local uint32_t havok_raw_object;
 static thread_local uint32_t havok_raw_ea;
+static thread_local uint32_t havok_raw_stream;
+static thread_local uint32_t havok_raw_site;
 
 static bool havok_probe_read(uint32_t ea, void* dst, size_t len)
 {
     SIZE_T read = 0;
-    return ea && (uint64_t)ea + len <= 0x100000000ULL &&
+    return (uint64_t)ea + len <= 0x100000000ULL &&
         ReadProcessMemory(GetCurrentProcess(), vm_base + ea, dst, len, &read) && read == len;
 }
 
@@ -33,14 +35,11 @@ static uint32_t havok_probe_word(uint32_t ea)
 }
 
 /* Private diagnostic cache: max four16MiB host buffers, no disk/log on success. */
-static void havok_record_raw_oct10(ppu_context* ctx)
+static void havok_record_raw_oct10(ppu_context* ctx, uint32_t site = 0)
 {
+    (void)site;
+    if (loadtime_on()) { char d[96]; snprintf(d,sizeof d,"site=0x%08X obj=0x%08X",site,(unsigned)ctx->gpr[20]); loadtime_event("havok_raw_ctor",d); }
     havok_raw_length=0;
-    if (loadtime_on()) { char d[128];
-        snprintf(d, sizeof d, "object=0x%08llX ea=0x%08llX lr=0x%08llX",
-                 (unsigned long long)ctx->gpr[20], (unsigned long long)ctx->gpr[31],
-                 (unsigned long long)ctx->lr);
-        loadtime_event("havok_raw_ctor", d); }
     if (!getenv("CAP_HAVOK_DIR")) return;
     uint32_t object=(uint32_t)ctx->gpr[20];
     uint32_t length=havok_probe_word(object+0x20);
@@ -49,13 +48,14 @@ static void havok_record_raw_oct10(ppu_context* ctx)
         havok_raw_bytes=(unsigned char*)malloc(16*1024*1024);
     if (!havok_raw_bytes) return;
     havok_raw_object=object;havok_raw_ea=(uint32_t)ctx->gpr[31];
+    havok_raw_stream=(uint32_t)ctx->gpr[30];havok_raw_site=site;
     if (havok_probe_read(havok_raw_ea,havok_raw_bytes,length)) havok_raw_length=length;
 }
 
 static void havok_probe_dump(FILE* meta, const char* dir, unsigned event,
                              const char* label, uint32_t ea, size_t len)
 {
-    if (!ea || !len || len > 16*1024*1024) return;
+    if (!len || len > 16*1024*1024) return;
     size_t before = havok_probe_bytes.fetch_add(len);
     if (before + len > 128*1024*1024) return;
     unsigned char* bytes = (unsigned char*)malloc(len);
@@ -72,6 +72,7 @@ static void havok_probe_dump(FILE* meta, const char* dir, unsigned event,
 
 static void havok_probe_string(FILE* meta, const char* label, uint32_t ea)
 {
+    if (!ea) { fprintf(meta,"string %s ea=00000000 value=<null>\n",label); return; }
     char str[257] = {};
     for (unsigned i=0; i<256; ++i) {
         if (!havok_probe_read(ea+i, str+i, 1) || !str[i]) break;
@@ -80,13 +81,10 @@ static void havok_probe_string(FILE* meta, const char* label, uint32_t ea)
     fprintf(meta, "string %s ea=%08X value=%s\n", label, ea, str);
 }
 
-static void havok_probe_oct10(ppu_context* ctx, const char* stage)
+static void havok_probe_oct10(ppu_context* ctx, const char* stage, uint32_t site = 0)
 {
-    if (loadtime_on()) { char d[160];
-        snprintf(d, sizeof d, "stage=%s lr=0x%08llX r20=0x%08llX r31=0x%08llX",
-                 stage, (unsigned long long)ctx->lr,
-                 (unsigned long long)ctx->gpr[20], (unsigned long long)ctx->gpr[31]);
-        loadtime_event("havok_stage", d); }
+    (void)site;
+    if (loadtime_on()) { char d[192]; snprintf(d,sizeof d,"stage=%s site=0x%08X ctor=%u",stage,site,havok_probe_id); loadtime_event("havok_stage",d); }
     const char* dir = getenv("CAP_HAVOK_DIR");
     if (!dir || !*dir) return;
     unsigned event = havok_probe_events.fetch_add(1);
@@ -102,10 +100,22 @@ static void havok_probe_oct10(ppu_context* ctx, const char* stage)
     fprintf(f,"stage=%s ctor=%u thread=%lu tick=%llu lr=%08llX\n",stage,havok_probe_id,
             GetCurrentThreadId(),(unsigned long long)GetTickCount64(),ctx->lr);
     for (unsigned i=0;i<32;++i) fprintf(f,"r%u=%016llX\n",i,ctx->gpr[i]);
+    fprintf(f,"observer_site=%08X raw_site=%08X (explicit hook sites, not LR/CIA-derived PCs)\n",site,havok_raw_site);
     if (!strcmp(stage,"fatal177")) {
         fprintf(f,"raw_cache object=%08X ea=%08X length=%zu matches=%d\n",
                 havok_raw_object,havok_raw_ea,havok_raw_length,
                 havok_raw_object==(uint32_t)ctx->gpr[20]);
+        uint32_t object=(uint32_t)ctx->gpr[20];
+        fprintf(f,"resource_id=%08X%08X\n",havok_probe_word(object+0x10),havok_probe_word(object+0x14));
+        fprintf(f,"raw_stream=%08X\n",havok_raw_stream);
+        if (havok_raw_object==object) {
+            havok_probe_dump(f,dir,event,"raw_stream",havok_raw_stream,256);
+            for (unsigned i=0;i<16;++i) {
+                uint32_t ptr=havok_probe_word(havok_raw_stream+4*i);
+                char label[32];snprintf(label,sizeof(label),"stream_ptr%u",i);
+                if (ptr) havok_probe_dump(f,dir,event,label,ptr,256);
+            }
+        }
         if (havok_raw_length && havok_raw_object==(uint32_t)ctx->gpr[20]) {
             char raw_path[1024];
             snprintf(raw_path,sizeof(raw_path),"%s/%04u_pre_relocation_%08X.bin",dir,event,havok_raw_ea);

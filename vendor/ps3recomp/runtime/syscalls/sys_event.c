@@ -290,16 +290,11 @@ void sys_event_queue_cancel_by_id(uint32_t queue_id)
 /* Diagnostic gates polled on every receive (~140k/s in GH3): read once. */
 static int s_ps3_waitbt = -1, s_ydkj_sputask = -1, s_ydkj_spurs_ready = -1, s_ydkj_fakecomplete = -1, s_ydkj_hle_draw = -1;
 
-int64_t sys_event_queue_receive(ppu_context* ctx)
+static int64_t sys_event_queue_receive_untraced(ppu_context* ctx)
 {
     uint32_t queue_id    = LV2_ARG_U32(ctx, 0);
     uint32_t event_addr  = LV2_ARG_PTR(ctx, 1);
     uint64_t timeout_us  = LV2_ARG_U64(ctx, 2);
-    if (loadtime_on() && (timeout_us == 0 || timeout_us >= 10000)) { char d[128];
-        snprintf(d, sizeof d, "q=%u timeout=%llu lr=0x%08llX tid=%llu",
-                 queue_id, (unsigned long long)timeout_us,
-                 (unsigned long long)ctx->lr, (unsigned long long)ctx->thread_id);
-        loadtime_event("wait_event", d); }
     /* PPU_THREADGATE: the creating thread is now blocking -> workers may run
      * (PS3 priority semantics). Their job objects are fully initialized by now. */
     { extern void ydkj_release_pending_threads(void); ydkj_release_pending_threads(); }
@@ -618,6 +613,23 @@ int64_t sys_event_queue_receive(ppu_context* ctx)
 
     return CELL_OK;
 }
+int64_t sys_event_queue_receive(ppu_context* ctx)
+{
+    if (!loadtime_on()) return sys_event_queue_receive_untraced(ctx);
+    const unsigned long long start = loadtime_us();
+    const unsigned long long requested = LV2_ARG_U64(ctx, 2);
+    char detail[224];
+    snprintf(detail,sizeof detail,"start_us=%llu timeout=%llu guest_tid=%llu",start,requested,(unsigned long long)ctx->thread_id);
+    loadtime_event("wait_event_begin",detail);
+    const int64_t result = sys_event_queue_receive_untraced(ctx);
+    if (loadtime_on()) {
+        const unsigned long long end = loadtime_us();
+        snprintf(detail,sizeof detail,"start_us=%llu end_us=%llu dur_us=%llu result=%lld timeout=%llu guest_tid=%llu",start,end,end-start,(long long)result,requested,(unsigned long long)ctx->thread_id);
+        loadtime_event("wait_event_end",detail);
+    }
+    return result;
+}
+
 
 int64_t sys_event_queue_tryreceive(ppu_context* ctx)
 {

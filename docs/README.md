@@ -10,6 +10,7 @@ Each subject has one canonical owner. Begin with [setup and target](BUILDING.md)
 | Failing native resource, controls, reference compatibility | [Havok/reference](research/HAVOK_REFERENCE.md) |
 | Shared PPU/SPU fixes and regression scope | [Runtime](research/RUNTIME.md) |
 | Ownership/CPU spans and allocation chronology | [SPURS](research/SPURS.md) |
+| Per-image SPU provenance, stages and reproducibility | [SPU inventory](research/SPU_INVENTORY.md) |
 | Rendering/video/audio pipeline evidence | [Graphics/audio](research/GRAPHICS_AUDIO.md) |
 | Paused retail starvation and exonerated suspects | [Parked mstream](research/PARKED_MSTREAM.md) |
 | Compiler/cache/symbol research and methods | [Translation](research/TRANSLATION.md) |
