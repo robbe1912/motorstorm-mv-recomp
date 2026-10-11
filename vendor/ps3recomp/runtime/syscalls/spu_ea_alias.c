@@ -87,7 +87,9 @@ uint32_t sysmem_spu_alias_fixup(uint32_t ea)
          * EBOOT .text; the posted queue arena lives at 0x4004xxxx+, so the
          * bit31 mapping is into the sys_memory container arena, not low
          * memory. [mfc-alias] probe in spu_channels.c verifies live. */
-    if (ea < 0x45000000u || ea >= 0x50000000u) return ea;
+    /* Registration determines the valid alias extent; larger allocation
+     * arenas may place a registered primary above the old 0x50000000 end. */
+    if (ea < 0x45000000u) return ea;
     uint32_t prim = ea - 0x05000000u;
     if (spu_alias_in_table(prim) && !spu_alias_in_table(ea)) return prim;
     return ea;

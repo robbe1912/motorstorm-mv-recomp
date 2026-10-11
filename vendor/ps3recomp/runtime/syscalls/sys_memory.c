@@ -25,7 +25,9 @@ uint32_t g_sys_mem_bump_ptr = 0;
  * against an RPCS3 boot log of Yakuza: Dead Souls); the window is outside
  * the pre-committed main region, so pages are committed on demand. */
 #define SYS_MEM_ALLOC_BASE  0x40000000u
-#define SYS_MEM_ALLOC_END   0x50000000u
+/* Alias collision gaps consume virtual addresses, not user memory. Keep
+ * sufficient VA space for the advertised physical pool and its alias gaps. */
+#define SYS_MEM_ALLOC_END   0x60000000u
 
 static uint32_t s_total_allocated = 0;
 
@@ -81,6 +83,13 @@ int64_t sys_memory_allocate(ppu_context* ctx)
         return (int64_t)(int32_t)CELL_EINVAL;
 
     bump_lock();
+
+    /* The larger VA arena must not increase the physical memory budget. */
+    if (s_total_allocated > SYS_MEM_USER_TOTAL ||
+        size > SYS_MEM_USER_TOTAL - s_total_allocated) {
+        bump_unlock();
+        return (int64_t)(int32_t)CELL_ENOMEM;
+    }
 
     /* Initialize bump pointer on first call */
     if (g_sys_mem_bump_ptr == 0)

@@ -24,4 +24,19 @@ Keep new ps3recomp work on branches in [our fork](https://github.com/robbe1912/p
 
 For upstream submission, prepare a small reviewable cherry-pick of the validated fix and ask the user before opening the PR. Existing upstream PRs are context, not authorization to open or reopen one. PR233 remains closed. Keep proprietary inputs and captures private throughout this workflow.
 
+Memory-capacity trial: selected13-line runtime change from our fork commit
+`dcd6f48e881d2d44190f19ed4d63a3319b629a72`, branch
+[codex/memory-pool-capacity](https://github.com/robbe1912/ps3recomp/tree/codex/memory-pool-capacity).
+It enlarges virtual placement space without raising the213MiB physical budget
+and resolves aliases by registration above the old arena end. The local
+collision-guard dependency was already present; unrelated upstream ABI and
+fallback changes were excluded. The synthetic fixture is authored source,
+derived from that fork's test, and exercises the real VM/syscall component.
+`python scripts/check_memory_capacity.py` records source/binary hashes and
+red/green results without game inputs. Windows passed; remote/Linux checks
+and native trial acceptance are pending. See [executed evidence](research/HAVOK_REFERENCE.md#executed-guest-malloc-failure-2026-10-11).
+Inherited bump reclamation, alias registration lifecycle/32-entry capacity
+and commit-failure accounting limits remain; this trial does not claim to
+correct those contracts. No external PR was opened.
+
 No releases/binaries/dependencies are redistributed by the initial source commit. A separate distribution needs its own complete component/license audit.
