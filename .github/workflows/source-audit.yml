@@ -19,3 +19,4 @@ jobs:
         with:
           python-version: '3.12'
       - run: python scripts/check_havok_observer.py
+      - run: python scripts/check_bike_observer.py

@@ -6,13 +6,24 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
-#include <atomic>
+#include <mutex>
+#include <map>
+#include <string>
+#include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
 
-static std::atomic<unsigned> bike_probe_events{0};
+/* One ledger across translation units; all mutations are protected. */
+struct bike_probe_ledger {
+    std::mutex mutex;
+    std::map<std::string, unsigned> stages;
+    unsigned events = 0;
+    bool armed_reported = false;
+    bool full_reported = false;
+};
+inline bike_probe_ledger bike_probe_counts;
 
 static bool bike_probe_read(uint32_t ea, void* dst, size_t len)
 {
@@ -56,31 +67,41 @@ static void bike_probe_dump(FILE* f, const char* label, uint32_t ea, size_t len)
 }
 
 /* Entry probe: one file per event, registers plus selected argument memory.
- * keep_bytes limits per-event guest dumps so long runs stay bounded. */
+ * Per-stage and global quotas bound output; exhaustion is explicit. */
 static void bike_probe_entry(ppu_context* ctx, const char* stage)
 {
     const char* dir = getenv("CAP_BIKE_DIR");
-    static bool armed_reported = false;
-    if (!armed_reported) {
-        armed_reported = true;
-        fprintf(stderr, "[DEBUG-bike-oct11] armed dir=%s\n", dir && *dir ? dir : "(unset)");
+    if (!dir || !*dir || !ctx || !stage || !*stage) return;
+    /* Operators create this marker before an observed selection input. Direct
+     * users may omit it to capture from boot; no wall-time guess gates events. */
+    const char* arm = getenv("CAP_BIKE_ARM_FILE");
+    if (arm && *arm && GetFileAttributesA(arm) == INVALID_FILE_ATTRIBUTES) return;
+    unsigned event;
+    {
+        std::lock_guard<std::mutex> lock(bike_probe_counts.mutex);
+        auto& ledger = bike_probe_counts;
+        if (!ledger.armed_reported) {
+            ledger.armed_reported = true;
+            fprintf(stderr, "[DEBUG-bike-oct11] armed dir=%s\n", dir);
+        }
+        if (ledger.events >= 1024 ||
+            (ledger.stages.size() >= 32 && !ledger.stages.count(stage))) {
+            if (!ledger.full_reported) {
+                ledger.full_reported = true;
+                fprintf(stderr, "[DEBUG-bike-oct11] global capture budget reached\n");
+            }
+            return;
+        }
+        unsigned& count = ledger.stages[stage];
+        if (count >= 64) return;
+        if (++count == 64)
+            fprintf(stderr, "[DEBUG-bike-oct11] stage=%s capture budget reached\n", stage);
+        event = ledger.events++;
     }
-    if (!dir || !*dir) return;
-    /* High-frequency resource stages fire all through boot; late-gate them to
-     * the observed selection-screen window so rare stages keep their slots. */
-    static ULONGLONG boot_tick = GetTickCount64();
-    bool frequent = !strcmp(stage,"rsload") || !strcmp(stage,"rsfind");
-    if (frequent && GetTickCount64() - boot_tick < 240000) return;
-    unsigned event = bike_probe_events.fetch_add(1);
-    if (event>=1024) return;
-    static unsigned stage_seen[16];
-    unsigned slot = (unsigned)(stage[0] | (stage[1]<<8));
-    slot &= 15;
-    if (++stage_seen[slot] > 64) return;
     char path[1024];
     snprintf(path,sizeof(path),"%s/%04u_%s.txt",dir,event,stage);
     FILE* f=fopen(path,"wb");
-    if (!f) return;
+    if (!f) { fprintf(stderr,"[DEBUG-bike-oct11] capture fopen failed path=%s errno=%d\n",path,errno); return; }
     fprintf(f,"stage=%s thread=%lu tick=%llu lr=%08llX\n",stage,
             GetCurrentThreadId(),(unsigned long long)GetTickCount64(),ctx->lr);
     for (unsigned i=0;i<32;++i) fprintf(f,"r%u=%016llX\n",i,ctx->gpr[i]);
@@ -101,7 +122,8 @@ static void bike_probe_entry(ppu_context* ctx, const char* stage)
         /* SceneObjectResource base resource fields after the fact. */
         bike_probe_dump(f,"resourcesystem",(uint32_t)ctx->gpr[4],64);
     }
-    fclose(f);
+    if (ferror(f)) fprintf(stderr,"[DEBUG-bike-oct11] capture write failed path=%s\n",path);
+    if (fclose(f)) fprintf(stderr,"[DEBUG-bike-oct11] capture close failed path=%s errno=%d\n",path,errno);
     fprintf(stderr,"[DEBUG-bike-oct11] event=%u stage=%s\n",event,stage);
 }
 

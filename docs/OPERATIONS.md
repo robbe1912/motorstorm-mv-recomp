@@ -39,3 +39,13 @@ RSX_CAP=start:count:interval plus RSX_CAP_DIR retains manifests/backbuffer/targe
 Historical tools of the parked retail lane stay archived with that lane in [parked mstream](research/PARKED_MSTREAM.md); they may hardcode old paths, so inspect and rebase them into a fresh ignored experiment directory before use. Current run.py is the supported launcher. Match guest vm_base/ELF before memory dumping.
 
 Close with actual observations, hashes/identities, limitations and cleanup. Stop only owned processes, preserve artifacts, remove deliberate temporary hooks with matching installer/source assertions, kill native before needed relink and record new identity. Five capture hooks remain unless a deliberate clean-build unit removes/verifies them. [Source coverage](SOURCE_COVERAGE.md) records overwritten-log caveats.
+
+
+Bike observer groundwork (#24): `python scripts/run.py --capture-bike` creates
+an owned `bike/` output directory and records `CAP_BIKE_ARM_FILE` in launch.json.
+After observing the selection screen, create that run's `bike/arm.txt` before the
+next acknowledged input. This replaces a fixed boot-time cutoff. The selected
+private generated tree must already contain validated entry probes; this profile
+does not install them. Per-stage quotas are independent and exhaustion is logged.
+Synthetic observer checks cover disabled output, capture gating and quotas;
+normal-menu geometry/material capture and the bike render remain unverified.
