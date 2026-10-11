@@ -32,8 +32,9 @@ static uint32_t havok_probe_word(uint32_t ea)
 }
 
 /* Private diagnostic cache: max four16MiB host buffers, no disk/log on success. */
-static void havok_record_raw_oct10(ppu_context* ctx)
+static void havok_record_raw_oct10(ppu_context* ctx, uint32_t site = 0)
 {
+    (void)site;
     havok_raw_length=0;
     if (!getenv("CAP_HAVOK_DIR")) return;
     uint32_t object=(uint32_t)ctx->gpr[20];
@@ -74,8 +75,9 @@ static void havok_probe_string(FILE* meta, const char* label, uint32_t ea)
     fprintf(meta, "string %s ea=%08X value=%s\n", label, ea, str);
 }
 
-static void havok_probe_oct10(ppu_context* ctx, const char* stage)
+static void havok_probe_oct10(ppu_context* ctx, const char* stage, uint32_t site = 0)
 {
+    (void)site;
     const char* dir = getenv("CAP_HAVOK_DIR");
     if (!dir || !*dir) return;
     unsigned event = havok_probe_events.fetch_add(1);
