@@ -4,9 +4,9 @@
 
 Normal PLAY has reached original HavokResource line 177: “Could not find physics or animation data in root level object”, followed by sys_process_exit(0). This is failed gameplay. SELECT A BIKE showed MOHAWK/INDIANA with malformed art/no model before black submitted frames. No proof that SPU, PVS, schema or a default bike caused this fatal.
 
-The migrated native run starting at 2026-10-10T21:50:51Z identified resource **000a8a45293a530c**, object 4E0860F0, raw length 42480, allocation/raw EA 0, root 360 and an empty lookup result. The observer rejected EA 0, so this run contains no pre-relocation raw dump. LR 72F180 was stale and is not a current PC. The read-only observer now accepts bounded readable EA 0, retains the raw stream and records explicit hook sites; its synthetic Windows regression fails with the old header and passes with the correction. This repairs evidence collection, not gameplay. Live same-resource raw equality remains pending in [#1](https://github.com/robbe1912/motorstorm-mv-recomp/issues/1).
+The migrated native run starting at 2026-10-10T21:50:51Z identified resource **000a8a45293a530c**, object 4E0860F0, raw length 42480, allocation/raw EA 0, root 360 and an empty lookup result. The observer rejected EA 0, so this run contains no pre-relocation raw dump. LR 72F180 was stale and is not a current PC. The read-only observer now accepts bounded readable EA 0, retains the raw stream and records explicit hook sites; its synthetic Windows regression fails with the old header and passes with the correction. This repairs evidence collection, not gameplay. The later native pairing below supersedes the raw-equality gap; [#1](https://github.com/robbe1912/motorstorm-mv-recomp/issues/1) retains its identity/PC audit.
 
-Independent launch-US archive decoding found one matching index entry, `animations/havok_000a8a45293a530c.evo`: name hash 47D76482, decompressed offset 2631156092, container 42504 bytes. Chunks 80296/80297 start at compressed offsets 1354934368/1354953475, lengths 19107/18251, each decoding 32768 bytes. EVOSBIG resource ID is at +8, flags 10000 at +16, declared length 42480 at +20, raw at +24. Container SHA256 fdaef4b18082337b1a1e5bb1752f730f6565d3e4a32f7eea487318c7fa3e10f3; raw SHA256 24256e3c1ca78d7fb13219cf840307e5128dfe319528a77eb30777a723bc2182. Havok 4.1.0-r1/v4/layout [4,0,1,1], root hkRootLevelContainer at 360. Payloads remain private; [#2](https://github.com/robbe1912/motorstorm-mv-recomp/issues/2) owns extraction provenance and the pending native pairing.
+Independent launch-US archive decoding found one matching index entry, `animations/havok_000a8a45293a530c.evo`: name hash 47D76482, decompressed offset 2631156092, container 42504 bytes. Chunks 80296/80297 start at compressed offsets 1354934368/1354953475, lengths 19107/18251, each decoding 32768 bytes. EVOSBIG resource ID is at +8, flags 10000 at +16, declared length 42480 at +20, raw at +24. Container SHA256 fdaef4b18082337b1a1e5bb1752f730f6565d3e4a32f7eea487318c7fa3e10f3; raw SHA256 24256e3c1ca78d7fb13219cf840307e5128dfe319528a77eb30777a723bc2182. Havok 4.1.0-r1/v4/layout [4,0,1,1], root hkRootLevelContainer at 360. Payloads remain private; [#2](https://github.com/robbe1912/motorstorm-mv-recomp/issues/2) closed after the native pairing below.
 
 The rebuilt observer's latest muted run reached normal PLAY, SELECT A RACE and MOHAWK INDIANA through observed screens/acknowledged input. Screenshots show absent ticket artwork and vehicle model, malformed UI and a black background. After the race-start press, the screen stopped advancing; logs repeatedly reported the PVS wait. Two read-only 256-byte snapshots at 40044480 were identical, not an instruction trace or root-cause proof. The owned run was explicitly stopped at 466.562s with no Havok capture or fatal reproduced. EXE SHA256 627f27bd2c03c8cec5c496bb8b9373630e916a7ec339396537ce0d0b8f6b1195 has a matched PDB; this is failed gameplay and inconclusive live observer verification. Neither #1 nor #2 is closed.
 
@@ -70,5 +70,68 @@ is zero instead of expected370. Post-state SHA256
 `b0c44c6a129dba13cee54f2cf399ba16748d023ceabc9ba8906f1c5239825baa`.
 This is the earliest captured post-load difference, not the first diverging
 operation: relocation, finishing and later mutation remain unseparated.
-[#3](https://github.com/robbe1912/motorstorm-mv-recomp/issues/3) owns that
-boundary. No selected-bike asset or known-good control was substituted.
+[#5](https://github.com/robbe1912/motorstorm-mv-recomp/issues/5) owns the native
+operation boundary; [#3](https://github.com/robbe1912/motorstorm-mv-recomp/issues/3)
+owns the working reference capture/mapping. No selected-bike asset or known-good
+control was substituted.
+
+## Same-resource retail reference, 2026-10-11
+
+The user created `BCUS98137_1_0.SAVESTAT.zst` in an isolated, muted retail
+RPCS3 20273-987129bc instance using the original launch-US EBOOT.BIN and disc.
+The state is 146382246 bytes, SHA256
+`8cd2f328f6c6df864d26618f922c299ad3a55456cc7c4e9a5d27861247b6d686`.
+RPCS3 EXE SHA256
+`15f18e910b7368bf6ed5ff91e88ff1a5f6d8faf0c9d952385863cd3bba360f6d`;
+pristine configuration/input manifest SHA256
+`1ad3bfcb954cbfaf8137903a173fd9151f585ea22d1585d9342dd29919af00e9`.
+Writable VFS/HDD/save paths stay in the cloned instance. No packs were quarantined.
+The reference ELF SHA256 is
+`8e0abf4f611752f74f0f726f77f25e7bfef043c964451b96cffe5cf2089f3886`;
+encrypted EBOOT.BIN SHA256 is
+`c468f959ed291f79e0b1563be59e1b812d60bb61846cbede4f352f70a748cfb0`.
+
+The first state was saved before debugger attachment. A later save attempt with
+the observer connected stalled RPCS3's GDB shutdown; the owned process aborted
+at 186.453 s, host 0xC0000409. No armed constructor trap was captured. The
+first reload also failed while an owned CLI-help process held the instance.
+Both failed trials are retained. Successful `savestate-replay2` launched the
+original state as PID19804/create_time1791728988.1404953, without a debugger.
+The 600 s/resource guards remained active. These failures are tooling evidence,
+not guest fatal177 or a successful stage trace.
+
+A read-only live census validated guest base 0x300000000 against original
+retail bytes at guest10000, scanned 401612800 readable bytes in 0.906 s, and
+found one resource-shaped ID match with length42480: object59419E90,
+packfile5945CAB0. A later bounded snapshot found root5945CE10, variants5945CE20,
+one hkAnimationContainer variant and lookup result+8=5945CE70. Packfile hashes
+before/after those unpaused reads were identical:
+`a7d44827af90d0bdfe7719f60cebc21cd8b816685bb38ca3b43b1d96d7fccb6e`.
+Header and all original section fixup/trailer regions equal the independently
+extracted native raw span. All 315 local/global pointer expectations match
+this retail base; native matches257 and differs58. The captured retail root
+variants pointer and animation lookup are populated where native is zero.
+
+Static original PT_LOAD descriptors identify these reader slots. The retail
+three-slot table is unique in the audited image. The native fatal reader's
+vtable matches the debug table; no live retail reader object was captured.
+
+| Slot | Meaning | Debug code / descriptor | Retail code / descriptor |
+| --- | --- | --- | --- |
+| 14 | getContents | A158A8 / E6D758 | 99253C / DDC100 |
+| 28 | getPackfileData | A0A6E4 / E6D348 | 987378 / DDBCF0 |
+| 2C | loadEntireFileInplace | A0C09C / E6D468 | 988D30 / DDBE10 |
+
+Debug vtable1006D9C8/reader TOCE9A128 maps to retail1006CD78/TOCE08F7C.
+Existing constructor/reader instruction comparisons above remain scoped to
+their measured displacement differences; full referenced callee/data parity
+is unproved. These snapshots are post-load retained objects, not equivalent
+entry/return traps or reference pre-relocation raw bytes. They establish the
+same-resource final pointer/lookup difference, not whether native skipped
+relocation or later cleared the fields. #3 stays open for those live operation
+boundaries. No native gameplay, fix or performance acceptance follows.
+
+Private evidence lives under `temp/issue3-reference`: `reader-map.json`,
+`savestate-identity.json`, per-trial launch/final/resource logs, and replay2's
+`census/report.json`, `loaded/report.json`, `fixup-comparison.json`. Source
+observers, savestate, logs and payloads remain ignored.
