@@ -46,7 +46,7 @@ int main(int argc,char** argv) {
  memcpy(vm_base+256,"synthetic bike observer",24);
  ctx.gpr[4]=256;ctx.gpr[5]=512;
  unsigned char before[65536];memcpy(before,vm_base,sizeof before);ppu_context prior=ctx;
- fixture_tick=240001;
+ fixture_tick=1;
  for(int i=0;i<64;++i)bike_probe_entry(&ctx,"rsload");
  other_tu_probe(&ctx);
  bike_probe_entry(&ctx,"rsfind");bike_probe_entry(&ctx,"vpfn");
