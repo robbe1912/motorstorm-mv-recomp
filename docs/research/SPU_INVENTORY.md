@@ -1,6 +1,6 @@
 # SPU image inventory
 
-The private baseline registers 24 SPU images (see [operations](../OPERATIONS.md)). This page records each image by non-payload identity, byte provenance, producing stage and clean-checkout status. Issue [#28](https://github.com/robbe1912/motorstorm-mv-recomp/issues/28) requested this matrix. Follow-ups for the missing stages: [#36](https://github.com/robbe1912/motorstorm-mv-recomp/issues/36), [#37](https://github.com/robbe1912/motorstorm-mv-recomp/issues/37), [#38](https://github.com/robbe1912/motorstorm-mv-recomp/issues/38).
+The private baseline contains 24 SPU image variants; 22 are enabled and the two duplicate named MP3 registrations (220/221) are commented out (see [operations](../OPERATIONS.md)). This page records each image by non-payload identity, byte provenance, producing stage and clean-checkout status. Issue [#28](https://github.com/robbe1912/motorstorm-mv-recomp/issues/28) requested this matrix. Follow-ups for the missing stages: [#36](https://github.com/robbe1912/motorstorm-mv-recomp/issues/36), [#37](https://github.com/robbe1912/motorstorm-mv-recomp/issues/37), [#38](https://github.com/robbe1912/motorstorm-mv-recomp/issues/38).
 
 Setup facts, generation commands and the no-clean-clone caveat live in [building](../BUILDING.md). SPURS ownership evidence lives in [SPURS](SPURS.md). Method cautions live in [translation](TRANSLATION.md).
 
@@ -14,7 +14,7 @@ Identities were cross-checked on 2026-10-11 against these private artifacts (rea
 - Captures: `temp/legacy/recomp/out/debug_feasibility/spu_staged_miss_*.bin`.
 - Byte-derived fingerprints were recomputed with the FNV-1a-64 implementations the runtime uses.
 
-The debug EBOOT names every embedded image in its own symtab. Guest EA and file offset pairs for embedded images: EA = 0x10000000 + file offset.
+The named debug EBOOT symbol table identifies embedded inputs. Derive guest EAs from the containing ELF PT_LOAD: guest EA = segment virtual address + file offset - segment file offset. For example, file offset 0x00FC5E00 lies in the segment at file 0x00EF0000 / guest 0x10060000 and maps to guest 0x10135E00.
 
 ## Stage classes
 
@@ -27,7 +27,7 @@ The debug EBOOT names every embedded image in its own symtab. Guest EA and file 
 
 ## Image matrix
 
-Entry values are absolute local-store addresses (link base plus module entry offset). "Whole" is the FNV-1a-64 over the full image; "text" over the executable PT_LOAD; "staged" over the exact byte span the runtime fingerprints (job images: image minus the 0x20-byte trailer; DSP: staged PT_LOAD slice).
+Entries are absolute local-store addresses. For codec and DSP stage probes, add the lift base to the registered module-relative entry offset; unrelocated module entries have base zero. "Whole" is the FNV-1a-64 over the full image; "text" over the executable PT_LOAD; "staged" over the exact byte span the runtime fingerprints (job images: image minus the 0x20-byte trailer; DSP: staged PT_LOAD slice).
 
 | Id | Image | Size (B) | Entry | Lift base | Identity (FNV-1a-64) | Byte source | Stage | Clean checkout |
 |---|---|---|---|---|---|---|---|---|
@@ -36,13 +36,13 @@ Entry values are absolute local-store addresses (link base plus module entry off
 | 3 | `spu_0002_policy_10135e00` (jobmanager PM) | 11372 | 0x0A00 | 0 | whole DF936AC685721F53, text C042E76A9A90E5BF | EBOOT file [0x00FC5E00, +11120) template plus 16 zero bytes, `_binary_jobmanager_file_start`, guest EA 0x10135E00 | B | bytes derivable; wrap/lift private ([#36](https://github.com/robbe1912/motorstorm-mv-recomp/issues/36)) |
 | 9 | `flashATRAC` | 35131 | 0x90 | 0 | whole 43E2420C4A0F57D5, text 4787E96D1AC1C41A | firmware `dev_flash/sys/external/flashATRAC.pic` | C | needs firmware input ([#37](https://github.com/robbe1912/motorstorm-mv-recomp/issues/37)) |
 | 10 | `flashMP3` | 69695 | 0x74A0 | 0 | whole C3EDFB0022BEBEF5, text DC18E4EBD06A8047 | firmware `dev_flash/sys/external/flashMP3.pic` | C | needs firmware input ([#37](https://github.com/robbe1912/motorstorm-mv-recomp/issues/37)) |
-| 11 | `flashATRAC_b32880` | 35131 | 0x90 | 0x32880 | text 4787E96D1AC1C41A (probe) | same bytes as id 9 | C | needs firmware input |
-| 12 | `flashATRAC_b33880` | 35131 | 0x90 | 0x33880 | text 4787E96D1AC1C41A (probe) | same bytes as id 9 | C | needs firmware input |
-| 13 | `flashATRAC_b2F780` | 35131 | 0x90 | 0x2F780 | text 4787E96D1AC1C41A (probe) | same bytes as id 9 | C | needs firmware input |
+| 11 | `flashATRAC_b32880` | 35131 | 0x32910 | 0x32880 | text 4787E96D1AC1C41A (probe) | same bytes as id 9 | C | needs firmware input |
+| 12 | `flashATRAC_b33880` | 35131 | 0x33910 | 0x33880 | text 4787E96D1AC1C41A (probe) | same bytes as id 9 | C | needs firmware input |
+| 13 | `flashATRAC_b2F780` | 35131 | 0x2F810 | 0x2F780 | text 4787E96D1AC1C41A (probe) | same bytes as id 9 | C | needs firmware input |
 | 14 | `mstream_dsp_dbg_compressor` | 3328 (PT_LOAD) | 0x90 | 0 | whole 587D22C114B9C1C0 (rebuilt .pic), staged 3F57764801E41780 | capture `spu_staged_miss_2F010.bin`, LS window [0x2EC10, 0x37010) | D | capture-only ([#38](https://github.com/robbe1912/motorstorm-mv-recomp/issues/38)) |
 | 15 | `mstream_dsp_dbg_reverb` | 8576 (PT_LOAD) | 0xA0 | 0 | whole D8649C39710A04DE (rebuilt .pic), staged 9D123B5450D8248F | same capture window | D | capture-only ([#38](https://github.com/robbe1912/motorstorm-mv-recomp/issues/38)) |
-| 20 | `mstream_dsp_dbg_compressor_b2EF80` | 3328 | 0x4B0 primary | 0x2EF80 | staged 3F57764801E41780 (probes at module +0x4B0/+0x888/+0x90/+0x3C0) | same bytes as id 14 | D | capture-only |
-| 21 | `mstream_dsp_dbg_reverb_b2FD00` | 8576 | 0xA0 | 0x2FD00 | staged 9D123B5450D8248F (probe) | same bytes as id 15 | D | capture-only |
+| 20 | `mstream_dsp_dbg_compressor_b2EF80` | 3328 | 0x2F430 primary | 0x2EF80 | staged 3F57764801E41780 (probes at module +0x4B0/+0x888/+0x90/+0x3C0) | same bytes as id 14 | D | capture-only |
+| 21 | `mstream_dsp_dbg_reverb_b2FD00` | 8576 | 0x2FDA0 | 0x2FD00 | staged 9D123B5450D8248F (probe) | same bytes as id 15 | D | capture-only |
 | 210 | `jobmod_056ac0eea1a6_e12270` (spupvs) | 75360 | 0x16270 | 0x4000 | staged 1D912920D52B9FE0; 958 funcs | EBOOT file [0x00F76F80, +75360) | B | bytes derivable; extractor private ([#36](https://github.com/robbe1912/motorstorm-mv-recomp/issues/36)) |
 | 211 | `jobmod_0c12886b2f86_e2100` (spuconstraints) | 9008 | 0x6100 | 0x4000 | staged B103D0BED870FD18; 143 funcs | EBOOT file [0x00F4EB00, +9008) | B | bytes derivable; extractor private |
 | 212 | `jobmod_16b664ad80c1_e7850` (spuvertexbuffer) | 31376 | 0xB850 | 0x4000 | staged BCAE4F4D8FE977EE; 315 funcs | EBOOT file [0x00F6F500, +31376) | B | bytes derivable; extractor private |
@@ -65,11 +65,11 @@ Notes on the matrix:
 
 ## Deduplication
 
-The 24 registrations carry 17 unique byte streams: two embedded SPU ELFs, one PM template, two firmware codecs, two captured DSP modules and ten job binaries. Duplicate registrations by design: 9=11=12=13, 14=20, 15=21, 217=221, 218=220.
+The 24 inventoried variants carry 17 unique byte streams (22 variants are enabled): two embedded SPU ELFs, one PM template, two firmware codecs, two captured DSP modules and ten job binaries. Duplicate registrations by design: 9=11=12=13, 14=20, 15=21, 217=221, 218=220.
 
 ## Missing images
 
-Four debug-vintage DSP modules have no bytes anywhere: mstream_dsp distortion, eq, filter and IR. The interpreter serves them. They gain images only through the capture stage in [#38](https://github.com/robbe1912/motorstorm-mv-recomp/issues/38).
+Four debug-vintage DSP modules were not recovered in the audited private inputs: mstream_dsp distortion, eq, filter and IR. Interpreter fallback is available; this inventory does not prove their execution. They gain images only through the capture stage in [#38](https://github.com/robbe1912/motorstorm-mv-recomp/issues/38).
 
 ## What a clean checkout reproduces
 
