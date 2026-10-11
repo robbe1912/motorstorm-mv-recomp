@@ -63,3 +63,131 @@ The bike observer recorded rsfind 64 (quota reached), dynsel 2, vpfn 2,
 vvinv 1, ral 1 and vtload 1 after arming. These entry snapshots do not prove
 geometry/material completion. Screenshots still show malformed race
 selection and missing bike art/model. Issues #20 through #24 remain open.
+
+## Launch-US ticket asset correlation (2026-10-11, issue 22)
+
+The launch-US `cache_ps3.txt` indexes 446 RPKs: 333 vehicles, 104 characters
+and 9 worlds. Menu resources are separately indexed under `guiscenes` as
+RIB/EVO records; the loose `gui` directory contains videos. Native runs use
+the original packed disc. Selective offline extraction identifies original
+resources for comparison; it does not supply replacements to the runtime.
+There is no evidence that loose menu RPK extraction is required for the
+verified ticket texture below.
+
+### Active scene and correction of the initial bundle assumption
+
+The actual requested scene is `festival_scene.rib`, root
+`000FD77BC5804123`, with artwork in `festival_meshes.rib` (235 resources).
+The scene has 82 dependency references into that meshes bundle and none into
+`festival_ticket_meshes.rib`. The similarly named `festival_ticket_scene.rib`
+(root `000F60A177731E8A`) and its 393-resource meshes bundle are separate
+resources. Their first-tier IDs `0005E28A0ABE2C26`, `00056C421655E9B0` and
+`00050528923763DA` were the initial observer targets; they do not identify
+this visible screen's active ticket artwork.
+
+Read-only scans found all 38 pixel IDs and all 357 distinct nonpixel IDs from
+those separate festival-ticket bundles, qualified by exact ID, type, indexed
+size and dependency count. Most resource pointers were zero; shared resources
+had nonzero pointers. These are valid observations of that separate bundle,
+but they do not establish failed publication for the active scene. Likewise,
+its textures' absence from later committed RSX memory or 39 selected source
+spans does not explain the visible defect. A guessed contiguous 393-row span
+failed its ID comparison and was rejected.
+
+The version 3 parser validates EVOSBIG, version 30000, the 11111111 header,
+resource/type/dependency totals, names and sizes, and the exact 99999999/EOF
+boundary. All 59 extracted scene/bundle RIBs and the active festival meshes
+RIB passed. The [Nenkai template](https://github.com/Nenkai/010GameTemplates/blob/fadbd2d123011dc8edbea12097aa2bc378dd3b72/Evolution%20Studios/RPK_ResourcePack.bt)
+targets later versions and serves only as a type-name reference. Original
+bytes and parser outputs remain in ignored `temp/issue22-assets`.
+
+### Native observations
+
+Three muted runs used matching launch-US disc data and debug ELF SHA256
+`3e68c72f8fbd6a30ef30d4535462cf70f1cc86d111f56574adb7dd2c255e0706`.
+The user navigated each to SELECT A RACE. No agent input, focus changes or
+desktop captures were used; a run-local marker armed existing internal RSX
+frame capture.
+
+| Run | Native EXE SHA256 | Saved frame |
+|---|---|---:|
+| 20261011T212653.400190Z | bd6e08305f68ac162338427b3c2c30d5786cd7f756ee8212ebe82c69eabdbf0b | 13924 |
+| 20261011T214142.477860Z | e73b19a10a0339e454c37078300f2e478e68de4312683972e3bc555fdaf4d44a | 1520 |
+| 20261011T215220.284090Z | a21bba4ce80f74749259daa4ddf72113a7febf3ef6edfb110cc6e92db5a7ed4e | 8757 |
+
+The saved 1280x720 SELECT A RACE backbuffers reproduce text, broad diagonal
+bands and no recognizable tickets. Each manifest records 349 operations.
+The observed 1536x1280 target at 00D00000 is almost entirely black. Operations,
+submitted frames and window readiness do not prove successful rendering or
+minimum 60 FPS.
+
+The third run's bounded request observers recorded 366 events: 178
+RequestInternal entries (812280), 178 request-constructor entries (833288)
+and 10 LoadInternal entries (81CC74). No unreadable ID or 4096-event quota
+was reported. Actual festival root FD77BC5804123 was requested twice;
+carselect root F9D61093BF3BD was requested once, with caller PC 499578.
+The separate festival-ticket root F60A177731E8A was unrequested. Entry events
+prove requests, not completion. Filtering covered the initial bundle IDs and
+root scene/collection/RIB types; active pixel IDs were identified later, so
+absence from this request trace cannot judge their loading.
+
+### Verified active texture reaches native RSX memory
+
+| Active resource | ID | EVO size | Payload format and dimensions |
+|---|---|---:|---|
+| T1_in_at_the_deep_end_DXT1.dds | 0005A486D144C3CC | 1048619 | PixelFormat 10 / DXT3, 1024x1024 |
+| T1_in_at_the_deep_end_n_v2.dds | 0005E8D66BAFCF8C | 524331 | PixelFormat 9 / DXT1, 1024x1024 |
+
+The diffuse filename's DXT1 label is not its serialized format. Its EVO
+header specifies PixelFormat 10, and its 1048576-byte payload begins at
+file offset 43. That entire payload equals native guest source C4AEAC80 in
+independent later reads from both the first and third runs, SHA256
+`945daa01b6e5abed7f459fd4c5cfaea00805469baf491d25b2242c7d25227660`.
+The first run's C4BEAC80 source also equals the complete 524288-byte normal
+payload, SHA256
+`35093e1dda632ba530206c538ab8b68d70a96987f8221948f7cc011d33bae297`.
+
+Third-run frame 8757 op022/op023 bind C4AEAC80 as 1024x1024 RSX format 87
+(DXT3), matching that diffuse EVO header. They draw 762 vertices into
+00D00000 with fragment program 04C6AC81 and vertex-program cache slot 17.
+This supplies a concrete active-ticket texture/source/draw correlation.
+Later source reads are non-atomic and bound state is not proof of sampling,
+GPU view contents, decoded pixels or successful rasterization. It rules out
+an archive extraction/upload-byte failure for this identified source; it does
+not exonerate every asset or the remaining rendering stages.
+
+### Next distinguishing observation and probe limits
+
+Issue [22](https://github.com/robbe1912/motorstorm-mv-recomp/issues/22) remains
+open. Rank the next hypotheses for the verified Deep End draw:
+
+1. Vertex/index fetch or transformation produces invalid geometry. Capture
+   raw indices, vertex descriptors and inputs for op022/op023 and correlate
+   them with the mesh resource and exact bound vertex program.
+2. Fragment-program inputs/constants or texture sampling differ from the
+   intended draw. Capture bind-time shader bytes, constants and sampled units
+   for 04C6AC81, then verify the view's decode/remap against the EVO header.
+3. Correct draw output is lost through target/depth/cull/composition state.
+   Follow that draw's output through 00D00000 to the final backbuffer.
+
+FP_PICK=03A71FC1 captured constants and six positions for other draws;
+one extreme position is a lead, not proof about the verified Deep End draw.
+Early compiled shader files are not bind-time identity because program
+addresses can be recycled. Both constructor observers produced no RIB
+snapshots; executed entry/return coverage remains unproved. Construction-time
+Find nulls and capped upload observers' silence are not load-failure verdicts.
+
+First-run closure used the 600s guard. The second and third runs used owned
+stop markers; guard return code 1 is not a gameplay verdict. The first two
+wrappers restored ordinary generated selection and rebuilt successfully.
+A third wrapper scope NameError stopped before process creation; the corrected
+launcher ran the SHA-validated private diagnostic EXE independently of the
+restored ordinary build. All 62 ordinary generated source hashes remain
+unchanged. Probes, generated copies, extracted payloads, dumps and captures
+stay ignored. No rendering fix or acceptance claim resulted from this unit.
+
+Earlier C325D600 bytes labeled a ticket strip match Sony/presents intro text;
+archived frame 005729 shows SELECT A BIKE. Neither proves race ticket art.
+Main-menu background video is a separate unresolved observation; these ticket
+captures do not verify it. Menu correctness, normal PLAY race entry and
+measured minimum 60 FPS remain unproved.
