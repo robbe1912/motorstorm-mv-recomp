@@ -49,3 +49,12 @@ private generated tree must already contain validated entry probes; this profile
 does not install them. Per-stage quotas are independent and exhaustion is logged.
 Synthetic observer checks cover disabled output, capture gating and quotas;
 normal-menu geometry/material capture and the bike render remain unverified.
+
+`--capture-textures` snapshots compressed uploads into owned `textures/`, with
+binding/source addresses, format, dimensions, mips, face, pitch, QPC and full
+noncryptographic content fingerprint. It observes upload cache misses, not every
+draw; unchanged binding/content snapshots are deduplicated. Caps: 32 attempts,
+16 MiB per snapshot, 128 MiB total. Errors and exhaustion are explicit; existing
+files are never overwritten. `--trace-video` records the selected decoder/FS/
+semaphore knobs in launch identity. Both profiles perturb timing; absent capped
+log lines do not prove absent guest operations. All payloads remain private.
