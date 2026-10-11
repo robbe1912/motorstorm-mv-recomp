@@ -3476,9 +3476,10 @@ static int vp_upload_tex_slot(u32 off, u32 w, u32 h, u32 fmt, int cube, u32 mips
             if (_rf) {
                 fwrite(vm_base + off, 1, (size_t)_face_bytes, _rf);
                 fclose(_rf);
-                fprintf(stderr, "[TEX_RAW] %s bytes=%u block_bytes=%u guest_ln=%u\n",
+                fprintf(stderr, "[TEX_RAW] %s bytes=%u block_bytes=%u guest_ln=%u loc=%u\n",
                         _pn, _face_bytes, tl.block_bytes,
-                        (unsigned)((fmt & 0x20u) ? 1u : 0u));
+                        (unsigned)((fmt & 0x20u) ? 1u : 0u),
+                        (unsigned)(fmt & 3u));
             }
         }
     }
