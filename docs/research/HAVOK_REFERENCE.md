@@ -273,3 +273,60 @@ valid initialized heap and sufficient space; asserting that every allocation
 must succeed would incorrectly suppress legitimate failure. No allocator or
 runtime fix is justified yet. #1 and #3 retain their independent proof gaps;
 native acceptance remains unfulfilled.
+
+### Malloc capture gap and fork capacity trial, 2026-10-11
+
+The private malloc experiment adds entry, first-hit branch, lower-call,
+syscall and return observers, selected by the same resource and thread as
+the producer capture. It leaves original guest data and behavior unchanged.
+One build failed on duplicate context declarations; its errors were retained
+and the diagnostic declaration/include and two return-hook placements were
+corrected before launching. Its EXE SHA256 is
+`a7f18623ad29aecbfe1ca323ff7e4fae414f8f895adc86160ec6c9a802ffb259`;
+the original ELF identity is unchanged from the producer run above.
+
+Two muted 600-second trials did not reach the selected resource:
+
+| Run / PID / creation time | Result |
+| --- | --- |
+| `20261011T160807.968606Z` / 30588 / 1791734887.9913192 | Visible window; no selected captures; duration guard at 600.485s |
+| `20261011T162214.915838Z` / 12384 / 1791735734.9185293 | Screen-observed ordinary menu inputs; no selected captures; duration guard at 600.5s |
+
+The second run visibly progressed from LANGUAGE through normal PLAY, race
+instructions, race selection, SELECT A BIKE and the MOHAWK INDIANA variant.
+The main-menu background was black; race selection showed oversized colored
+bands instead of ticket art; the bike model was missing. A logo and triangular
+bike icon did render. Confirmation did not produce a visible race. Run-local
+navigation observations and PAD acknowledgments are retained privately.
+These observations fail the native assets/race DoD. They do not establish the
+selected malloc's internal failure path. Issue #54 stays open: the entry,
+heap state, syscall arguments/result and actual null-producing branch are
+still missing from an executed same-resource capture.
+
+A separate synthetic test exercises real VM initialization, commitment and
+memory syscall handlers, without guest payloads. On both the curated runtime
+and a narrow fork baseline, allocation seven of eight 24 MiB requests fails
+with CELL_ENOMEM while the API reports 69 MiB available. Alias collision gaps
+exhaust the old virtual arena before the advertised 213 MiB physical pool.
+This establishes a component defect, not its relation to the selected native
+malloc. An isolated old-allocator trial with the updated alias helper still
+reproduces that seventh-allocation failure.
+
+The [fork trial](https://github.com/robbe1912/ps3recomp/tree/codex/memory-pool-capacity)
+preserves the local collision-guard dependency separately in `8ad9fdb`,
+the initial red fixture in `15b628c`, and the candidate in `dcd6f48`.
+The candidate enlarges virtual space to 512 MiB, independently enforces the
+existing 213 MiB physical budget, and resolves registered aliases above the
+old arena end. Its Windows clang-cl fixture passes all eight requests and
+alias checks, then verifies genuine physical exhaustion on request nine,
+unchanged output and unchanged availability. Windows/Linux CI steps are
+added; remote CI and Linux execution are pending. Reclamation, registration
+lifecycle/capacity and commit-failure accounting remain inherited limitations.
+The candidate is not adopted into the game runtime and no upstream PR was
+opened. No null-write override, substituted buffer or forced success is used.
+
+Config was restored byte-for-byte to the preserved original selection and
+the ordinary build completed with EXE SHA256
+`d070786a4cee10ccfe925e13ba65ade0bd71031b7078174ec950682d3d1e5186`,
+logs `temp/builds/20261011T163331.364781Z`. Diagnostic trees, installers,
+strict auditors, binaries and test result/hash manifests remain private.
