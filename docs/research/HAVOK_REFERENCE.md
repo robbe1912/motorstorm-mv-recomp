@@ -135,3 +135,78 @@ Private evidence lives under `temp/issue3-reference`: `reader-map.json`,
 `savestate-identity.json`, per-trial launch/final/resource logs, and replay2's
 `census/report.json`, `loaded/report.json`, `fixup-comparison.json`. Source
 observers, savestate, logs and payloads remain ignored.
+
+## Native relocation store boundary, 2026-10-11
+
+Run `20261011T151440.055108Z` used a copied generated tree with narrow
+reader-return and local-store observers. Original instruction/call bytes were
+validated privately before installation; preserved generated inputs were not
+edited. The visible LANGUAGE window was verified before user navigation; the
+user then reported completion of the requested transition. No later rendered
+race was observed. PID9756/create_time1791731680.1860416, EXE SHA256
+`44093642bbb96321ce5c59e45dee4c14e2dd76fc2338f19e438eb4a8d697d71e`,
+named-US ELF SHA256
+`3e68c72f8fbd6a30ef30d4535462cf70f1cc86d111f56574adb7dd2c255e0706`.
+It ended naturally at 209.031 s, host0, with the original fatal177. A later stop
+marker did not terminate it. Muting and the normal 600 s/resource guards held.
+
+All five boundaries belong to thread24076, resource4E0860F0/ID
+`000a8a45293a530c`, reader4B9FDA00, result4E086060 and raw EA0/42480 bytes.
+Each raw/header/fixup metadata identity was checked. These are executed observer
+sites, not sampled native PCs or an unwind.
+
+| Boundary | Observer site | Matching / zero local-global fields |
+| --- | --- | --- |
+| Before loadEntireFileInplace | 72F028 | 0 / 315, original unrelocated input |
+| After loadEntireFileInplace | 72F054 | 257 / 58 |
+| After getPackfileData | 72F0A4 | 257 / 58 |
+| After getContents | 72F0E8 | 257 / 58 |
+| After four animation lookups | 72F180 | 257 / 58 |
+
+Before-load SHA256 equals the independently extracted raw span
+`24256e3c1ca78d7fb13219cf840307e5128dfe319528a77eb30777a723bc2182`.
+All four later complete packfile hashes equal
+`b0c44c6a129dba13cee54f2cf399ba16748d023ceabc9ba8906f1c5239825baa`.
+The 58 pointer differences therefore exist when relocation returns; the captured
+later operations did not clear previously correct fields.
+
+An observer immediately following the original local-fixup store at A0C234
+recorded the computed value and a read-back. The first recorded store targeted
+360 with expected370 but read back zero. The seven low stores were
+360→370, 370→380, 374→3A0, 3C8→3F0, 3D0→400, 428→470 and 464→530;
+all read back zero. The next 25 recorded local stores at6100 and above all
+read back their computed values. The 32-store cap was reached; later local
+stores and individual global-store execution were not observed.
+
+The original low addresses are unchanged by alias normalization. Their widths
+are within VM bounds. Fast stores below1000 delegate to vm_write32; its
+vm_null_store path drops stores below1000 by default. Earlier explicit DROPPED
+logs establish this mode was active before the capped print budget expired.
+The observed first local-store difference matches that path: an expected pointer
+was computed but the low-address store did not land. This identifies the first
+observed divergent relocation operation for #5. It does not establish why the
+input buffer's base was zero. Allowing null-page writes would obscure that
+earlier defect rather than establish a valid allocation.
+
+The complete private plan/report accounts for every one of the315 fields.
+All58 differences are below1000: seven local and51 global sources360..528;
+all257 matches are above the cutoff. Retail still matches315/315 after rebasing.
+The same guard covers the global addresses, but their individual executed stores
+were not traced. Another78 virtual/finishing records are inventoried separately;
+they are not78 proven successful callbacks, vtables or registrations.
+
+The format-independent audit and v4 BE32 plan builder are proposed upstream in
+[ps3recomp PR232](https://github.com/sp00nznet/ps3recomp/pull/232), commit59b1a21.
+Ten authored regressions cover missing/correct pointers, rebasing, identity and
+shape rejection, ordering limits, overflow and preservation of inputs including
+hard links. It reports every field and refuses raw-only success. Only source,
+synthetic fixtures and a reusable capture guide are published.
+
+Private evidence: `temp/issue5-stages/install.json`, `pointer-plan.json`,
+`all-pointer-history.json`, `pointer-accounting.json`, `stage-manifest.json`,
+`all-pointer-stages.json`, `native-stage-verification.json`, diagnostic EXE/PDB
+and the run's stage/resource/reader/result/local-store captures. Temporary hooks
+remain only in the ignored diagnostic copy; the ordinary generated tree is
+selected again. The allocator/raw-base origin needs a bounded follow-up. #1's
+PC/input audit and #3's equivalent reference operation mapping remain open;
+native race, graphics, audio, saves and performance acceptance remain unproved.
