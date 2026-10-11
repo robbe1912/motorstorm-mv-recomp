@@ -379,4 +379,24 @@ retains ENOMEM, the output sentinel and21MiB availability. Reproduce with
 `python scripts/check_memory_capacity.py`; no game input is needed.
 Private red/green evidence is in `temp/checks/memory-20261011T205218.740466Z`
 and `memory-20261011T205234.022775Z`. Native allocation/race acceptance for
-the candidate is pending; #1/#3 reference gaps remain independent.
+the candidate is recorded below; #1/#3 reference gaps remain independent.
+
+The user repeated normal PLAY/vehicle selection in native trial
+`temp/runs/20261011T205310.337110Z`, PID29220/create1791751990.446359,
+EXE SHA256 `4d3f53750131c217020e7e0ff88fe626124d981a2d217d9a3042e1fd67c8267c`.
+For the same ResourceID/object, thread8760 executes successful heap extension
+and malloc returns52D00010 to4F9174. The virtual return, constructor field,
+aligned block destination and reader-constructor return retain52D00010 with
+resource length42480. Its readable64-byte header exactly matches the original
+resource header from the baseline. The private green auditor requires the
+original call interval and retains all55 observations. No fatal177 is captured
+or logged in this trial; GAMEFLOWMANAGER::Construct executes later. This passes
+the previously failing allocation boundary, not Havok finishing/race rendering.
+The user's report establishes vehicle selection and an open window, not a
+visible race. File reads/presents later stop advancing in the retained trace.
+At the user's shift to menu-asset work, an identity-checked owned stop marker
+ends the run at379.515s/guard return1. The wrapper restores ordinary generated
+selection and rebuilds candidate runtime EXE
+`2744656598efc6d3c6529bc40daf00c1d3c88615c19f89b4fff01713cccd52e9`.
+Both Windows and Linux CI capacity checks pass in [PR57](https://github.com/robbe1912/motorstorm-mv-recomp/pull/57).
+Issues #7/#13 remain scoped to their own acceptance; overall DoD is unfinished.

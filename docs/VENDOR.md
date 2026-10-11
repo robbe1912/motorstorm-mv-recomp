@@ -33,8 +33,9 @@ collision-guard dependency was already present; unrelated upstream ABI and
 fallback changes were excluded. The synthetic fixture is authored source,
 derived from that fork's test, and exercises the real VM/syscall component.
 `python scripts/check_memory_capacity.py` records source/binary hashes and
-red/green results without game inputs. Windows passed; remote/Linux checks
-and native trial acceptance are pending. See [executed evidence](research/HAVOK_REFERENCE.md#executed-guest-malloc-failure-2026-10-11).
+red/green results without game inputs. Windows and Linux CI pass. The native
+trial passes the same-resource allocation boundary with a real nonzero buffer;
+race/menu acceptance remains unproved. See [executed evidence](research/HAVOK_REFERENCE.md#executed-guest-malloc-failure-2026-10-11).
 Inherited bump reclamation, alias registration lifecycle/32-entry capacity
 and commit-failure accounting limits remain; this trial does not claim to
 correct those contracts. No external PR was opened.
