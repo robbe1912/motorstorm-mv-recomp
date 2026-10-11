@@ -21,6 +21,7 @@
 #include "rsx_primitives.h"
 #include "rsx_vertex_fetch.h"
 #include "rsx_texture_layout.h"
+#include "rsx_texture_capture.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -3460,6 +3461,10 @@ static int vp_upload_tex_slot(u32 off, u32 w, u32 h, u32 fmt, int cube, u32 mips
             }
         }
     } }
+    /* Observer-only source snapshot; cache hits and unchanged bindings are not
+     * exhaustive draw coverage. A dump alone does not establish block ordering. */
+    if (tl.compressed)
+        rsx_capture_texture(vm_base,key_off,off,w,h,fmt,mips,_f,_face_bytes,pitch);
     /* TEX_AVGDBG=1: one line per distinct bound texture offset with its average
      * source colour. duck.tga is overwhelmingly yellow (avg ~243,191,23), so this
      * says whether the duck's image is bound at all -- and if it is, the duck is
