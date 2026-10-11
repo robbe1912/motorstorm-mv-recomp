@@ -5,9 +5,10 @@ After [setup/build](BUILDING.md), use:
 ```powershell
 python scripts/run.py --seconds 600
 python scripts/run.py --seconds 600 --capture-havok
+python scripts/run.py --seconds 600 --capture-havok-only
 ```
 
-Each invocation creates a unique temp/runs/UTC_TIMESTAMP with identity.json, stdout/stderr logs, frames.csv, pad.txt and final.json after closure. Identity includes EXE/ELF hashes and PID/create_time. It uses configured isolated userdata and mutes host audio. Capture option activates existing hooks if present, and sparse RSX capture; empty output does not prove those boundaries executed.
+Each invocation creates a unique temp/runs/UTC_TIMESTAMP with launch.json, stdout/stderr logs, resources.jsonl, frames.csv, pad.txt and final.json after closure. Launch identity includes EXE/ELF hashes, PID/create_time and capture profile. It uses configured isolated userdata and mutes host audio. `--capture-havok` activates existing hooks if present plus graphics/audio probes and sparse RSX capture. `--capture-havok-only` enables the existing Havok observer without those additional probes. The flags are mutually exclusive; empty output does not prove those boundaries executed.
 
 Owned child limits: 600s, available physical ≥4GiB, available commit ≥12GiB, private ≤14GiB. Write stop.txt in its run directory for closure. final.json distinguishes guards from natural exits; always inspect fatal logs even on exit 0. Match PID/create_time before attaching/stopping; preserve ordinary user RPCS3.
 
