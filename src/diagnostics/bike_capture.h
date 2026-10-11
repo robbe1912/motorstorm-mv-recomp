@@ -60,6 +60,11 @@ static void bike_probe_dump(FILE* f, const char* label, uint32_t ea, size_t len)
 static void bike_probe_entry(ppu_context* ctx, const char* stage)
 {
     const char* dir = getenv("CAP_BIKE_DIR");
+    static bool armed_reported = false;
+    if (!armed_reported) {
+        armed_reported = true;
+        fprintf(stderr, "[DEBUG-bike-oct11] armed dir=%s\n", dir && *dir ? dir : "(unset)");
+    }
     if (!dir || !*dir) return;
     /* High-frequency resource stages fire all through boot; late-gate them to
      * the observed selection-screen window so rare stages keep their slots. */
