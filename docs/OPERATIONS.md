@@ -5,9 +5,10 @@ After [setup/build](BUILDING.md), use:
 ```powershell
 python scripts/run.py --seconds 600
 python scripts/run.py --seconds 600 --capture-havok
+python scripts/run.py --seconds 600 --capture-havok-only
 ```
 
-Each invocation creates a unique temp/runs/UTC_TIMESTAMP with identity.json, stdout/stderr logs, frames.csv, pad.txt and final.json after closure. Identity includes EXE/ELF hashes and PID/create_time. It uses configured isolated userdata and mutes host audio. Capture option activates existing hooks if present, and sparse RSX capture; empty output does not prove those boundaries executed.
+Each invocation creates a unique temp/runs/UTC_TIMESTAMP with launch.json, stdout/stderr logs, resources.jsonl, frames.csv, pad.txt and final.json after closure. Launch identity includes EXE/ELF hashes, PID/create_time and capture profile. It uses configured isolated userdata and mutes host audio. `--capture-havok` activates existing hooks if present plus graphics/audio probes and sparse RSX capture. `--capture-havok-only` enables the existing Havok observer without those additional probes. The flags are mutually exclusive; empty output does not prove those boundaries executed.
 
 Owned child limits: 600s, available physical ≥4GiB, available commit ≥12GiB, private ≤14GiB. Write stop.txt in its run directory for closure. final.json distinguishes guards from natural exits; always inspect fatal logs even on exit 0. Match PID/create_time before attaching/stopping; preserve ordinary user RPCS3.
 
@@ -38,3 +39,13 @@ RSX_CAP=start:count:interval plus RSX_CAP_DIR retains manifests/backbuffer/targe
 Historical tools of the parked retail lane stay archived with that lane in [parked mstream](research/PARKED_MSTREAM.md); they may hardcode old paths, so inspect and rebase them into a fresh ignored experiment directory before use. Current run.py is the supported launcher. Match guest vm_base/ELF before memory dumping.
 
 Close with actual observations, hashes/identities, limitations and cleanup. Stop only owned processes, preserve artifacts, remove deliberate temporary hooks with matching installer/source assertions, kill native before needed relink and record new identity. Five capture hooks remain unless a deliberate clean-build unit removes/verifies them. [Source coverage](SOURCE_COVERAGE.md) records overwritten-log caveats.
+
+
+Bike observer groundwork (#24): `python scripts/run.py --capture-bike` creates
+an owned `bike/` output directory and records `CAP_BIKE_ARM_FILE` in launch.json.
+After observing the selection screen, create that run's `bike/arm.txt` before the
+next acknowledged input. This replaces a fixed boot-time cutoff. The selected
+private generated tree must already contain validated entry probes; this profile
+does not install them. Per-stage quotas are independent and exhaustion is logged.
+Synthetic observer checks cover disabled output, capture gating and quotas;
+normal-menu geometry/material capture and the bike render remain unverified.
