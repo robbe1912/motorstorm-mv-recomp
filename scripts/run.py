@@ -3,6 +3,7 @@ import argparse, ctypes, datetime, hashlib, json, os, subprocess, time
 from pathlib import Path
 import psutil
 from project import ROOT, config
+from native_window import visible_native_window
 
 class Memory(ctypes.Structure):
     _fields_=[('length',ctypes.c_ulong),('load',ctypes.c_ulong)]+[(x,ctypes.c_ulonglong) for x in ('total_phys','available_phys','total_commit','available_commit','total_virtual','available_virtual','available_extended')]
@@ -45,13 +46,26 @@ def main():
         env.update(VDEC_TRACE='1',FS_READ_ALL='1',SEMTID='1',SEM_WAITDBG='1',PS3_FSLOG='1')
     (out/'pad.txt').write_text('0\n')
     log=(out/'native.log').open('wb');err=(out/'native.err').open('wb')
-    p=subprocess.Popen([str(exe),str(c['elf'])],cwd=ROOT,env=env,stdout=log,stderr=err,creationflags=subprocess.CREATE_NO_WINDOW)
+    # Request a GUI window while keeping the launcher console hidden.
+    startup=subprocess.STARTUPINFO()
+    startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startup.wShowWindow=5  # SW_SHOW
+    p=subprocess.Popen([str(exe),str(c['elf'])],cwd=ROOT,env=env,stdout=log,stderr=err,creationflags=subprocess.CREATE_NO_WINDOW,startupinfo=startup)
     proc=psutil.Process(p.pid); start=time.monotonic(); reason='guard tooling failure'; terminated=False
     record={'pid':p.pid,'create_time':proc.create_time(),'exe':str(exe),'exe_sha256':hashlib.sha256(exe.read_bytes()).hexdigest(),'elf_sha256':hashlib.sha256(c['elf'].read_bytes()).hexdigest(),'output':str(out),'muted':True,'capture_textures':args.capture_textures,'trace_video':args.trace_video,'capture_havok':args.capture_havok or args.capture_havok_only,'capture_bike':args.capture_bike,'loadtime_trace':args.loadtime_trace,'capture_profile':'broad' if args.capture_havok else 'havok-only' if args.capture_havok_only else 'none','environment':{k:v for k,v in env.items() if k in ('PS3_VFS_ROOT','PS3_HDD0_ROOT','PS3_SAVEDATA_ROOT','AUDIO_MUTE','PAD_FILE','CAP_HAVOK_DIR','CAP_BIKE_DIR','CAP_BIKE_ARM_FILE','LOADTIME_TRACE','LOADTIME_TRACE_FILE','SPU_PM_INTERP') or k.startswith(('SPU_PM_','TEX_')) or k in ('VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG') or k=='SPU_WP'}}
     (out/'launch.json').write_text(json.dumps(record,indent=2)); print('Owned native PID',p.pid,'output',out,flush=True)
+    window_ready=False
     try:
         while p.poll() is None:
             elapsed=time.monotonic()-start; m=Memory();m.length=ctypes.sizeof(m)
+            if not window_ready:
+                window=visible_native_window(p.pid)
+                if window:
+                    window_ready=True
+                    (out/'window.json').write_text(json.dumps(dict(window,elapsed=elapsed,create_time=record['create_time']),indent=2))
+                    print('Visible owned native window verified; ready for manual navigation',flush=True)
+                elif elapsed>=30:
+                    reason='no visible owned game window within 30 seconds';break
             if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m)):raise OSError('Memory guard unavailable')
             private=proc.memory_info().private
             cpu=threads=read_b=-1
@@ -69,7 +83,7 @@ def main():
             terminated=True;p.terminate()
             try:p.wait(timeout=10)
             except subprocess.TimeoutExpired:p.kill();p.wait(timeout=10)
-        record.update(reason=reason,elapsed=time.monotonic()-start,returncode=p.returncode,terminated_by_guard=terminated)
+        record.update(reason=reason,elapsed=time.monotonic()-start,returncode=p.returncode,terminated_by_guard=terminated,window_ready=window_ready)
         (out/'final.json').write_text(json.dumps(record,indent=2));log.close();err.close();print('Closed:',reason,flush=True)
 
 if __name__=='__main__':main()

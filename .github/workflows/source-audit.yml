@@ -11,6 +11,8 @@ jobs:
       - run: python scripts/check_repository.py --self-test
       - run: python scripts/check_repository.py
       - run: python scripts/check_docs.py
+      - name: Native window readiness regression
+        run: python scripts/check_native_window.py
   capture-observer:
     runs-on: windows-latest
     steps:

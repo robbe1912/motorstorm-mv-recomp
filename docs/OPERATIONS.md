@@ -12,6 +12,20 @@ Each invocation creates a unique temp/runs/UTC_TIMESTAMP with launch.json, stdou
 
 Owned child limits: 600s, available physical ≥4GiB, available commit ≥12GiB, private ≤14GiB. Write stop.txt in its run directory for closure. final.json distinguishes guards from natural exits; always inspect fatal logs even on exit 0. Match PID/create_time before attaching/stopping; preserve ordinary user RPCS3.
 
+Process creation is reported separately from window readiness. The launcher
+checks the owned D3D12 window is visible, unminimized and intersects the desktop,
+writes `window.json`, then reports readiness for manual navigation. A hidden
+window is a launch failure after 30 seconds even if rendering continues.
+`scripts/native_window.py` performs read-only checks; it sends no input or focus
+commands. `scripts/check_native_window.py` rejects the real hidden-window trial.
+
+The correction addresses the prior mistake of reporting visibility from a PID.
+Trial `20261011T151137.499215Z` had an owned hidden window; the regression rejects
+that state. After explicit showing in the D3D12 backend, muted no-input trial
+`20261011T153310.991243Z` recorded a visible owned window at 0.157 s and ended
+at its 12 s duration guard. This verifies launch readiness only. The inherited
+hide mechanism was not traced, and this run does not verify menu or race rendering.
+
 Inherited probes are cleared; development SPU_PM_INTERP=1 remains. Six known pre-menu wedge probes are zeroed: SPU_WP, SPU_PM_GATE_TRACE, SPU_PM_RETIRE_GUARD, SPU_PM_PC_RESUME, SPU_PM_FLOW_RESUME, SPU_PM_YIELD_RESUME. Probe-off boots both clean/instrumented menus; individual guilty knob is not isolated. FLOW_FSDBG=1 correlated with early resourcesystem 938 fatal and is omitted. Hooks alone were exonerated for this pre-menu wedge, not permanent stability.
 
 ## Input and proof
