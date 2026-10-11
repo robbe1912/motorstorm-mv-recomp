@@ -59,3 +59,31 @@ state with the reviewed diagnostics combined; it does not prove identical
 producer history or identify the missing operation. No Havok fatal was
 captured. Issue #8 remains open for the already planned narrow chronological
 trace; the exonerated instruction spans are not reopened.
+
+## Marker-6 observer refinement, 2026-10-11
+
+Private read-only hooks ran against the current runtime. Four fixture modes
+verified disabled/wrong-queue exclusion, marker arming/retirement, caps and
+unchanged full context/LS. First run `20261011T133917.527458Z` exhausted
+100000 fetch records in14.105 s and reproduced the earlier8/min6 queue hash;
+no later absence can be inferred. Publication visited predecessor5 while6
+remained active.
+
+Refined run `20261011T135119.578937Z` compressed loop samples by command/LS
+state; other GPR changes lie outside that loop identity. It retained2008
+selected fetch records over5.314 s and44 full context/LS pairs. Every recorded
+instruction matched original policy SHA256
+`44c7436c82f40ced9377ed6abf3293d6792e70e1b34923c4572bb2a3fcc4d616`.
+Embedded and separate LS copies agreed for all44 pairs. Snapshot quota44
+exhausted; later transitions are unobserved. Retirement shows253 ->112 ->24
+reserved pages; allocation24 ->165 ->253. A later worker wave clears local
+marker6 and visits publication; persisted shared-queue publication and the
+first missing operation in previous stalls remain unproved. No new blocked
+PPU/producer PE unwind was taken.
+
+User bike confirmation transitioned to black, then original fatal177 at
+235.578 s. Probe timing differs; this is not a fix, speedup or PVS/Havok causal
+proof. Hooks restored byte-for-byte, diagnostic EXE/PDB retained privately,
+all61 preserved generated-source hashes unchanged. Ordinary use requires
+rebuilding restored runtime. #8 remains conditional/open; the exact failing
+bytes now advance #1/#2 and #3. No exonerated CPU span was reopened.

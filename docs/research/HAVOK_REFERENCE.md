@@ -41,3 +41,34 @@ Debug constructors 72E624/72EE9C map to retail 6AFAA4/6B031C: each 542 instructi
 Capture exact failing asset, independently recover original bytes, compare raw first, then normalized relocation/virtual finishing, then lookup/ABI only if inputs match. No schema rewrite or forced non-null return is justified. Exact public fatal search found no applicable fix. [Frame-rate patch research](https://illusion0001.com/legacy-website/patches/2022/05/10/Motorstorm-Framerate-Patch/) is about timestep/frame modes, not this root lookup.
 
 Private artifacts/atomic source ownership are indexed in [source coverage](../SOURCE_COVERAGE.md); logs known overwritten there cannot be reused as original evidence.
+
+## Native raw pairing, 2026-10-11
+
+Muted manual navigation in `20261011T135119.578937Z` confirmed a bike,
+transitioned to black, then reached original fatal 177 and sys_process_exit(0).
+The user called loading an assumption; no race rendered. The owned run ended
+naturally at 235.578 s with return 0, no guard. EXE SHA256
+`92aba648c923ccb9a6e91ac6d8aa45b1f38ece51643c0216f858bf35ba50ce7f`;
+ELF SHA256 `3e68c72f8fbd6a30ef30d4535462cf70f1cc86d111f56574adb7dd2c255e0706`.
+Matched-build EXE/PDB are private. Executed guest observer sites were raw
+72EF88/fatal72F640; LR72F180 remains stale. These are explicit hooks, not a
+sampled native PC/unwind. Physical input timestamps remain unavailable.
+
+Captured resource `000a8a45293a530c`, object4E0860F0, raw EA0/42480 bytes,
+root360 and empty lookup result4E086060 belong to the same fatal event.
+Pre-relocation SHA256
+`24256e3c1ca78d7fb13219cf840307e5128dfe319528a77eb30777a723bc2182`
+exactly matches the independently extracted span above and the independent
+[whole-archive research](https://github.com/robbe1912/motorstorm-mv-recomp/issues/2#issuecomment-6109789311).
+Archive-side naming is not a native filename observation. Earlier raw-byte
+pairing gaps are superseded for this resource; #1's remaining identity/PC
+verification is separate from #2's now-established original-byte pairing.
+
+The exact v4 local/global fixup tables specify 315 pointer fields: 257 match
+at fatal and 58 differ. Root is expected base+360, but its variants pointer
+is zero instead of expected370. Post-state SHA256
+`b0c44c6a129dba13cee54f2cf399ba16748d023ceabc9ba8906f1c5239825baa`.
+This is the earliest captured post-load difference, not the first diverging
+operation: relocation, finishing and later mutation remain unseparated.
+[#3](https://github.com/robbe1912/motorstorm-mv-recomp/issues/3) owns that
+boundary. No selected-bike asset or known-good control was substituted.
