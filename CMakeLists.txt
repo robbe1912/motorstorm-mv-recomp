@@ -99,13 +99,15 @@ if(EXISTS "${RECOMP_DIR}/ppu_hle_nids.cpp")
 else()
     find_package(Python3 COMPONENTS Interpreter REQUIRED)
     set(HLE_NID_TABLE "${CMAKE_CURRENT_BINARY_DIR}/ppu_hle_nids.cpp")
+    file(GLOB_RECURSE HLE_LIBRARY_SOURCES CONFIGURE_DEPENDS "${PS3RECOMP_DIR}/libs/*.c")
     add_custom_command(
         OUTPUT "${HLE_NID_TABLE}"
         COMMAND "${Python3_EXECUTABLE}"
-                "${PS3RECOMP_DIR}/tools/gen_hle_nids.py"
+                "${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_hle_nids.py"
                 --out "${HLE_NID_TABLE}" --all
-        DEPENDS "${PS3RECOMP_DIR}/tools/gen_hle_nids.py"
-                "${PS3RECOMP_DIR}/tools/nid_database.py"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_hle_nids.py"
+                "${PS3RECOMP_DIR}/include/ps3emu/nid.h"
+                ${HLE_LIBRARY_SOURCES}
         COMMENT "Generating the HLE NID -> handler table")
     message(STATUS "HLE NID table:   generated (every module)")
 endif()
