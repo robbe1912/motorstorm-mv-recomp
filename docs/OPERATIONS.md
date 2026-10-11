@@ -58,3 +58,33 @@ draw; unchanged binding/content snapshots are deduplicated. Caps: 32 attempts,
 files are never overwritten. `--trace-video` records the selected decoder/FS/
 semaphore knobs in launch identity. Both profiles perturb timing; absent capped
 log lines do not prove absent guest operations. All payloads remain private.
+
+## Combined review validation (2026-10-11)
+
+The primary checkout `codex/pr-integration-live` combined reviewed PRs #34,
+#40, #42 and #43 with main. All four authored observer regressions and the
+source/docs audits passed. The supported native build succeeded; EXE SHA256
+`0dd887cccb9182e0c44a7dfaf4a44eb22e094f3e803b1e3541fa7dee8098575a`,
+named-US ELF SHA256
+`3e68c72f8fbd6a30ef30d4535462cf70f1cc86d111f56574adb7dd2c255e0706`.
+The original selected tree's 61 generated source hashes remained unchanged;
+nine bike entry probes were installed only in an ignored copied tree.
+
+Private run `20261011T021620.648042Z` enabled Havok-only, bike, compressed
+textures, video trace and load-time trace together. It was visible, muted and
+manually navigated by the user, with no PAD_FILE presses. Screenshots show
+main-menu text over black, malformed race selection, then SELECT A BIKE
+without bike artwork/model. The user reported selecting a bike to start;
+the screen remained at selection. This establishes an attempted start, not
+consumed-input timing or race entry. The user closed the window; the owned
+launcher finalized at 217.125 s via its explicit stop marker (exit 1, guard
+termination). It did not produce a playable race or Havok fatal capture.
+
+The diagnostics operated within their declared limits. Their specific
+findings belong to [graphics/video](research/GRAPHICS_AUDIO.md),
+[load tracing](research/RUNTIME.md) and [PVS](research/SPURS.md). All raw
+assets, logs, snapshots, build records and screenshots remain ignored.
+The merged source tree was compared with the tested integration tree and
+matched exactly before these documentation updates. This is one diagnostic
+run, not a performance comparison, clean regeneration proof or acceptance
+of assets, sound, saves, driving, opponents or minimum 60 FPS.

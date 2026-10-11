@@ -49,3 +49,14 @@ are withdrawn; file-descriptor reuse and partial SPU coverage also invalidate
 cross-resource/useful-work inference. No normal PLAY latency or performance
 benchmark is accepted from these captures. Native boundary validation and the
 benchmark-checklist measurements remain open in #11.
+
+The [combined review run](../OPERATIONS.md#combined-review-validation-2026-10-11)
+parsed strictly with 2,151,087 events spanning 216.935 s, without an event-budget
+truncation marker. It records 3,893 completed reads totaling 115,450,269 bytes
+and wait begin/end counts 1,073,173/1,073,170; the three unmatched entries
+remain unreturned observations at closure. Manual physical navigation has no
+consumed-input boundary in this observer, which currently covers PAD_FILE
+only. [Issue #44](https://github.com/robbe1912/motorstorm-mv-recomp/issues/44)
+owns returned physical-packet transition tracing. The report therefore
+establishes observer operation, not normal PLAY latency or a dominant
+load bottleneck. Issue #11 remains open.

@@ -38,3 +38,28 @@ Menu background video (issue 21, gui_d.m2v): the baseline records the second pla
 The later 20261011T003811.531817Z attempt (EXE `627f27bd`, 420.516 s, bounded termination) did not record VDEC_TRACE, FS_READ_ALL, SEMTID or SEM_WAITDBG in its launch environment and cannot confirm the proposed semaphore cause.
 
 Next evidence step: `--trace-video` with VDEC_TRACE, FS_READ_ALL, SEMTID and SEM_WAITDBG plus owned RSX capture. Proof targets are PICOUT callback delivery, GetPicture destination content and per-frame upload provenance; draw counters or presents per second do not close these issues.
+
+## Combined-run positive evidence (2026-10-11)
+
+The [combined review run](../OPERATIONS.md#combined-review-validation-2026-10-11)
+adds positive evidence to the hypotheses above. Descriptor-lifetime-aware
+load tracing attributes 41,943,040 completed read bytes to `gui_d.m2v`.
+The decoder trace logs 63 successful GetPicture conversions across two
+sequences (the print is after conversion, immediately before CELL_OK).
+It also logs 31 PICOUT notification attempts; that print precedes callback
+dispatch, so it does not prove callback return. Decoder trace counters are
+capped/sparse; these are logged events, not uncapped operation totals or
+per-video attribution. Successful pictures do not prove their pixels were
+uploaded or rendered. The observed menu background is still black. A zero
+menu-read conclusion is contradicted for this run; an earlier or later
+lifecycle defect remains possible. [Issue #46](https://github.com/robbe1912/motorstorm-mv-recomp/issues/46)
+owns the bounded sequence/picture/upload/draw provenance experiment.
+
+The texture observer wrote 32 raw/metadata pairs totaling 8,659,456 bytes
+and explicitly exhausted its attempt budget. Later selection uploads are
+unobserved; [issue #45](https://github.com/robbe1912/motorstorm-mv-recomp/issues/45)
+owns arming for that window, including the upload-cache-miss coverage limit.
+The bike observer recorded rsfind 64 (quota reached), dynsel 2, vpfn 2,
+vvinv 1, ral 1 and vtload 1 after arming. These entry snapshots do not prove
+geometry/material completion. Screenshots still show malformed race
+selection and missing bike art/model. Issues #20 through #24 remain open.

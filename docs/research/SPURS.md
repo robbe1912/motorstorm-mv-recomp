@@ -40,3 +40,22 @@ Tests use literal original instruction fixtures and stay private. They exonerate
 Owner-read gate captured four owning-thread beforePC 1A40 snapshots across 45.281s with identical complete LS SHA256 f0a3b6372f699744582ddd3d2de49c651399d967ec163408fad180af01277e77, matching authentic PM bytes. PPU stalled ~166.5s; queuehint 2/taken 2/minSPU 4 = 1, other markers FFFF. Snapshots are not instruction chronology. Establish original provenance/live history rather than reinvestigating exonerated CPU spans.
 
 A/B scheduling cap 2/burst 16 observed 18–22 presents/s vs cap 4/burst 1 at 26–27; defaults 4/1 retained. This is a diagnostic window, not a 60FPS benchmark, full-game improvement or license for title-specific scheduler policy.
+
+## Combined-build stall confirmation (2026-10-11)
+
+In the [combined review run](../OPERATIONS.md#combined-review-validation-2026-10-11),
+the user reported confirming a bike to start, but the observed screen
+remained SELECT A BIKE. HOTREAD diagnostics again reported queue/object
+0x40044480/0x40044414 and LR 0x87D2D4. These diagnostics are not a fresh
+actual-PC unwind or proof of consumed start input.
+
+Two read-only 1024-byte queue samples, taken more than 30 s apart after
+matching owned PID/create_time/executable and validating guest VM bytes
+against the selected ELF, are identical. Both decode hint/taken 8 and
+minActive [FFFF, FFFF, FFFF, FFFF, 6, FFFF], with the same SHA256
+`8ea4f17d008a10a974529a14a4eadf218ec9e21264c49b736ebfcb209c7e11fd`
+as the earlier bound producer capture. This reproduces the blocked header
+state with the reviewed diagnostics combined; it does not prove identical
+producer history or identify the missing operation. No Havok fatal was
+captured. Issue #8 remains open for the already planned narrow chronological
+trace; the exonerated instruction spans are not reopened.
