@@ -12,6 +12,8 @@ Begin with [the exact native Havok failure capture (#1)](https://github.com/robb
 
 Choose one ready issue, preserve input/build identities, and finish its bounded evidence or correction before opening another work unit. If a task exposes another seam, create a concrete follow-up and link the dependency instead of silently broadening the original issue. Close only with the declared proof and remaining limits; include code/PR references when applicable.
 
+The current native acceptance DoD is entering a race through normal PLAY and seeing the original main-menu assets display normally. It requires observed native behavior. Keep driving, opponents, audio, saves and measured minimum 60 FPS as subsequent verification requirements; a diagnostic checkpoint does not satisfy acceptance.
+
 Original binaries, assets, firmware, generated guest code, keys, dumps and captures stay local. Issue/PR comments may contain source changes, hashes, identities and non-payload findings; follow the [source boundary](REPOSITORY.md) and [operating rules](OPERATIONS.md).
 
 Historical closed reference findings and scoped exclusions remain in [Havok/reference](research/HAVOK_REFERENCE.md) and [parked mstream](research/PARKED_MSTREAM.md). The closed top-right flashing defect is reopened only on a reproduced regression. Required PM interpretation is a development dependency to measure and correct through compiled semantic parity, never blindly disable. [Setup](BUILDING.md) owns target/architecture facts; research pages own evidence.

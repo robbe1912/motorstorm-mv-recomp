@@ -210,3 +210,66 @@ remain only in the ignored diagnostic copy; the ordinary generated tree is
 selected again. The allocator/raw-base origin needs a bounded follow-up. #1's
 PC/input audit and #3's equivalent reference operation mapping remain open;
 native race, graphics, audio, saves and performance acceptance remain unproved.
+
+## Native buffer producer boundary, 2026-10-11
+
+[Issue52](https://github.com/robbe1912/motorstorm-mv-recomp/issues/52) traced the
+earlier zero buffer without changing allocator, stream or relocation behavior.
+Original named-US bytes and symbols distinguish the resource's allocation from
+its stream read. Constructor72EE9C obtains length through the stream, requests
+length+16 through allocator virtual slot+8 at72EF5C, stores the returned address
+at object+24, and aligns it into r31. Operator889194 reads a Stream::Block into
+that address and returns the original stream reference, not an allocation.
+
+The muted manual native run `temp/runs/20261011T154742.134739Z` verified an owned
+visible window before readiness. The user reported selecting a bike and trying
+to start a race. Native PID12752/create1791733662.1584623 used diagnostic EXE
+SHA256 `127ebf8b00770294280a074ac2be093267714a3383ba040e824a9bd74eb4997c`
+and original debug ELF SHA256
+`3e68c72f8fbd6a30ef30d4535462cf70f1cc86d111f56574adb7dd2c255e0706`.
+It exited naturally after190.938s, host return0, with the original fatal177.
+No race rendering was established. Host0 is not successful race entry.
+
+Nine executed captures identify the same ResourceID000A8A45293A530C,
+object4E0860F0 and thread9476:
+
+| Executed boundary | Observed value and meaning |
+| --- | --- |
+| Before allocator call72EF5C | Allocator object1013BA88, vtable10066160, slot+8 descriptorE5B310, code4F8FF8, TOCE8A6C0; request42496. |
+| Allocator entry4F8FF8 | Same allocator object and request; original HavokAllocator::Alloc implementation. |
+| Small call4F9170, return4F9174 | Requested42496 in r3; returned r3=0. Original thunk4F8D30 tail-calls guest mallocC1CCB4 with TOCE9A128. Interior malloc decisions were not captured. |
+| Virtual allocator return72EF60 | Returned r3=0 before the constructor stores or aligns it. |
+| Before block read72EF84 | Object+24=0, r31=0, Stream::Block destination0/length42480. Its readable64byte prefix was all zero. |
+| After block read72EF88 | r31 remains0; r3 is stream0FEFEA00. The prefix now contains the original Havok header. This return is a stream reference. |
+| Reader-constructor return72F028 | Object+24 and r31 remain0; r29 retains42480. Arguments r4/r5 for loadEntireFileInplace have not been prepared at this hook. |
+
+Thus the first captured producer supplying the invalid base is the small
+allocation call, whose zero return propagates unchanged through the allocator
+and constructor. This is earlier than stream filling and relocation. It does
+not establish why malloc returned null, nor whether its internal heap state,
+failure handling, lower calls or translated control flow is wrong. The
+pre-allocation object+24 contents are uninitialized storage, not evidence of a
+valid pointer being lost. The null-page guard remained active; DROPPED entries
+are retained. No replacement pointer, null-write override or forced success was
+used.
+
+Observers were installed only in ignored `build/generated/havok-origin-oct11`.
+All77 original selected generated files and the original ELF hashes were
+verified unchanged. Private `temp/issue52-origin/install.json`, original-byte
+maps, EXE/PDB/build identity, and the run's `origin-audit.json` retain hook
+identities and every capture hash. The audit initially rejected an incorrect
+r4/r5 expectation at72F028; original code showed that hook is the previous
+reader-constructor return. The corrected audit checks the retained r31/r29 and
+records that limitation explicitly. It reports the observed null producer,
+not a successful allocation. The ordinary generated selection was restored
+and rebuilt afterward.
+
+The next bounded seam is [the small allocator's guest malloc path (#54)](https://github.com/robbe1912/motorstorm-mv-recomp/issues/54): capture its
+heap/arena state, requested size, selected failure/return branch and relevant
+lower-call inputs/results, then identify the first divergence against an
+equivalent working operation when available. A generic regression must
+reproduce the proven instruction, call/ABI or memory-contract defect with a
+valid initialized heap and sufficient space; asserting that every allocation
+must succeed would incorrectly suppress legitimate failure. No allocator or
+runtime fix is justified yet. #1 and #3 retain their independent proof gaps;
+native acceptance remains unfulfilled.
