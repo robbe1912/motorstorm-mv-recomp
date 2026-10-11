@@ -13,6 +13,8 @@ def main():
     capture.add_argument('--capture-havok',action='store_true',help='Existing Havok plus graphics/audio diagnostic profile')
     capture.add_argument('--capture-havok-only',action='store_true',help='Enable only the existing Havok observer, without graphics/audio probes')
     ap.add_argument('--capture-bike',action='store_true',help='Prepare bike observer; arm with the owned bike/arm.txt before observed input')
+    ap.add_argument('--capture-textures',action='store_true',help='Bounded run-local compressed source snapshots; adds observer overhead')
+    ap.add_argument('--trace-video',action='store_true',help='Video/FS/semaphore observations; adds observer overhead')
     args=ap.parse_args()
     if not 1<=args.seconds<=600: raise SystemExit('Bounded run must be 1..600 seconds')
     if any(p.info['name']=='ms1_recomp.exe' for p in psutil.process_iter(['name'])): raise SystemExit('A native instance already exists; close it first')
@@ -22,7 +24,7 @@ def main():
     env=dict(os.environ)
     # Clear inherited diagnostics before applying the documented booting configuration.
     for key in list(env):
-        if key.startswith(('SPU_','FLOW_','RSX_','GCM_','PAD_','FPS_','PM_','CAP_HAVOK','CAP_BIKE','AUDIO_')) or key in ('FP_PICK','SCREEN_AS_TEX','RD_WWSJOB_SHIM'):env.pop(key)
+        if key.startswith(('SPU_','FLOW_','RSX_','GCM_','PAD_','FPS_','PM_','CAP_HAVOK','CAP_BIKE','AUDIO_','TEX_')) or key in ('FP_PICK','SCREEN_AS_TEX','RD_WWSJOB_SHIM','VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG'):env.pop(key)
     env.update(PATH=str(c['ffmpeg']/'bin')+os.pathsep+env.get('PATH',''),PS3_VFS_ROOT=str(c['disc']),PS3_HDD0_ROOT=str(c['userdata']),PS3_SAVEDATA_ROOT=str(c['userdata']/'home/00000001/savedata'),AUDIO_MUTE='1',SPU_PM_INTERP='1',SPU_PROBE_INTERP='0',SCREEN_AS_TEX='0',PAD_FILE=str(out/'pad.txt'),FPS_STATS='1',FPS_STATS_CSV=str(out/'frames.csv'),RECOMP_TITLE='MotorStorm MV native')
     for key in ('SPU_WP','SPU_PM_GATE_TRACE','SPU_PM_RETIRE_GUARD','SPU_PM_PC_RESUME','SPU_PM_FLOW_RESUME','SPU_PM_YIELD_RESUME'):env[key]='0'
     env['PS3_KEYS_FILE']=str(c.get('keys',ROOT/'game/private_keys')/'keys.json')
@@ -34,11 +36,15 @@ def main():
     if args.capture_bike:
         (out/'bike').mkdir()
         env.update(CAP_BIKE_DIR=str(out/'bike'),CAP_BIKE_ARM_FILE=str(out/'bike/arm.txt'),PS3_FSLOG='1')
+    if args.capture_textures:
+        (out/'textures').mkdir(); env.update(TEX_RAWDBG='1',TEX_RAWDBG_DIR=str(out/'textures'))
+    if args.trace_video:
+        env.update(VDEC_TRACE='1',FS_READ_ALL='1',SEMTID='1',SEM_WAITDBG='1',PS3_FSLOG='1')
     (out/'pad.txt').write_text('0\n')
     log=(out/'native.log').open('wb');err=(out/'native.err').open('wb')
     p=subprocess.Popen([str(exe),str(c['elf'])],cwd=ROOT,env=env,stdout=log,stderr=err,creationflags=subprocess.CREATE_NO_WINDOW)
     proc=psutil.Process(p.pid); start=time.monotonic(); reason='guard tooling failure'; terminated=False
-    record={'pid':p.pid,'create_time':proc.create_time(),'exe':str(exe),'exe_sha256':hashlib.sha256(exe.read_bytes()).hexdigest(),'elf_sha256':hashlib.sha256(c['elf'].read_bytes()).hexdigest(),'output':str(out),'muted':True,'capture_havok':args.capture_havok or args.capture_havok_only,'capture_bike':args.capture_bike,'capture_profile':'broad' if args.capture_havok else 'havok-only' if args.capture_havok_only else 'none','environment':{k:v for k,v in env.items() if k in ('PS3_VFS_ROOT','PS3_HDD0_ROOT','PS3_SAVEDATA_ROOT','AUDIO_MUTE','PAD_FILE','CAP_HAVOK_DIR','CAP_BIKE_DIR','CAP_BIKE_ARM_FILE','SPU_PM_INTERP') or k.startswith('SPU_PM_') or k=='SPU_WP'}}
+    record={'pid':p.pid,'create_time':proc.create_time(),'exe':str(exe),'exe_sha256':hashlib.sha256(exe.read_bytes()).hexdigest(),'elf_sha256':hashlib.sha256(c['elf'].read_bytes()).hexdigest(),'output':str(out),'muted':True,'capture_textures':args.capture_textures,'trace_video':args.trace_video,'capture_havok':args.capture_havok or args.capture_havok_only,'capture_bike':args.capture_bike,'capture_profile':'broad' if args.capture_havok else 'havok-only' if args.capture_havok_only else 'none','environment':{k:v for k,v in env.items() if k in ('PS3_VFS_ROOT','PS3_HDD0_ROOT','PS3_SAVEDATA_ROOT','AUDIO_MUTE','PAD_FILE','CAP_HAVOK_DIR','CAP_BIKE_DIR','CAP_BIKE_ARM_FILE','SPU_PM_INTERP') or k.startswith(('SPU_PM_','TEX_')) or k in ('VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG') or k=='SPU_WP'}}
     (out/'launch.json').write_text(json.dumps(record,indent=2)); print('Owned native PID',p.pid,'output',out,flush=True)
     try:
         while p.poll() is None:
