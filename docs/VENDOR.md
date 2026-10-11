@@ -16,6 +16,12 @@ Clean upstream observed `5244db92669b54831c6d3ebb7a96d58c4dbfa6df` (v0.13) versu
 
 Existing [draft PR 230](https://github.com/sp00nznet/ps3recomp/pull/230), codex/d3d12-fp-source-capacity, commit `75a32692a6a4cb8f5a9217b78a0ab047c521d6c9`: a generic synthetic 4096-byte/256-instruction shader expands to 57382 HLSL bytes; caller capacity red 36 pass/3 fail → green 39/0, FXC ps_5_0/O3 pass, Release runtime build 0, CTest 5/5, diff-check 0. Last saved status OPEN/draft with empty check rollup: not CI success or merge approval. No game payloads in the PR. The local analogous fix is in graphics evidence.
 
-PR 213 overlaps signal/event/context work; do not duplicate it. Issue 214 KZ3 findings, PR 215 real video candidate and PR 226 null-read diagnostics are triage candidates, not adopted fixes. Upstream interaction stays limited to useful comments and modular draft contributions. Private upstream research artifacts remain in a private archive.
+PR 213 overlaps signal/event/context work; do not duplicate it. Issue 214 KZ3 findings, PR 215 real video candidate and PR 226 null-read diagnostics are triage candidates, not adopted fixes. Private upstream research artifacts remain in a private archive.
+
+## Fork-first workflow
+
+Keep new ps3recomp work on branches in [our fork](https://github.com/robbe1912/ps3recomp). Upstream branches and open PRs may also be cherry-picked into that fork for local trials. Inspect each diff, preserve attribution, record the exact commit and validate the relevant generic regression and native behavior before adopting it in this project's vendor snapshot. A trial is not an accepted fix; keep unrelated changes separate so they can be selected or reverted independently.
+
+For upstream submission, prepare a small reviewable cherry-pick of the validated fix and ask the user before opening the PR. Existing upstream PRs are context, not authorization to open or reopen one. PR233 remains closed. Keep proprietary inputs and captures private throughout this workflow.
 
 No releases/binaries/dependencies are redistributed by the initial source commit. A separate distribution needs its own complete component/license audit.
