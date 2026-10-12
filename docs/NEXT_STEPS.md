@@ -12,6 +12,13 @@ Begin with [the exact native Havok failure capture (#1)](https://github.com/robb
 
 Choose one ready issue, preserve input/build identities, and finish its bounded evidence or correction before opening another work unit. If a task exposes another seam, create a concrete follow-up and link the dependency instead of silently broadening the original issue. Close only with the declared proof and remaining limits; include code/PR references when applicable.
 
+For the current malformed native selection scene, [graphics evidence](research/GRAPHICS_AUDIO.md)
+records the AA layout correction and its remaining acceptance limits.
+[Translation methods](research/TRANSLATION.md) records read-only REA queries of
+the existing named Ghidra project, including incomplete function coverage.
+Reuse that project for focused producer/caller questions; a successful query
+or replay target does not close the graphics or playable-race issue.
+
 The current native acceptance DoD is entering a race through normal PLAY and seeing the original main-menu assets display normally. It requires observed native behavior. Keep driving, opponents, audio, saves and measured minimum 60 FPS as subsequent verification requirements; a diagnostic checkpoint does not satisfy acceptance.
 
 Original binaries, assets, firmware, generated guest code, keys, dumps and captures stay local. Issue/PR comments may contain source changes, hashes, identities and non-payload findings; follow the [source boundary](REPOSITORY.md) and [operating rules](OPERATIONS.md).
