@@ -13,6 +13,28 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Preserve Debug symbols/assertions while optimizing the generated PPU and
+# shared runtime. Put this before the runtime subdirectory so both inherit it.
+option(PORT_OPTIMIZE_NATIVE "Optimize native code while retaining checks" OFF)
+if(PORT_OPTIMIZE_NATIVE)
+    if(MSVC)
+        if(NOT CMAKE_C_COMPILER_ID MATCHES "Clang" OR
+           NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            message(FATAL_ERROR "Checked native optimization on Windows requires clang-cl")
+        endif()
+        # /Od and /Ob0 force no-inline even with a later optimization argument.
+        # Preserve cache defaults so configuring OFF restores ordinary Debug.
+        foreach(lang IN ITEMS C CXX)
+            string(REPLACE "/Od" "" CMAKE_${lang}_FLAGS_DEBUG "${CMAKE_${lang}_FLAGS_DEBUG}")
+            string(REPLACE "/Ob0" "" CMAKE_${lang}_FLAGS_DEBUG "${CMAKE_${lang}_FLAGS_DEBUG}")
+        endforeach()
+        add_compile_options(/clang:-O1 /Ob1 /clang:-fno-strict-aliasing
+                            /clang:-ffp-contract=off /UNDEBUG)
+    else()
+        add_compile_options(-O1 -fno-strict-aliasing -ffp-contract=off -UNDEBUG)
+    endif()
+endif()
+
 # Prefer Ninja if available
 if(NOT CMAKE_GENERATOR MATCHES "Ninja" AND NOT DEFINED ENV{CMAKE_GENERATOR})
     message(STATUS "Tip: use -G Ninja for faster builds")
@@ -182,14 +204,18 @@ add_executable(${PROJECT_NAME}
 # changes the compile command of every lifted PPU TU, and those are large enough
 # that the needless rebuild is measured in tens of minutes.
 #   SPU_USE_DISPATCH_MT -- route SPU_IB_DISPATCH through the musttail path.
-#   -O2                 -- the target-wide -O1 exists for the huge PPU TUs; the
+#   -O2                 -- optional checked native O1 covers huge PPU TUs; the
 #                          SPU sources are small and decode-hot, so they get
 #                          full optimization. The last -O on the line wins.
 if(SPU_SOURCES)
     set_source_files_properties(${SPU_SOURCES} PROPERTIES
         INCLUDE_DIRECTORIES "${PS3RECOMP_DIR}/runtime/spu"
         COMPILE_DEFINITIONS SPU_USE_DISPATCH_MT)
-    if(NOT MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    if(MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        # /clang arguments are forwarded after ordinary driver arguments.
+        # Forward both levels so this per-source override wins.
+        set_source_files_properties(${SPU_SOURCES} PROPERTIES COMPILE_OPTIONS "/clang:-O2")
+    elseif(NOT MSVC)
         set_source_files_properties(${SPU_SOURCES} PROPERTIES COMPILE_OPTIONS "-O2")
     endif()
 endif()

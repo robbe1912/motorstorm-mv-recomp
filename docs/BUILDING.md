@@ -86,3 +86,14 @@ python scripts/project.py build
 The wrapper kills ms1_recomp.exe before relinking, configures root CMake into build/native, uses clang-cl and at most eight jobs. Full warnings/errors go to unique temp/builds/TIMESTAMP/configure.log and build.log. Failure prints a bounded tail and full log path; no warning suppression added. Success records EXE/ELF hashes/tree paths/log directory in build_identity.json.
 
 Public vendor tests exclude unreviewed guest fixtures. PS3RECOMP_BUILD_TESTS=ON fails clearly; review upstream synthetic tests separately. Build success establishes compilation, not native gameplay. Use [operations](OPERATIONS.md) for live work.
+
+For performance evaluation, `python scripts/project.py build --optimize` enables
+`PORT_OPTIMIZE_NATIVE`: native O1 for the PPU/application and shared runtime,
+with Debug symbols and assertions retained. Explicit aliasing and floating-point
+contraction flags preserve guest numeric behavior; generated SPU units keep O2.
+On Windows this mode requires the configured clang-cl toolchain. The ordinary
+build command explicitly disables the option again. Inspect actual compiler
+commands rather than inferring optimization from the CMake cache: checked mode
+removes `/Od` and `/Ob0` in directory scope while retaining cached defaults.
+Build identity records `optimized_checked`. A configured or compiled optimized
+binary is not evidence of a speedup, correct graphics or an achieved FPS target.

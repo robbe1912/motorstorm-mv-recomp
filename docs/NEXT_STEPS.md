@@ -19,7 +19,7 @@ the existing named Ghidra project, including incomplete function coverage.
 Reuse that project for focused producer/caller questions; a successful query
 or replay target does not close the graphics or playable-race issue.
 
-The current native acceptance DoD is entering a race through normal PLAY and seeing the original main-menu assets display normally. It requires observed native behavior. Keep driving, opponents, audio, saves and measured minimum 60 FPS as subsequent verification requirements; a diagnostic checkpoint does not satisfy acceptance.
+The current native acceptance DoD is entering a race through normal PLAY and seeing the original main-menu assets display normally. It requires observed native behavior. Keep driving, opponents, audio and saves as subsequent verification requirements. The user now accepts a 30 FPS cap, provided native gameplay, video and UI actually sustain 30; this is the current performance target. A diagnostic checkpoint or present/title counter does not satisfy acceptance.
 
 Original binaries, assets, firmware, generated guest code, keys, dumps and captures stay local. Issue/PR comments may contain source changes, hashes, identities and non-payload findings; follow the [source boundary](REPOSITORY.md) and [operating rules](OPERATIONS.md).
 
