@@ -441,3 +441,21 @@ no exposure substitution or forced constant was applied.
   surfaces. Bulk-pointer/SPU writes and complete bidirectional ownership are not
   established by these tests. Normal PLAY race, layout, sound, saves and minimum
   60 FPS remain unverified. Retail mstream stays parked.
+
+Placement producer checkpoint (2026-10-12): the private read probe
+`20261012T195415.330090Z` observes the GC buffer metadata before command emission:
+its dimension fields already contain 720 and 1280. Writer probe
+`20261012T195635.820779Z` identifies `GcRenderBuffer::Create` as the initializer;
+value-filtered probe `20261012T200234.486324Z` preserves the relevant caller chain
+through `evo::renderer::PixelBuffer::Init(IStream*, unsigned)`. The SDK command
+writer copies these dimensions into the FIFO. Initial display setup remains
+1280x720. Next inspect how the PixelBuffer resource obtains/computes its dimensions
+and compare its source descriptor; renderer decoding alone has not been shown
+responsible. Private generated excerpts and register/stack dumps remain ignored.
+
+User-authorized current capture from the writer probe shows SELECT A BIKE with
+readable UI/logo, missing bike art and a narrow central object. This adds native
+observation of the remaining defect, not geometry or race acceptance. The owned
+writer/read probes were closed explicitly before each next launch. The current
+value probe uses normal input and lets the now-visible intro play naturally;
+exact animated-image equality was an unreliable skip checkpoint.
