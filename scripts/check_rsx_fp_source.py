@@ -15,11 +15,11 @@ FIXTURE = r'''
 #include "rsx_fp_decompiler.h"
 static void word(unsigned char *b,unsigned v){unsigned s=(v<<16)|(v>>16);b[0]=s>>24;b[1]=s>>16;b[2]=s>>8;b[3]=s;}
 static int check(unsigned flags,const char *expected){
- unsigned char code[32]={0};char text[65536];float constants[16]={0};u32 count=0;
+ unsigned char code[32]={0};char text[65536];static rsx_fp_constant_block constants;u32 count=0;
  word(code,(4u<<24)|(15u<<9)|1u);word(code+4,(0xe4u<<9)|(7u<<18));word(code+8,0xe4u<<9);word(code+12,2u|(0xe4u<<9)|flags);
  for(unsigned i=0;i<4;i++)word(code+16+i*4,0xbe800000u);
- int n=rsx_fp_decompile_buffered_ex(code,sizeof code,0x40,0,text,sizeof text,&count,constants);
- if(n!=1||count!=1||!strstr(text,expected)){fprintf(stderr,"SRC2 modifier missing or wrong: expected %s; instructions=%d constants=%u\n",expected,n,count);return 1;}return 0;
+ int n=rsx_fp_decompile_buffered_ex(code,sizeof code,0x40,0,text,sizeof text,&count,&constants);
+ if(n!=1||count!=1||constants.count!=1||constants.values[0][0]!=0xbe800000u||!strstr(text,expected)){fprintf(stderr,"SRC2 modifier missing or wrong: expected %s; instructions=%d constants=%u\n",expected,n,count);return 1;}return 0;
 }
 int main(void){
  if(check(1u<<18,"abs((fp_constants[0]).xyzw)"))return 1;
@@ -53,6 +53,8 @@ def main():
     result = dict(source_hashes={str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs},
                   build_returncode=build.returncode, game_inputs=False,
                   production_function='rsx_fp_decompile_buffered_ex', authored_instruction_fixture=True)
+    if build.returncode != 0:
+        print((out / 'build.log').read_text(encoding='utf-8', errors='replace'))
     if build.returncode == 0:
         with (out / 'run.log').open('wb') as log:
             run = subprocess.run([str(exe)], stdout=log, stderr=subprocess.STDOUT, timeout=30)

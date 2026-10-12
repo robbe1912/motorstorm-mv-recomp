@@ -308,7 +308,11 @@ The exact bound ticket program has one MAD at byte offset 624 with source 2's
 absolute flag set. The legacy decompiler discarded this flag. Own-fork commit
 `0d03c8b` fixes only that operand decode. The authored production-decompiler
 regression fails the preserved baseline and passes the candidate, including
-negation-after-absolute and plain-operand controls.
+negation-after-absolute and plain-operand controls. The initial checker passed
+a float array to the typed constant-block API and produced an unreliable local
+pass; CI exposed it. The corrected fixture uses `rsx_fp_constant_block`, verifies
+its count and authored constant word, and reproduces baseline failure and
+candidate success (`20261012T172118.149873Z` / `20261012T172120.581554Z`).
 
 Ordinary-source native candidate `20261012T165232.509027Z`, executable SHA256
 `45e4de11c7259569abe2c73b31b6b7483ec9661b56f28688715581eeedae5ed5`, used
