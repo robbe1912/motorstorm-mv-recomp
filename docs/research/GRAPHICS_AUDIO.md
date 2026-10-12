@@ -321,3 +321,53 @@ user navigation, desktop control, or substituted assets. Internal frame 11
 still shows SELECT A RACE, broad bands, black background, and no recognizable
 tickets. Menu correctness remains failed. The next seam is actual sampled RGB
 and floating-point shader state; the native goal stays active.
+
+### Floating-point ticket probe — October 12, 2026
+
+Private, default-off auxiliary FLOAT4 observation retains original color0 and
+uses the real bound guest program and normal automated input route. Query
+boundaries 4/7 correspond to operations 34/37. The selected draws have blending
+disabled and full RGBA writes; their auxiliary values are not alpha blended.
+Successful target arrival remains separate from graphics acceptance.
+
+- Raw export run `20261012T175202.691355Z`: finite exact-zero RGB with changing
+  alpha. This excludes final UNORM conversion as the only loss.
+- Actual normal texture sample run `20261012T175629.617339Z`: nonzero finite
+  sampled RGB at both boundaries. Source texture equality alone was not used
+  as sampling proof.
+- Constant 17 run `20261012T175755.858329Z`: X is 1, other channels 0, at all
+  47222/17994 covered pixels. Its binding is correct at these boundaries.
+- Texcoord 6 run `20261012T180116.676800Z`: Z is exactly zero everywhere; X/Y
+  vary and W is positive. Fog run `20261012T180246.438842Z` confirms all fog
+  channels broadcast the positive clip-W value at these boundaries.
+- Arithmetic observation run `20261012T180413.156873Z`: before the final
+  multiplier the shader still has nonzero finite RGB. The following exposure
+  multiplier obtains its scalar from texcoord 6 Z and reduces RGB to zero.
+
+The private v2 observer executable is
+`8913a96d0b74b1d73d8cb3404065a4ce87c0f010cf079a2edc97462c03c91ab0`;
+launchers check that hash before process creation. Captured vertex program
+analysis traces texcoord 6 Z to constant 73 X. Its captured raw bits are
+`00000001`, a tiny float that rounds to zero in a half register. This narrows
+the next investigation to constant production/upload, including the guest
+producer; it does not justify replacing the value or blaming one decoder yet.
+Original command/shader bytes stay private. The diagnostic backend source was
+restored after the build; the ordinary executable still needs rebuilding.
+Original menu correctness and playable normal PLAY remain failed/unverified.
+
+The bounded constant FIFO observer run `20261012T181026.979811Z`
+(executable `ed1a6b9edf77fcdccecddf484b7aa2985afe16f5faec2c0e298973c0973b62b9`)
+recorded 536 writes to constant 73 after target arming. All 134 vec4 uploads
+contain X bits `00000001`, Y zero, Z `10138E20`, W zero, directly in an
+incrementing LOAD-plus-vec4 packet. The GPU snapshot agrees with the FIFO;
+this observation does not support changing the constant register decoder.
+
+Writer-watch run `20261012T181338.657723Z`, using the same executable and
+normal route, identifies the reliable guest link register as a call inside
+`PostEffectsInstance::FrameStart`. The sampled host function identity is
+misleading because of identical-code folding; it is not evidence that a mutex
+function uploads constants. At the watched FIFO address the exposure upload
+starts with ordinary positive float values and decays to bits `00000001`.
+The guest routine reads a half-float pixel, smooths it into its exposure value,
+then uploads constant 73. The next probe is that input pixel and its producer;
+no exposure substitution or forced constant was applied.

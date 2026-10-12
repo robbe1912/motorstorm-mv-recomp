@@ -80,3 +80,25 @@ instructions and checks absolute value, negation after absolute value, and an
 unmodified operand. The preserved baseline fails; the candidate passes.
 Both Windows and Linux CI run this contract. No external PR was opened.
 The native menu remains malformed; this is a repaired instruction contract.
+
+### Upstream recheck — October 12, 2026
+
+Rechecked all 230 upstream PRs and 14 issues, including open and closed entries.
+Upstream master remains `5244db92669b54831c6d3ebb7a96d58c4dbfa6df`
+(October 7). No matching MotorStorm menu fix or native acceptance proof was found.
+The relevant current proposals remain open:
+
+| Reference | Applicable seam and present limitation |
+| --- | --- |
+| [PR 238](https://github.com/sp00nznet/ps3recomp/pull/238) | MAIN offsets use the IO table before a VRAM heuristic. Our resolver still has the old fallback. The selected ticket program and textures have verified LOCAL identity, so this does not explain their measured zero RGB; it remains a candidate for other assets. |
+| [PR 215](https://github.com/sp00nznet/ps3recomp/pull/215) | FFmpeg H.264/MPEG-2 decoding proposal; relevant to genuine video, without MotorStorm playback proof. |
+| [PR 240](https://github.com/sp00nznet/ps3recomp/pull/240) / [PR 242](https://github.com/sp00nznet/ps3recomp/pull/242) | Guest taskset corruption and committed-signal wake fixes. Reported Twisted Metal results justify separate semantic checks; they do not establish MotorStorm loading correctness or unpark retail mstream. |
+| [PR 230](https://github.com/sp00nznet/ps3recomp/pull/230) | FP caller source capacity is already corrected locally. |
+| [PR 221](https://github.com/sp00nznet/ps3recomp/pull/221) | Unnormalized texture coordinates in the register-file engine; current legacy D3D12 ticket samples already produce finite nonzero values. |
+| [PR 213](https://github.com/sp00nznet/ps3recomp/pull/213) | Broad inFamous integration. FP edits include texture usage/WPOS handling; inspected VP edits add constant usage analysis. No repair of the measured zero ticket multiplier was identified. Its reported gameplay and frame rate are another title's claims. |
+| [Issue 214](https://github.com/sp00nznet/ps3recomp/issues/214) | Killzone 3 proposals include packed FP operations, predication, gamma and LOD. Current predication already uses per-lane branches; the remaining proposals require focused evidence. The linked gist is a proposal, not a merged correction or MotorStorm result. |
+
+Vulkan-specific image size, cube-map, stencil, HDR target and readback proposals
+are not direct changes to the current legacy D3D12 path. No upstream changes
+were merged or submitted during this recheck. Original captured shaders and
+asset evidence remain private.
