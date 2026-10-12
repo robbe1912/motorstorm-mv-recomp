@@ -231,3 +231,24 @@ concrete restart-dispatch/assembly seam, distinct from the restart-aware
 generic live-draw/dispatch paths. It does not yet prove a repaired menu: the
 next change needs a game-free regression, hardware-faithful restart state and
 strip assembly, followed by the same agent-run native loop.
+### Restart correction: native boundary passes, graphics still fail
+
+Fork commit `7db6730` implements the missing restart methods and incremental
+strip/fan assembly, including width rules and winding. The actual upload
+function's game-free regression is red on the old code (15 references and
+three sentinel fetches) and green on the candidate (six references, no
+sentinel fetch), with additional packet-continuation/disabled/fan/width cases.
+These authored fixtures are not captured game indices.
+
+Muted automatic run `20261012T152117.580104Z`, EXE SHA256
+`a838c95b0eee273adc2081a40c47085c2994d3dfb4ba20274994073475cfc207`,
+reused the same debug-US ELF and four-step normal-input profile, without draw
+observer knobs or user navigation. Internal frame 11 still shows malformed
+bands and no recognizable tickets. At the verified DeepEnd op 22, the emitted
+count changes from 762 to **537**, exactly the strip-cut reference count
+computed from the preceding capture's 25 sentinels. The formerly unknown
+restart-method messages are absent because the methods now update real state,
+not because errors were suppressed. This proves a repaired dispatch/assembly
+boundary, not normal menu graphics. The owned launcher closed intentionally
+after 56.797 seconds. Video, race entry and FPS acceptance remain unverified;
+the remaining geometry/shader/target-composition seam needs distinct evidence.

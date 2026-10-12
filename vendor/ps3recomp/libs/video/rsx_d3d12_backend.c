@@ -18,6 +18,7 @@
 
 #include <time.h>
 #include "rsx_d3d12_backend.h"
+#include "rsx_index_strip.h"
 #include "rsx_primitives.h"
 #include "rsx_vertex_fetch.h"
 #include "rsx_texture_layout.h"
@@ -7161,20 +7162,32 @@ static u32 upload_tris_vp_indexed(const rsx_state* state, u32 first, u32 count)
 static u32 upload_strip_vp_indexed(const rsx_state* state, u32 first, u32 count, int fan)
 {
     extern uint8_t* vm_base;
+    static rsx_index_strip cursor;
+    static const rsx_state* owner;
+    static u32 epoch;
+    static int previous_fan;
     if (!state || !vm_base || !s_d3d.vp_vb_mapped) return 0;
     if (!state->vertex_attribs[0].enabled) return 0;
-    if (count < 3) return 0;
-    u32 tris = count - 2;
+    if (owner != state || epoch != state->begin_epoch || previous_fan != fan) {
+        memset(&cursor, 0, sizeof cursor);
+        owner = state; epoch = state->begin_epoch; previous_fan = fan;
+    }
     u32 maxv = (MAX_VERTICES * VP_VERT_STRIDE - s_d3d.vp_vb_offset) / VP_VERT_STRIDE;
-    if (tris * 3 > maxv) tris = maxv / 3;
     VPSlot* out = (VPSlot*)((u8*)s_d3d.vp_vb_mapped
         + (u64)s_d3d.vp_parity * MAX_VERTICES * VP_VERT_STRIDE + s_d3d.vp_vb_offset);
     u32 o = 0;
-    for (u32 t = 0; t < tris; t++) {
-        u32 i0 = fan ? 0 : t;
-        read_vp_vertex(state, read_guest_index(state, first + i0),    &out[o*16]); o++;
-        read_vp_vertex(state, read_guest_index(state, first + t + 1), &out[o*16]); o++;
-        read_vp_vertex(state, read_guest_index(state, first + t + 2), &out[o*16]); o++;
+    for (u32 k = 0; k < count; k++) {
+        u32 triangle[3];
+        if (!rsx_index_strip_push(&cursor, read_guest_index(state, first + k), fan,
+                state->restart_index_enable, state->restart_index,
+                ((state->index_array_dma >> 4) & 15u) != 1, triangle)) continue;
+        if (maxv - o < 3) {
+            fprintf(stderr, "[D3D12] indexed strip/fan vertex buffer exhausted\n");
+            break;
+        }
+        for (u32 v = 0; v < 3; v++) {
+            read_vp_vertex(state, triangle[v], &out[o*16]); o++;
+        }
     }
     s_d3d.vp_vb_offset += o * VP_VERT_STRIDE;
     return o;

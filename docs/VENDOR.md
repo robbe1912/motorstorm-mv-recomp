@@ -41,3 +41,20 @@ and commit-failure accounting limits remain; this trial does not claim to
 correct those contracts. No external PR was opened.
 
 No releases/binaries/dependencies are redistributed by the initial source commit. A separate distribution needs its own complete component/license audit.
+## Indexed strip restart adoption
+
+Our fork commit `7db6730` implements the two NV4097 restart-state methods and
+incremental D3D12 indexed strip/fan assembly. Only those changes and its small
+game-free assembler header are adopted here; the rest of the upstream backend
+is not replaced. Disabled restart and an oversized sentinel for 16-bit indices
+retain ordinary-index behavior, matching the existing generic dispatcher.
+Strip winding and fan centers reset at cuts; assembly continues across draw
+packets in the same BEGIN epoch.
+
+`python scripts/check_rsx_restart.py` compiles the actual upload function with
+synthetic index/vertex adapters. The old function fails: 15 references and three
+sentinel fetches where the authored case requires six references and no sentinel
+fetch. The candidate passes cuts, packet continuation, disabled/width rules,
+fan assembly and winding. This does not test GPU pixels or all primitive modes.
+Native evidence and the unchanged malformed-menu verdict are recorded in
+[graphics research](research/GRAPHICS_AUDIO.md). No external PR was opened.
