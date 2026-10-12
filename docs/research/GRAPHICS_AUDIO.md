@@ -371,3 +371,31 @@ starts with ordinary positive float values and decays to bits `00000001`.
 The guest routine reads a half-float pixel, smooths it into its exposure value,
 then uploads constant 73. The next probe is that input pixel and its producer;
 no exposure substitution or forced constant was applied.
+
+
+### Native GPU-to-guest exposure coherence mismatch (2026-10-12)
+
+- Read-observer run `20261012T181941.830966Z`, EXE SHA-256
+  `4e4eb619fc80dc0772569aa0eeb2d45877fa6014c6ed0b5777a2ea04664e4e3d`,
+  followed the normal muted menu replay and closed at the target. The getter
+  returns a buffer at `C2A30480`; FrameStart reads its center half-float at
+  `C2A34580` (64x64 RGBA16F, 512-byte rows, pixel 32,32). Guest reads return zero.
+- Combined raw-GPU/read-observer run `20261012T182704.250088Z`, EXE SHA-256
+  `6c258c6beae4ad9ee14b7e2d2507b30f84872edf6d7e935d59f211870b6d5048`,
+  independently repeated the normal route. Fenced GPU readbacks for render target
+  `02A30480` contain center red half `3C00` (exactly 1.0), whereas all 146 observed
+  guest half reads at the corresponding EA contain `0000`. Later GPU center RGBA
+  is `(1, 9.953125, 9.953125, 0.9951171875)`, with raw halves
+  `(3C00,48FA,48FA,3BF6)`; DXGI 10, pitch 512. This is raw data, not BMP tonemapping.
+- The established producer chain is GPU exposure surface -> guest half read ->
+  FrameStart smoothing -> FIFO constant 73 -> tc6.z -> ticket RGB multiplier.
+  Missing GPU-to-guest visibility explains the measured zero input and exposure
+  decay. Implement and test a general surface-coherence seam, including endian,
+  pitch, format, identity and render-thread synchronization; do not substitute an
+  exposure constant. First prove GPU/guest equality, then repeat ordinary native
+  menu/normal PLAY acceptance. The precise synchronization strategy remains open.
+- Upstream open PR #224 implements transfer coherence for the register-file
+  engine's RGBA8 surfaces. It does not cover this legacy D3D12 FP16 CPU-load seam.
+  Preserve its provenance if reusing any implementation.
+- Observers remain private and default off; tracked runtime files were restored.
+  Menu graphics and playable-race acceptance remain unresolved.

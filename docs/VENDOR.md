@@ -102,3 +102,13 @@ Vulkan-specific image size, cube-map, stencil, HDR target and readback proposals
 are not direct changes to the current legacy D3D12 path. No upstream changes
 were merged or submitted during this recheck. Original captured shaders and
 asset evidence remain private.
+
+
+The exposure trace gives [open upstream PR #224](https://github.com/sp00nznet/ps3recomp/pull/224)
+new relevance: it flushes host GPU surfaces before NV3089/NV309E guest-memory
+transfers and uploads transfer writes. Its implementation is scoped to the
+register-file engine and RGBA8, leaving legacy D3D12 unchanged. Native MotorStorm
+now demonstrates an FP16 exposure surface whose GPU center is 1.0 while the PPU
+reads zero from guest VRAM; see the graphics evidence. This is a related coherence
+failure, but #224 is not an existing correction for the observed path. No full
+upstream branch was adopted and no external PR was opened.
