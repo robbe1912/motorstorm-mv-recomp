@@ -127,3 +127,15 @@ PR was submitted. Private observers and original captures remain excluded.
 Own fork checkpoint: [`77cab17`](https://github.com/robbe1912/ps3recomp/commit/77cab17),
 `codex/cpu-surface-coherence`. Only authored API, backend integration, packing
 and HLE fixture were committed; private trials remained untracked.
+
+AA sample-memory extent is authored first on own fork branch
+`codex/aa-surface-sample-layout`, checkpoint
+[`12a158f`](https://github.com/robbe1912/ps3recomp/commit/12a158fc4bacf0c287ac204ff79fee7655276cae).
+The curated overlay preserves its existing backend differences. The shared
+helper and legacy D3D12 integration use the hardware AA grid and logical clip;
+padding does not add visible columns. The actual target-sizing seam passes
+the same authored fixture in both trees. Native placement gains and remaining
+malformed geometry are qualified in [graphics evidence](research/GRAPHICS_AUDIO.md).
+Issue 214's gist V5 concerns a separate register-file/Vulkan proposal; no gist
+or RPCS3 implementation was copied. Private observers, generated guest code,
+captures and helper trial files are excluded. No external PR was opened.

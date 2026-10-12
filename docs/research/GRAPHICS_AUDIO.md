@@ -459,3 +459,52 @@ observation of the remaining defect, not geometry or race acceptance. The owned
 writer/read probes were closed explicitly before each next launch. The current
 value probe uses normal input and lets the now-visible intro play naturally;
 exact animated-image equality was an unreliable skip checkpoint.
+
+## AA sample layout and current native acceptance (2026-10-12)
+
+The original ELF's constructors/callers, captured metadata and FIFO agree on
+720x1280 full-scene targets after 1280x720 display setup. No lifting-induced
+dimension transpose was demonstrated. The first proven placement seam is the
+legacy backend's sample-memory extent: format `0x3148` uses AA mode 3, a 2x1
+sample grid. Clip 720x1280 therefore needs 1440x1280 sample storage. Inferring
+visible width from its padded 6144-byte pitch incorrectly yields 1536 columns.
+
+The fork-first shared helper maps mode 0 to 1x1, mode 3 to 2x1 and modes 4/5 to
+2x2, rejecting unknown layouts, null outputs and overflow. Offscreen viewport
+and scissor follow the same grid. Row padding does not add visible columns;
+an 8x8 non-AA surface with 64-byte pitch remains 8x8. Registered display targets
+keep their existing path. No guest dimension swap or fabricated content is used.
+This models sample-memory dimensions; bit-exact hardware MSAA coverage and
+sample patterns are not established.
+
+`python scripts/check_rsx_surface_layout.py` compiles the actual production
+`current_rt_off`, RSX state and helper against authored states. The preserved
+old backend fails with 1536x1280 versus required 1440x1280; both curated candidate
+and own-fork candidate pass. Fresh red/green evidence is under private
+`temp/checks/rsx-surface-layout-20261012T225405.638776Z`,
+`...225405.639783Z` and `...225408.269922Z`. The fixture does not prove native
+visual correctness or measured performance.
+
+Private native trial run `20261012T203436.372458Z`, EXE SHA-256
+`f52ddfc50c7f89dea59b8a84a8afb8846de7b489a7ebc7c4fddb45755766f8ca`,
+shows real video filling 1280x720 at frame 19 and an authentic main menu with
+proper logo/background and PLAY/ONLINE/EXTRAS/SETUP placement at frame 65.
+The ordinary supported run `20261012T205459.922815Z`, EXE SHA-256
+`3822b2341dbbf26e670189cb392a00b680a56434aa8c58f5860c784967177fc2`,
+records the intended screen-gated replay profile and original ELF/disc pair in
+`launch.json`. Normal CROSS input is acknowledged for language, PLAY, festival
+help and SELECT A RACE. Frame 61 has readable original ticket art at lower right,
+but broad malformed yellow/black/gray geometry across the screen.
+
+The replay records `target_observed=true` and
+`graphics_correctness_verified=false`. Race-ticket sizing/ordering/selection
+acceptance in issue #22 is therefore unmet despite restored art/color; the
+issue must remain open. Bike geometry/art, normal PLAY race acceptance, driving,
+opponents, audio, saves and minimum 60 FPS remain unverified. Retail mstream
+stays parked; the resolved top-right flashing defect is not reopened.
+
+A private wrapper previously replaced `sys.argv`, causing it to ignore supplied
+replay profiles. Those earlier wrapper results do not prove the requested full
+intro route. Use supported `scripts/run.py` and inspect its recorded profile.
+The current profile lets the intro play normally, with the main menu around
+four minutes; exact animated-image equality remains an unsuitable skip gate.

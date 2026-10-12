@@ -3856,6 +3856,8 @@ static void vp_record_cb(u32 slot, int vs_idx, D3D12DrawRecord* dr)
 #define CPU_SURFACE_CAPACITY s_d3d.off_rt_cap
 #include "rsx_cpu_surface.inc"
 
+#include "rsx_surface_samples.h"
+
 static u32 current_rt_off(u32* out_w, u32* out_h, u32 out_mrt[3])
 {
     extern int cellGcmOffsetIsDisplay(u32 offset);
@@ -3906,19 +3908,10 @@ static u32 current_rt_off(u32* out_w, u32* out_h, u32 out_mrt[3])
      * passes draw normalized full-surface quads -- this only picks resolution. */
     u32 w = st->surface_clip_w, h = st->surface_clip_h;
     if (!w || w > 2048 || !h || h > 2048) { w = 0; h = 0; }
-    /* The surface's PITCH, not its clip, sizes the buffer a sampler reads:
-     * this title renders into a 720-wide CLIP of a 1440-wide A8R8G8B8 surface
-     * (SET_SURFACE_PITCH_A 5760) and then binds the texture at the full 1440
-     * width. Sizing the offscreen RT by clip alone handed the sampler a
-     * half-width surface stretched 2x. Widen to pitch/bpp when the pitch
-     * implies more columns; keep the clip height. */
-    { u32 sf = st->surface_format & 0x1Fu;
-      u32 bpp = (sf == 0x0B) ? 8u : (sf == 0x0C) ? 16u : 4u;
-      u32 pitch = st->surface_color_pitch[sel];
-      if (pitch && pitch % bpp == 0) {
-          u32 pw = pitch / bpp;
-          if (pw <= 8192 && pw > w) w = pw;
-      } }
+    if (w && h && !rsx_surface_sample_extent(st->surface_format,w,h,&w,&h)) {
+        fprintf(stderr,"[RSXAA] Unsupported surface layout 0x%X\n",st->surface_format);
+        abort();
+    }
     if (out_w) *out_w = w;
     if (out_h) *out_h = h;
     return raw;
@@ -5587,13 +5580,18 @@ static void render_frame(void)
                     float tw = (cur_rt >= 0) ? (float)s_d3d.off_rt[cur_rt].w : (float)s_d3d.width;
                     float th = (cur_rt >= 0) ? (float)s_d3d.off_rt[cur_rt].h : (float)s_d3d.height;
                     D3D12_VIEWPORT dvp = {0, 0, tw, th, 0.0f, 1.0f};
-                    if (dr->vp_w >= 1 && dr->vp_h >= 1 &&
-                        (float)(dr->vp_x + dr->vp_w) <= tw + 0.5f &&
-                        (float)(dr->vp_y + dr->vp_h) <= th + 0.5f) {
-                        dvp.TopLeftX = (float)dr->vp_x;
-                        dvp.TopLeftY = (float)dr->vp_y;
-                        dvp.Width    = (float)dr->vp_w;
-                        dvp.Height   = (float)dr->vp_h;
+                    u32 sx = 1, sy = 1;
+                    if (cur_rt >= 0 && !rsx_surface_sample_grid(dr->rt_fmt, &sx, &sy)) {
+                        fprintf(stderr, "[RSXAA] Unsupported viewport layout 0x%X\n", dr->rt_fmt);
+                        abort();
+                    }
+                    float px = (float)dr->vp_x * sx, py = (float)dr->vp_y * sy;
+                    float pw = (float)dr->vp_w * sx, ph = (float)dr->vp_h * sy;
+                    if (pw >= 1 && ph >= 1 && px + pw <= tw + 0.5f && py + ph <= th + 0.5f) {
+                        dvp.TopLeftX = px;
+                        dvp.TopLeftY = py;
+                        dvp.Width = pw;
+                        dvp.Height = ph;
                     }
                     D3D12_RECT dsc = {(LONG)dvp.TopLeftX, (LONG)dvp.TopLeftY,
                                       (LONG)(dvp.TopLeftX + dvp.Width),
