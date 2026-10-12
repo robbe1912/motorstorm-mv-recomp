@@ -43,6 +43,7 @@
 #define FP_SRC_NEGATE       (1u << 17)
 #define FP_SRC0_ABS         (1u << 29) /* in DWORD1 */
 #define FP_SRC1_ABS         (1u << 18) /* in DWORD2 */
+#define FP_SRC2_ABS         (1u << 18) /* in DWORD3 */
 #define FP_BRANCH           (1u << 31) /* DWORD2 bit31: instruction is a branch */
 
 /* ---- Execution-condition / condition-code fields (SRC0 = DWORD1) ---------
@@ -563,7 +564,7 @@ static int rsx_fp_decompile_internal(
         Src s0, s1, s2;
         decode_src(w1, w1 & FP_SRC0_ABS, &s0);
         decode_src(w2, w2 & FP_SRC1_ABS, &s1);
-        decode_src(w3, 0,                &s2);
+        decode_src(w3, w3 & FP_SRC2_ABS, &s2);
 
         /* Inline constant: any CONST source pulls the next 16 bytes as a
          * float4 literal and advances past it. */

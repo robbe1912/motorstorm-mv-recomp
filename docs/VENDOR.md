@@ -69,3 +69,14 @@ compiles the production component with game-free memory/location adapters and
 covers size-one packed input, signed fields, endian order, stride, MAIN/LOCAL,
 frequency, disabled defaults and ordinary-float control. Native graphics
 remain malformed after this correction. No external PR was opened.
+
+## Fragment third-source absolute modifier
+
+The curated fragment decompiler adopts own-fork commit `0d03c8b` from
+`codex/fp-source2-absolute`: source 2 uses its own absolute-value flag at bit 18
+of DWORD3. Passing zero to its decoder silently dropped that modifier.
+`scripts/check_rsx_fp_source.py` compiles the real decompiler with authored MAD
+instructions and checks absolute value, negation after absolute value, and an
+unmodified operand. The preserved baseline fails; the candidate passes.
+Both Windows and Linux CI run this contract. No external PR was opened.
+The native menu remains malformed; this is a repaired instruction contract.

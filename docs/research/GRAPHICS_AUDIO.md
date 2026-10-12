@@ -276,3 +276,44 @@ normal screen-gated inputs. Internal frame 11 still shows the malformed
 bands, black background and no recognizable tickets; RT `00D00000` is black.
 The corrected input contract does not satisfy menu acceptance. Continue with
 viewport/front-face/depth and exact fragment/sampler/composition evidence.
+
+### GPU pixel execution and immediate ticket-target reads (issue 22)
+
+Two bounded, disabled-by-default observer prototypes were authored first in the
+own fork and executed only from private diagnostic binaries. Eight fenced
+D3D12 pipeline-statistics queries in `20261012T160741.687652Z` showed the actual
+guest PSO executes: operations 22–25 produced zero pixel-shader invocations,
+while operations 34–37 produced 47,222 / 9,075 / 63,018 / 17,994. All eight
+submitted their expected vertices and clipper primitives. Early back-face
+rejection therefore cannot explain the whole missing ticket.
+
+Immediate target copies in `20261012T162352.446244Z`, diagnostic executable
+SHA256 `beafb2f125d39429720dfcf70ce0aeb75efb7fcb16831cd27ebfca0aa54b145d`,
+captured the target after operations 34 and 37. Both complete 1536x1280 RGBA8
+readbacks had zero nonzero RGB pixels but sixteen distinct alpha values, with
+changing alpha coverage. Black RGB is already present at those boundaries;
+a later overwrite alone cannot explain it. These observations do not expose
+floating-point shader values or independently validate every sampled view.
+A preceding stage-copy attempt launched the old query-only binary due a private
+path-substitution mistake; its launch hash exposed the mismatch and it has no
+stage-image verdict. The corrected launcher validates the expected executable
+hash before process creation.
+
+Standard CPU BC2/BC1 decoding of the previously verified original active
+Deep End diffuse and normal payloads produces recognizable ticket art and its
+normal atlas. This is source interpretation, not GPU sampling or menu acceptance.
+No loose RPK extraction has been established as necessary for that resource.
+
+The exact bound ticket program has one MAD at byte offset 624 with source 2's
+absolute flag set. The legacy decompiler discarded this flag. Own-fork commit
+`0d03c8b` fixes only that operand decode. The authored production-decompiler
+regression fails the preserved baseline and passes the candidate, including
+negation-after-absolute and plain-operand controls.
+
+Ordinary-source native candidate `20261012T165232.509027Z`, executable SHA256
+`45e4de11c7259569abe2c73b31b6b7483ec9661b56f28688715581eeedae5ed5`, used
+the same debug-US ELF and four screen-gated normal inputs, with no observer,
+user navigation, desktop control, or substituted assets. Internal frame 11
+still shows SELECT A RACE, broad bands, black background, and no recognizable
+tickets. Menu correctness remains failed. The next seam is actual sampled RGB
+and floating-point shader state; the native goal stays active.

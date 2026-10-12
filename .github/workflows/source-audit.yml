@@ -20,6 +20,8 @@ jobs:
         run: python scripts/check_rsx_restart.py
       - name: Actual packed vertex fetch regression
         run: python scripts/check_rsx_vertex.py
+      - name: Actual fragment source modifier regression
+        run: python scripts/check_rsx_fp_source.py
       - name: Memory capacity contract
         run: python scripts/check_memory_capacity.py
   capture-observer:
@@ -38,6 +40,8 @@ jobs:
         run: python scripts/check_rsx_restart.py
       - name: Actual packed vertex fetch regression
         run: python scripts/check_rsx_vertex.py
+      - name: Actual fragment source modifier regression
+        run: python scripts/check_rsx_fp_source.py
       - name: Load-time observer/report regression
         run: python scripts/check_loadtime.py
       - name: Texture snapshot regression
