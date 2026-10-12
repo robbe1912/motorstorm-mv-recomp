@@ -17,6 +17,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdatomic.h>
+#include "ps3emu/guest_read_sync.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -73,36 +74,42 @@ static inline uint64_t* vm_ptr64(uint32_t addr) { return (uint64_t*)vm_translate
 /* ---------------------------------------------------------------------------
  * Loads -- read from big-endian guest memory, return host-endian value.
  * -----------------------------------------------------------------------*/
+static inline uint8_t *vm_read_pointer(uint32_t address,uint32_t bytes) {
+    uint8_t *pointer=vm_ptr8(address);
+    vm_cpu_read_sync((uint32_t)(pointer-vm_base),bytes);
+    return pointer;
+}
+
 static inline uint8_t vm_read8(uint32_t addr)
 {
-    return *vm_ptr8(addr);
+    return *vm_read_pointer(addr,1);
 }
 
 static inline uint16_t vm_read16(uint32_t addr)
 {
     uint16_t raw;
-    memcpy(&raw, vm_ptr8(addr), sizeof(raw));
+    memcpy(&raw, vm_read_pointer(addr,sizeof(raw)), sizeof(raw));
     return ps3_bswap16(raw);
 }
 
 static inline uint32_t vm_read32(uint32_t addr)
 {
     uint32_t raw;
-    memcpy(&raw, vm_ptr8(addr), sizeof(raw));
+    memcpy(&raw, vm_read_pointer(addr,sizeof(raw)), sizeof(raw));
     return ps3_bswap32(raw);
 }
 
 static inline uint64_t vm_read64(uint32_t addr)
 {
     uint64_t raw;
-    memcpy(&raw, vm_ptr8(addr), sizeof(raw));
+    memcpy(&raw, vm_read_pointer(addr,sizeof(raw)), sizeof(raw));
     return ps3_bswap64(raw);
 }
 
 static inline float vm_read_f32(uint32_t addr)
 {
     uint32_t raw;
-    memcpy(&raw, vm_ptr8(addr), sizeof(raw));
+    memcpy(&raw, vm_read_pointer(addr,sizeof(raw)), sizeof(raw));
     raw = ps3_bswap32(raw);
     float result;
     memcpy(&result, &raw, sizeof(result));
@@ -112,7 +119,7 @@ static inline float vm_read_f32(uint32_t addr)
 static inline double vm_read_f64(uint32_t addr)
 {
     uint64_t raw;
-    memcpy(&raw, vm_ptr8(addr), sizeof(raw));
+    memcpy(&raw, vm_read_pointer(addr,sizeof(raw)), sizeof(raw));
     raw = ps3_bswap64(raw);
     double result;
     memcpy(&result, &raw, sizeof(result));

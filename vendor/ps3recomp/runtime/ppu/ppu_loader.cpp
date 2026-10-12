@@ -1,3 +1,4 @@
+#include "ps3emu/guest_read_sync.h"
 /*
  * ps3recomp - PPU runtime loader
  *
@@ -1702,7 +1703,7 @@ extern "C" void ppu_fm_hotread64(uint32_t a, uint64_t raw_v, void* ra)
         fprintf(stderr,"%s\n",line); } } }
 #endif
 }
-uint8_t  vm_read8 (uint64_t a) { a = ppu_alias_norm(a); if (vm_oob((uint32_t)a,1)) return 0; vm_hotmap((uint32_t)a,1);
+uint8_t  vm_read8 (uint64_t a) { a = ppu_alias_norm(a); if (vm_oob((uint32_t)a,1)) return 0; vm_cpu_read_sync((uint32_t)a,1); vm_hotmap((uint32_t)a,1);
     if ((uint32_t)a < 0x10000u) ppu_null_read_report((uint32_t)a, 1, __builtin_return_address(0));
 #ifdef VM_SAMPLE_READS
     { static uint64_t c=0; if ((++c % 2000000ull)==0) fprintf(stderr, "[sample] read8  0x%08X ra0=%p ra1=%p\n", (uint32_t)a, __builtin_return_address(0), __builtin_return_address(1)); }
@@ -1736,11 +1737,11 @@ uint8_t  vm_read8 (uint64_t a) { a = ppu_alias_norm(a); if (vm_oob((uint32_t)a,1
           n=0; } }
       else { last=(uint32_t)a; n=0; } }
     return vm_base[(uint32_t)a]; }
-uint16_t vm_read16(uint64_t a) { a = ppu_alias_norm(a); if (vm_oob((uint32_t)a,2)) return 0; ppu_rwatch_hit((uint32_t)a, 2, __builtin_return_address(0)); vm_hotmap((uint32_t)a,2); uint16_t v; memcpy(&v, vm_base + (uint32_t)a, 2);
+uint16_t vm_read16(uint64_t a) { a = ppu_alias_norm(a); if (vm_oob((uint32_t)a,2)) return 0; vm_cpu_read_sync((uint32_t)a,2); ppu_rwatch_hit((uint32_t)a, 2, __builtin_return_address(0)); vm_hotmap((uint32_t)a,2); uint16_t v; memcpy(&v, vm_base + (uint32_t)a, 2);
     { static PPU_THREAD_LOCAL uint32_t last=0xFFFFFFFFu; static PPU_THREAD_LOCAL uint32_t n=0;
       if ((uint32_t)a==last) { if (++n==200000) { ppu_fm_hotread16((uint32_t)a, __builtin_return_address(0)); n=0; } } else { last=(uint32_t)a; n=0; } }
     return __builtin_bswap16(v); }
-uint32_t vm_read32(uint64_t a) { a = ppu_alias_norm(a); if (vm_oob((uint32_t)a,4)) return 0; ppu_rwatch_hit((uint32_t)a, 4, __builtin_return_address(0));
+uint32_t vm_read32(uint64_t a) { a = ppu_alias_norm(a); if (vm_oob((uint32_t)a,4)) return 0; vm_cpu_read_sync((uint32_t)a,4); ppu_rwatch_hit((uint32_t)a, 4, __builtin_return_address(0));
     if ((uint32_t)a < 0x10000u) ppu_null_read_report((uint32_t)a, 4, __builtin_return_address(0));
     /* Raw SPU problem state: reading the outbound mailbox POPS it, so that one
      * cannot be served out of memory. Everything else in the window the SPU
@@ -1823,7 +1824,7 @@ uint32_t vm_read32(uint64_t a) { a = ppu_alias_norm(a); if (vm_oob((uint32_t)a,4
           n=0; } }
       else { last=(uint32_t)a; n=0; } }
     return __builtin_bswap32(v); }
-uint64_t vm_read64(uint64_t a) { a = ppu_alias_norm(a); if (vm_oob((uint32_t)a,8)) return 0; vm_hotmap((uint32_t)a,8);
+uint64_t vm_read64(uint64_t a) { a = ppu_alias_norm(a); if (vm_oob((uint32_t)a,8)) return 0; vm_cpu_read_sync((uint32_t)a,8); vm_hotmap((uint32_t)a,8);
     if ((uint32_t)a < 0x10000u) ppu_null_read_report((uint32_t)a, 8, __builtin_return_address(0)); uint64_t v; memcpy(&v, vm_base + (uint32_t)a, 8);
 #ifdef VM_SAMPLE_READS
     { static uint64_t c=0; if ((++c % 2000000ull)==0) fprintf(stderr, "[sample] read64 0x%08X\n", (uint32_t)a); }

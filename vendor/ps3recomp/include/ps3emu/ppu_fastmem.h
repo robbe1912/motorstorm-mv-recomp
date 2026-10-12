@@ -45,6 +45,7 @@
 
 #include <stdint.h>
 #include <string.h>
+#include "ps3emu/guest_read_sync.h"
 
 /* Byte swaps. MSVC C has no __builtin_bswap*, only intrinsics. */
 #if defined(_MSC_VER) && !defined(__clang__)
@@ -216,6 +217,7 @@ static __inline uint8_t ppu_fm_read8(uint64_t a)
     if (PPU_FM_UNLIKELY(ppu_fm_oob(ea, 1))) return vm_read8(a);
     if (PPU_FM_UNLIKELY(ppu_fm_diag))       return vm_read8(a);
     if (PPU_FM_UNLIKELY(ea < 0x10000u))     return vm_read8(a); /* null-read report */
+    vm_cpu_read_sync(ea, 1);
     PPU_FM_SPIN_DET(ea, ppu_fm_hotread8(ea, PPU_FM_RA()));
     return PPU_FM_LD8(vm_base + ea);
 }
@@ -225,6 +227,7 @@ static __inline uint16_t ppu_fm_read16(uint64_t a)
     uint32_t ea = ppu_fm_alias(a);
     if (PPU_FM_UNLIKELY(ppu_fm_oob(ea, 2))) return vm_read16(a);
     if (PPU_FM_UNLIKELY(ppu_fm_diag))       return vm_read16(a);
+    vm_cpu_read_sync(ea, 2);
     uint16_t v = PPU_FM_LD16(vm_base + ea);
     PPU_FM_SPIN_DET(ea, ppu_fm_hotread16(ea, PPU_FM_RA()));
     return (uint16_t)PPU_FM_BSWAP16(v);
@@ -241,6 +244,7 @@ static __inline uint32_t ppu_fm_read32(uint64_t a)
     if (PPU_FM_UNLIKELY(spu_raw_is_reg(ea))) return vm_read32(a);
     /* GCM_REFPOLL: read-driven fence publication BEFORE the read (default on). */
     if (PPU_FM_UNLIKELY(ea == ppu_hle_inject_base + 0x2008u)) ppu_fm_refpoll();
+    vm_cpu_read_sync(ea, 4);
     uint32_t v = PPU_FM_LD32(vm_base + ea);
     PPU_FM_SPIN_DET(ea, ppu_fm_hotread32(ea, v, PPU_FM_RA()));
     return PPU_FM_BSWAP32(v);
@@ -252,6 +256,7 @@ static __inline uint64_t ppu_fm_read64(uint64_t a)
     if (PPU_FM_UNLIKELY(ppu_fm_oob(ea, 8))) return vm_read64(a);
     if (PPU_FM_UNLIKELY(ppu_fm_diag))       return vm_read64(a);
     if (PPU_FM_UNLIKELY(ea < 0x10000u))     return vm_read64(a); /* null-read report */
+    vm_cpu_read_sync(ea, 8);
     uint64_t v = PPU_FM_LD64(vm_base + ea);
     PPU_FM_SPIN_DET(ea, ppu_fm_hotread64(ea, v, PPU_FM_RA()));
     return PPU_FM_BSWAP64(v);

@@ -112,3 +112,18 @@ now demonstrates an FP16 exposure surface whose GPU center is 1.0 while the PPU
 reads zero from guest VRAM; see the graphics evidence. This is a related coherence
 failure, but #224 is not an existing correction for the observed path. No full
 upstream branch was adopted and no external PR was opened.
+
+
+Typed CPU surface visibility is developed first on the own fork branch
+`codex/cpu-surface-coherence`. New `guest_read_sync` API, D3D12 render-thread
+service and pitched row conversion are authored here; they do not copy RPCS3 or
+PR 224 code. Only corresponding reviewed seams are overlaid into the curated
+backend, preserving earlier adopted fixes. The MotorStorm-only fastmem header
+uses the same barrier and has a real old-header red/candidate green test.
+Native GPU/PPU equality and restored content are recorded in graphics evidence;
+correct placement and normal PLAY race acceptance are still absent. No external
+PR was submitted. Private observers and original captures remain excluded.
+
+Own fork checkpoint: [`77cab17`](https://github.com/robbe1912/ps3recomp/commit/77cab17),
+`codex/cpu-surface-coherence`. Only authored API, backend integration, packing
+and HLE fixture were committed; private trials remained untracked.

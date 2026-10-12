@@ -112,6 +112,10 @@ void rsx_state_init(rsx_state* state)
 static int process_surface_method(rsx_state* state, u32 method, u32 data)
 {
     switch (method) {
+    case NV4097_SET_CONTEXT_DMA_COLOR_A: state->surface_color_dma[0]=data; state->surface_dirty=1; return 0;
+    case NV4097_SET_CONTEXT_DMA_COLOR_B: state->surface_color_dma[1]=data; state->surface_dirty=1; return 0;
+    case NV4097_SET_CONTEXT_DMA_COLOR_C: state->surface_color_dma[2]=data; state->surface_dirty=1; return 0;
+    case NV4097_SET_CONTEXT_DMA_COLOR_D: state->surface_color_dma[3]=data; state->surface_dirty=1; return 0;
     case NV4097_SET_SURFACE_FORMAT:
         state->surface_format = data;
         state->surface_dirty = 1;
@@ -373,7 +377,9 @@ int rsx_process_method(rsx_state* state, u32 method, u32 data)
         vm_write32(VM_HLE_INJECT_BASE + (s_sem_off & 0x00FFFFFFu), data);
         return 0;
       } }
-    if ((method >= 0x200 && method <= 0x23C) ||
+    if (method == NV4097_SET_CONTEXT_DMA_COLOR_A || method == NV4097_SET_CONTEXT_DMA_COLOR_B ||
+        method == NV4097_SET_CONTEXT_DMA_COLOR_C || method == NV4097_SET_CONTEXT_DMA_COLOR_D ||
+        (method >= 0x200 && method <= 0x23C) ||
         (method >= 0x280 && method <= 0x28C))
         return process_surface_method(state, method, data);
 
