@@ -4,6 +4,46 @@ WWS job-list header uses hexadecimal offsets: policy-module EA +0x0, policy-modu
 
 ## Current native producer binding
 
+The muted normal-menu run `temp/runs/20261012T230343.828131Z` reproduces the
+wait with the AA-corrected EXE SHA256
+`3822b2341dbbf26e670189cb392a00b680a56434aa8c58f5860c784967177fc2`.
+Frame 25 shows race selection with distorted yellow/black/white bands; frame
+30 shows the bike menu with a white central scene. The user reports selecting
+the bike. Only LANGUAGE-English CROSS4 has an automated receipt; the external
+screen-gated controller observed race selection, but did not acknowledge the
+other planned inputs. This is assisted normal-menu observation, not a fully
+automated route or a playable race.
+
+Matched EXE/PDB metadata unwinds and freshly compiled context offsets bind both
+`bike1` and `bike2` samples to requested marker 8, minimum 6, queue
+`0x40044480`. The actual trampoline argument binds native thread 34576 to
+physical SPU 2, rather than treating a registry slot as its physical index.
+The process remained alive and rendering stopped. The launcher subsequently
+terminated it at its 600-second bound: final return code 1,
+`terminated_by_guard=true`. That termination is not proof of an earlier game
+crash. Both guarded captured-wait analyses report BLOCKED with exit 2.
+
+REA's unchanged Java bridge queried a disposable read-only copy of the existing
+named Ghidra project, with the original project hashes unchanged. Private
+evidence is `temp/research/rea/wait-20261013T011515/verification.json`.
+Independent original-ELF byte and symbol-bound checks give full coverage for
+`StallForJobMarker` at `0xC5C424` (84 bytes), `WaitForJobListEnd` at `0xC5C478`
+(220), `PVSPPUThread::Wait` at `0x87D278` (136), the unblended scene-list
+renderable at `0x6C379C` (428), and `CommandListBuilder::FinalizeJob` at
+`0xC5BA68` (72). `RenderCommandExecutor::Execute` at `0x7765B0` has 192 of
+200 symbol bytes decoded; the eight-byte gap and unresolved caller identities
+remain qualified. This is the manual bridge path described in
+[translation methods](TRANSLATION.md), not supported Windows ELF CLI admission.
+
+The original names and matched native frames locate the wait in scene
+rendering through `PVSPPUThread::Wait`; they do not identify the missing SPU
+operation. Test three alternatives with a bounded chronological producer
+trace: job 6 has not returned; it returned without reaching retirement; or
+retirement ran but the queue publication did not persist. The earlier probe
+exhausted its budget before this marker, so its missing events do not distinguish
+these cases. No forced retirement, repaired execution, Havok causal link or
+performance acceptance follows.
+
 The muted run starting at 2026-10-10T22:40:10Z stopped at the malformed MOHAWK INDIANA bike menu. Only three of four recorded PAD_FILE presses were acknowledged; the race-start press remained unconsumed. This is a menu stall, not a verified race-load attempt. No Havok fatal or playable race occurred. EXE SHA256 was `627f27bd2c03c8cec5c496bb8b9373630e916a7ec339396537ce0d0b8f6b1195`, using the named-US debug ELF and launch-US disc. The matched EXE/PDB CodeView identity and prelaunch config/userdata identities remain private.
 
 Two matched minidumps, with sequential guest/LS samples 80.741 s apart, bind the wait to native thread 31380. PE unwind metadata reaches C5C424 through actual sampled native PCs. The matched executable's argument-spill instructions locate its PPU context without scanning candidate pointers: r3 is 0x40044410, r4 requests marker 8, and r8 is queue 0x40044480. The sampled object pointer at r3 +0x4 agrees. Both queue samples have hint/taken 8 and minActive `[FFFF, FFFF, FFFF, FFFF, 6, FFFF]`; their identical SHA256 is `8ea4f17d008a10a974529a14a4eadf218ec9e21264c49b736ebfcb209c7e11fd`.
