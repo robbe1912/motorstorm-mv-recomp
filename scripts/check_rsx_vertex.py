@@ -1,9 +1,4 @@
 """Game-free contract for the actual RSX guest vertex-fetch component."""
-
-Compile the production function with synthetic index/vertex adapters, not a
-second implementation. Native command decoding and GPU pixels require the
-separate runtime loop; this contract checks assembly and sentinel fetches.
-"""
 import argparse
 import datetime
 import hashlib
