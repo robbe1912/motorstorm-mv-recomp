@@ -252,3 +252,27 @@ not because errors were suppressed. This proves a repaired dispatch/assembly
 boundary, not normal menu graphics. The owned launcher closed intentionally
 after 56.797 seconds. Video, race entry and FPS acceptance remain unverified;
 the remaining geometry/shader/target-composition seam needs distinct evidence.
+
+### Packed normals/tangents: fetch regression passes, menu remains malformed
+
+The earlier verified DeepEnd draw has format-6 size-one attributes at a2
+(normal) and a9 (tangent). The legacy shared fetch lacked this packed-format
+case and instead read the four bytes as float32. Captured converted tangent
+slots contain non-finite values. Reinterpreting their original packed words
+as signed 11/11/10-bit components yields finite near-unit vectors for the
+valid references: normal lengths 0.99791--0.99986, tangent lengths
+0.99881--0.99995. These are private CPU correlations, not GPU pixel proof.
+
+The authored production-component regression fails on the preserved old source
+(return 1: a packed synthetic vector becomes -2.7502439,6,7,8), then passes
+with the added format case (1,-0.500488758,-0.50097847,1). Disabled attributes,
+ordinary float input, stride, location and frequency controls also pass.
+No game word or captured program is used in the regression fixture.
+
+Muted automatic run `20261012T154128.842569Z`, EXE SHA256
+`7dff3e4a718d5928e8b1c18fa566f13fbcf738a1aeff72b4e6e9cd1e34c47a25`,
+uses the original debug-US ELF, ordinary preserved generated tree and four
+normal screen-gated inputs. Internal frame 11 still shows the malformed
+bands, black background and no recognizable tickets; RT `00D00000` is black.
+The corrected input contract does not satisfy menu acceptance. Continue with
+viewport/front-face/depth and exact fragment/sampler/composition evidence.

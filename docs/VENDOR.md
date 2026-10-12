@@ -58,3 +58,14 @@ fetch. The candidate passes cuts, packet continuation, disabled/width rules,
 fan assembly and winding. This does not test GPU pixels or all primitive modes.
 Native evidence and the unchanged malformed-menu verdict are recorded in
 [graphics research](research/GRAPHICS_AUDIO.md). No external PR was opened.
+
+## Packed vertex fetch adoption
+
+The legacy shared fetch now decodes format 6 as big-endian signed 11/11/10-bit
+XYZ with W=1, matching the existing compact/live-draw decode paths. The change
+is authored first on our fork commit `0b85442`, branch `codex/packed-vertex-fetch`; unrelated
+vertex formats and callers are preserved. `python scripts/check_rsx_vertex.py`
+compiles the production component with game-free memory/location adapters and
+covers size-one packed input, signed fields, endian order, stride, MAIN/LOCAL,
+frequency, disabled defaults and ordinary-float control. Native graphics
+remain malformed after this correction. No external PR was opened.
