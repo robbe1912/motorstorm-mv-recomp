@@ -36,7 +36,11 @@ Write one ASCII line MASK POLLS to the current pad.txt:
 Set-Content -LiteralPath 'temp/runs/YOUR_RUN/pad.txt' -Value '0x4000 8' -Encoding ascii
 ```
 
-File clears on consumption; stdout acknowledges [cellPad] PAD_FILE press. Observe the screen before the next press. Default 40 polls can auto-repeat. Hex masks: CROSS 0x4000, START 0x0008, UP 0x0010, RIGHT 0x0020, DOWN 0x0040, LEFT 0x0080. Avoid timed scripts for acceptance. The historical “7-press” list CROSS×4, DOWN, CROSS contains six presses; actual screens/acknowledgments override that label and old 225s timings. Old retail guidance used a ≥15s cadence.
+File clears on consumption; stdout acknowledges [cellPad] PAD_FILE press. Default 40 polls can auto-repeat. Hex masks: CROSS 0x4000, START 0x0008, UP 0x0010, RIGHT 0x0020, DOWN 0x0040, LEFT 0x0080. The historical “7-press” list CROSS×4, DOWN, CROSS contains six presses; screens and acknowledgments override old timing recipes.
+
+For a known menu checkpoint, use `python scripts/run.py --menu-replay PRIVATE_PROFILE.json`. The supported launcher captures game-internal backbuffers and drives normal input without desktop capture, focus or input. Schema 1 profiles contain the selected ELF SHA256, observed reference BMPs/ROIs/labels, single-button steps with 1..8 polls, and a target with optional additional checks. Profiles and reference images remain private. Text comparisons use white-glyph overlap; explicitly observed blank intro states can use exact RGB comparison. A heading alone can match a help overlay: include a distinguishing target check.
+
+Replay validates the target identity before launching, checks PID/create-time/executable/PAD_FILE ownership before writes, waits for fresh internal frames and input receipts, refuses unknown screens, and stops on timeout/error. An observed target is not a graphics or gameplay verdict. Do not request repeated manual navigation for an established checkpoint or jump directly into a guest scene. `scripts/native_pad.py --help` describes the one-step gated interface; `python scripts/check_menu_replay.py` tests the rejected blind recipe, wrong screens, ownership and observed-state progression without game bytes.
 
 ## Capture discipline
 

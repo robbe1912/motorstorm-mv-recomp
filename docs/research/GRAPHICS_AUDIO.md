@@ -191,3 +191,43 @@ archived frame 005729 shows SELECT A BIKE. Neither proves race ticket art.
 Main-menu background video is a separate unresolved observation; these ticket
 captures do not verify it. Menu correctness, normal PLAY race entry and
 measured minimum 60 FPS remain unproved.
+## Agent-run menu reproduction and indexed-draw seam (issue 22)
+
+The October 12 correction replaces repeated human navigation with normal,
+screen-gated PAD_FILE input; it does not force a scene or treat arrival as
+graphics success. In the muted pilot, four acknowledged CROSS presses selected
+English, skipped an observed blank intro, chose PLAY and dismissed the festival
+help overlay. Only game-internal saved backbuffers were read. A private profile
+records the original ELF identity, observed screen ROIs and a target requiring
+both the SELECT A RACE heading and ticket points text.
+
+The automatic rerun `20261012T150006.048370Z` used EXE SHA256
+`7f41a45cd53ea03bc8f93b8755d28966d562b6390a8b7452bc1a8716018698d9`
+and the same debug-US ELF as the preceding ticket correlation. It reached that
+target in internal frame 11 with four acknowledged inputs, no user navigation
+and no desktop capture/control. The owned launcher closed at 56.672 seconds
+after the target observation and a five-second draw-observation window. Closure
+is intentional, not game completion. The menu still had malformed broad bands.
+The ordinary backend/source selection had already been restored and rebuilt;
+the run used an isolated copy of the diagnostic executable.
+
+A bounded read-only observer was authored first on our ps3recomp fork and
+temporarily integrated into a copied diagnostic binary. It captured the
+verified DeepEnd draw at frame 1323/op 22: triangle strip, first index 1336,
+256 input indices, 762 emitted vertices, RT `00D00000`, viewport 720x1280,
+FP `04C6AC81`, VS cache hash `C23D78F6`. Its textures still included the
+previously verified DeepEnd diffuse/normal sources `C4AEAC80`/`C4BEAC80`.
+Private artifacts retain raw big-endian indices, interpreted indices,
+converted vertex slots, constant banks, bound FP bytes and compiled VS DXBC.
+Raw attribute-span requests exceeding the one-MiB guard were explicitly
+refused; those absent spans are not complete raw-vertex proof.
+
+There are 25 `0xFFFF` entries in those 256 indices. The ordinary command log
+records unknown method `0x1DB0 = 0x0000FFFF` followed by unknown method
+`0x1DAC = 0x00000001`: the configured primitive-restart index and its enable.
+The legacy D3D12 command state does not handle these methods, and its indexed
+strip expansion treats every index as a vertex reference. This identifies a
+concrete restart-dispatch/assembly seam, distinct from the restart-aware
+generic live-draw/dispatch paths. It does not yet prove a repaired menu: the
+next change needs a game-free regression, hardware-faithful restart state and
+strip assembly, followed by the same agent-run native loop.

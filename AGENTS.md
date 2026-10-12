@@ -9,5 +9,6 @@
 - Do not link entire build/, temp/ or game/ directories. Write a worktree-local config/local.json, copy baseline userdata into a local save directory, and use local logs, captures and PAD_FILE.
 - Before staging, follow docs/REPOSITORY.md, then run python scripts/check_repository.py and python scripts/check_docs.py. Game bytes, generated guest code, keys, saves and captures remain ignored, including link targets. Never force-add them.
 - Before a native run, follow docs/OPERATIONS.md. Tests are muted. Coordinate native runs and builds on this host: project.py build kills every ms1_recomp.exe before relinking. Wait for another task's owned run to finish; do not kill it.
+- Reproduce known menu checkpoints with screen-gated normal PAD_FILE replay, not repeated requests for user navigation or scene jumps. See docs/OPERATIONS.md; scripts/check_menu_replay.py rejects the historical blind press recipe.
 - Preserve debug and retail generated trees separately. Use the original target's inputs; never replace a target tree with a sibling US mirror.
 - Build success, submitted frames and reference gameplay do not establish native gameplay or minimum 60 FPS. Report the actual observations, identities and remaining limits.
