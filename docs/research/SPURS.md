@@ -2,7 +2,93 @@
 
 WWS job-list header uses hexadecimal offsets: policy-module EA +0x0, policy-module byte length +0x4, BE16 hint +0x10, taken +0x12, six BE16 minActive markers +0x14. PM atomic publication sites 3180/32FC/3330. PPU wait is genuine. Native main SPURS 4003F380 with five physical SPUs/wids 0..3; audio 1027DC00. Heap EAs vary; 108D0100 is reservation payload, not a module (observed module 100E6F80).
 
-## Current native producer binding
+## Post-incarnation native PVS binding, 2026-10-13
+
+After PR #80, muted normal-PLAY run `20261013T164817.294475Z` still stops
+presenting at malformed MOHAWK bike selection (last internal frame 79).
+Eight screen-gated receipts acknowledge English, Sony skip, PLAY, help,
+ticket, Anything, class and attempted MOHAWK confirmation. Skip correlation
+is 0.9682716418. Consumption is not scene-transition or gameplay proof.
+EXE SHA256 is
+`c360957f7496b66bf931673dd137deae21ef6a0e3213f71cef62b44f09b6b4a4`,
+with the matching named-US ELF/launch-US data. PM interpretation is required;
+all six wedge probes are zero; sampling is `RSX_CAP=1:480:25`. Duration guard
+closes at 301.469s, return code 1. Stderr SHA256 is
+`57e2ad5be1ca2795526f68a9b622803fe26e3b063a293a1b2ed20f260797c234`.
+There are 1,656 accepted explicit EXIT records, no task-ID exhaustion and no
+unresolved-indirect line within this bound. Earlier errors remain evidence.
+
+Exact EXE/PDB/dump CodeView and metadata-only unwinds place main native thread
+31124 at `JobListPrivate::StallForJobMarker` through `PVSPPUThread::Wait`,
+scene rendering and `ShadowMapModule::GenShadowMap`, rather than the earlier
+Havok completion semaphore. A CFG-dominating RSI=entry-RCX assignment plus
+restored nonvolatile register proves the actual PPU context argument. Two
+sequential live reads, about 40.68s apart, bind guest thread 1, object
+`0x40044410`, queue `0x40044480`, requested marker 8, hint/taken 8 and
+minActive `[FFFF, FFFF, 6, FFFF, FFFF, FFFF]`. Neither is an atomic history
+or captured producer operation.
+
+The same argument proof at `spu_pm_interp_trampoline` binds native thread
+11568 (`spurs_pm2`) to registry slot 6, physical SPU 2 and local job records
+6/7 for that queue. Three complete 256-KiB local stores spanning about
+183.34s have identical SHA256
+`15af0ff61c2dffa2fca46eb38fbea07fb866a70e97a703c18bc8d81acbfa7518`.
+Third unwind stops at an unsupported leaf; no third trampoline-frame claim
+is made. Context diagnostic PCs are not executed instruction PCs. Private
+records are `postexit*_stall_snapshot.json`, matched unwinds,
+`postexit1/2_pvs_wait.json` and `postexit2_producer_binding.json` beneath
+`temp/runs/20261013T164817.294475Z`.
+
+This satisfies issue #8's conditional trigger without identifying the first
+missing producer operation or proving a Havok relationship. Next evidence
+must distinguish job-6 execution, retirement and shared-marker publication.
+Exonerated CPU spans stay closed; #71 remains separate; retail mstream stays
+parked. No native race, graphics correctness or frame-time acceptance.
+
+### First chronology probe: physical ownership changes
+
+Read-only probe run `20261013T170551.582315Z` used EXE
+`a0a1e74da3f9dc765425f19761315f4bbd9b2fe269498ec58778780a72b3d2bb`,
+normal acknowledged input/intro skipping, queue filtering and physical SPU 2.
+Its authored fork fixture verified unchanged context, LS and synthetic guest
+memory, filtering and retained observation after a local retirement clears
+its job record. Native trace contains 998 filtered fetch records: local
+marker 6 clears and the shared active markers become all FFFF. That is
+positive evidence for this wave, not proof that the whole PVS wait completes.
+A later matched operand capture still has requested8/min6, now on physical
+SPU 3; its local records are 6/7. The SPU-2 filter excludes this later owner.
+The queue address/marker number alone must not identify a unique job lifetime.
+Snapshot chronology and these filtered records cannot establish whether this
+is a new submission or ownership handoff. Broader observation must preserve
+context and actual physical identity across the same queue.
+
+The 181s guard terminates with return1. Stderr SHA256 is
+`d4c55043bc8a0b80fc578bdca95a73dcc50dd0740db198f51eaca1fb4707673d`.
+Private evidence is `producer-final-summary.json`, `chronology1_pvs_wait.json`
+and context/LS files. Neither probe timing nor retirement establishes a race;
+probe-off baseline above remains authoritative for the ordinary stall.
+
+## Earlier native producer binding
+
+The second private observer run `20261013T171346.818831Z`, EXE SHA256
+`eda1c840c3b39ec60e2e198d94887c719ec5dfa465725864682d25ad1b13221b`,
+admitted all physical SPUs on the same queue and retained an armed context
+across policy-mode changes. Its 20000-event interpreter budget exhausted on
+one context, physical SPU 0. Local marker 6 clears, and both publication sites
+are fetched twice; the sequential shared header changes from hint8/taken8 to
+hint2/taken1. Queue address and marker alone therefore cannot identify a unique
+submission lifetime. No matched late wait capture was made in this run, and
+absence after the cap has no verdict. Internal frame 71 still shows malformed
+blue geometry at SELECT A BIKE, not gameplay. The 181.046s duration guard ends
+with return1. Trace SHA256 is
+`288c35aceefd36007dc9aa391e98e8456746b92db50138fe3b22d6011560189d`;
+stderr SHA256 is
+`79e378e657135b9f86e2de4d4d03c139fc7a66dfe03ccf01b1bb41520e3fa7fa`.
+All three temporary runtime hooks were restored byte-for-byte in both trees;
+the supported optimized rebuild succeeds with EXE SHA256
+`d767b40e2ace342d60ccaa7623cf272863f2a2848a4af1f6a09d337a62b5cb0a`.
+Private summaries and EXE/PDB pairs are retained. No producer correction or
+race acceptance follows from these observations.
 
 The muted normal-menu run `temp/runs/20261012T230343.828131Z` reproduces the
 wait with the AA-corrected EXE SHA256
