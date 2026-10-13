@@ -76,3 +76,61 @@ Pseudocode and incoming-reference results are available, but some references
 lack a source procedure, and the first three coverage gaps are not classified.
 These observations make focused query reuse practical; they do not establish
 whole-project analysis completeness, a new renderer fix or native acceptance.
+
+## Read-only RPCS3 checkpoint decoding, 2026-10-13
+
+The user-provided launch-US state is
+`F:/Emulators/RPCS3/savestates/BCUS98137/BCUS98137_1_0.SAVESTAT.zst`,
+51214995 bytes, SHA256
+`30d91bc252d1ae74aa6377665e3bb6a704b1793002efa360de589f9cf9b204ed`.
+Its header names RPCS3 `0.0.43-20273-987129bc Alpha | master`,
+build commit `987129bc91191b42bfc17256641037c76c7a856e`, title BCUS98137
+and state date `2026-10-13T02:00:47`. It was inspected offline without
+restoring the emulator or changing the source. The private key field was
+skipped and never printed. Exact-revision RPCS3 source is private inspection
+material; no GPL implementation is adopted into this runtime.
+
+Private readers under `temp/research/rpcs3-savestate` follow the recorded
+serialization versions and bounded exact reads across Zstandard frames.
+The successful `vm-index-v2` indexes41 shared and47 private VM images,
+9 locations, with VM stream offsets298..132275500. Failed initial indexing
+is retained separately. The sparse bitmap describes nonzero128-byte lines;
+an explicit zero bit yields zero, while an absent map remains unknown.
+Serialized payload hashes are checked before guest reads.
+
+The candidate launch-US retail ELF has SHA256
+`8e0abf4f611752f74f0f726f77f25e7bfef043c964451b96cffe5cf2089f3886`.
+Three complete original debug routines have unique matches in its executable
+segments, and the saved VM retains those exact retail bytes:
+
+| Named-debug entry | Retail/state entry | Compared bytes |
+| --- | --- | ---: |
+| hkSemaphoreBusyWait::acquire `0xB15968` | `0xA925FC` | 108 |
+| WWS marker wait `0xC5C424` | `0xBD910C` | 84 |
+| WWS finalize `0xC5BA68` | `0xBD8750` | 72 |
+
+These are individual routine anchors. They do not establish a universal
+address map, entire-executable equivalence or matching native checkpoint.
+
+FXO begins at stream offset132275500; its objects have no universal
+name/length envelope. `decode_ppu_records.py` locates the PPU ID-map using
+ID/type bounds and exact position-checksum tags, then requires all contiguous
+records, both terminal tags, field bounds, stack/register validity and a unique
+complete candidate. It decodes the version3 PPU layout, the first global
+priority tag, packed CR/FPSCR, optional vector data, all GPR/FPR/vector storage
+and status-dependent runnable order. It validates16 thread records at
+offsets132276831..132295131. Earlier FXO objects are not sequentially decoded;
+this is a structurally validated PPU map, not a complete state-file decoder.
+
+Saved `main_thread` ID `0x01000000`, status2, has CIA `0xBD9124`, inside
+the matched WWS wait. Its object `0x50054410` points to queue `0x50054480`,
+and it requests marker4. The queue's policy is `0x10135180`, length11136,
+hint8/taken4, minActive `[2, FFFF, 3, FFFF, FFFF, FFFF]`.
+This is one scheduling instant, not evidence of a persistent reference stall
+or that the state reaches controllable racing. Thread names/PCs, sparse VM,
+raw state and opcode comparisons stay private.
+
+The [native main wait](HAVOK_REFERENCE.md#native-physics-completion-wait-2026-10-13)
+is independently established from its matching native dumps. The reference
+and native main threads are in different waits; compare their identified
+operation contracts rather than equating addresses or scheduling states.

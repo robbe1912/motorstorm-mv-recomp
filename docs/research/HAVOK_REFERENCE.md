@@ -400,3 +400,87 @@ selection and rebuilds candidate runtime EXE
 `2744656598efc6d3c6529bc40daf00c1d3c88615c19f89b4fff01713cccd52e9`.
 Both Windows and Linux CI capacity checks pass in [PR57](https://github.com/robbe1912/motorstorm-mv-recomp/pull/57).
 Issues #7/#13 remain scoped to their own acceptance; overall DoD is unfinished.
+
+## Native physics-completion wait, 2026-10-13
+
+The optimized muted run `temp/runs/20261012T234028.365932Z` used PID28224,
+EXE SHA256 `1f003a531bcb20a84eb4ad99e37541e820bd246849f31b37b4773fb62a4f56f8`
+and CodeView `525344536248f331c391b88b4c4c44205044422e01000000`.
+The user reported attempting normal PLAY/race start and then a freeze.
+The route was user-assisted: the replay recorded zero consumed inputs,
+so it does not prove the exact navigation or accepted start packet.
+The launcher closed at its 600 s bound; its return1 is a guard result,
+not evidence of a crash. No controllable native race was observed.
+
+Private `temp/issue13-route/unwind_mixed.py` extends the earlier
+executable-only inspection across Windows frames. Before unwinding, it
+checks dump/EXE/PDB CodeView and the launch EXE hash. Each additional PE
+must match its captured timestamp, image size, checksum and CodeView;
+the report records the file hash. Captured stack memory and bounded x64
+unwind records recover callers; no stack scan is used. Unsupported records
+stop. The only admitted syscall leaves are checked Nt/Zw export stubs
+in the matching ntdll image, and the optimized executable's previously
+checked volatile-only leaf. Nonvolatile registers are restored;
+volatile caller registers are not recoverable by this method.
+
+Both `race1` and `race2` dumps identify native TID31116 as the game main
+thread through its startup/`ppu_run` callers. Their 26-frame chain reaches:
+
+`NtWaitForAlertByThreadId → RtlSleepConditionVariableCS →
+SleepConditionVariableCS → sys_cond_wait → lv2_try_syscall → lv2_syscall →
+hkSemaphore::acquire (0xB15714) →
+hkMultithreadingUtil::waitForStepWorldFinished (0xA012E8) →
+HavokSystem::Update (0x4F05D0) → HavokUpdate (0x4F0BF0) →
+MotorStorm::Update (0x4EBD10)`.
+
+Function names are independently resolved from the original named ELF.
+The wait belongs to physics completion; the two other semaphore stacks
+remain Havok worker job waits. They are not the primary game thread.
+This also supersedes using the old marker6 PVS diagnosis for this run:
+its sampled WWS queue has hint/taken0 and all inactive markers.
+
+`inspect_main_wait.py` independently checks that the matched
+`sys_cond_wait` machine code assigns entry RCX to RSI exactly once before
+the sampled wait return address. The OS unwind restores that nonvolatile
+RSI as context pointer `0x34FC5EF120`. A freshly compiled header-layout
+helper establishes `sizeof(ppu_context)=1104`, GPR offset0, LR1032,
+CIA1064 and thread-id1072. Both dumps contain the same complete context
+SHA256 `c7634ee4fddeb22317aee04008e130bb22edc80c9793a81d8d9a516cf00d524e`:
+guest thread1, syscall107 (`SYS_COND_WAIT`), condition8, timeout0,
+LR `0xA013F4`. CIA is0 and is not used as an executed-PC claim.
+
+Original function bytes show the utility pointer in guest r27
+`0x4BE34700` and completion semaphore in r29/r31 `0x4BE3470C`.
+The semaphore acquisition loads its condition ID from object+0xC;
+the enclosing wait acquires utility+0xC once per worker. Original worker
+code contains the matching completion release to utility+0xC before
+waiting for its next work. This identifies the producer contract, not
+proof that a release executed in the frozen run.
+
+Read-only REA query `temp/research/rea/wait-20261013T022331` preserves the
+original Ghidra project. Independent ELF comparison gives full byte/body
+coverage for semaphore acquire (168 bytes), wait-for-world-finished
+(296 bytes) and start-world-step (164 bytes). The worker export covers
+3020 of3504 symbol bytes: its matching release span is readable, but
+its full body/caller inventory must not be claimed complete. Pseudocode,
+instruction bytes, contexts and dumps remain private.
+
+The two snapshot starts are 166.559 s apart. Their repeated wait/context
+observations do not establish uninterrupted blocking or signal chronology.
+Neither dump contains the guest utility object nor the host condition slot.
+No condition corruption, lost wakeup, unfinished SPU job or instruction
+translation defect has yet been demonstrated. Runtime/generated source
+and the game executable were unchanged by this inspection.
+
+The next bounded capture for [#13](https://github.com/robbe1912/motorstorm-mv-recomp/issues/13)
+must bind the current main context, condition/mutex/waiter, utility/worker
+objects and outstanding Havok job state to the actual producer threads.
+The first hypothesis is unfinished work preventing the original worker
+completion release; falsify it with an executed matching release. The
+alternative is a semaphore/condition delivery mismatch; establish it only
+with the matching guest release, syscall result and waiter state through
+delivery. Compare an identified translation operation against an independent
+oracle before changing runtime semantics. Retain the exonerated busy-wait
+counter decrement and PM CPU spans; never force the completion wait through.
+The separately decoded [reference checkpoint](TRANSLATION.md#read-only-rpcs3-checkpoint-decoding-2026-10-13)
+is another executable/checkpoint and does not prove native race acceptance.
