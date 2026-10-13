@@ -68,7 +68,7 @@ Private evidence is `producer-final-summary.json`, `chronology1_pvs_wait.json`
 and context/LS files. Neither probe timing nor retirement establishes a race;
 probe-off baseline above remains authoritative for the ordinary stall.
 
-## Earlier native producer binding
+### Second chronology probe: all-physical filter and cap
 
 The second private observer run `20261013T171346.818831Z`, EXE SHA256
 `eda1c840c3b39ec60e2e198d94887c719ec5dfa465725864682d25ad1b13221b`,
@@ -89,6 +89,8 @@ the supported optimized rebuild succeeds with EXE SHA256
 `d767b40e2ace342d60ccaa7623cf272863f2a2848a4af1f6a09d337a62b5cb0a`.
 Private summaries and EXE/PDB pairs are retained. No producer correction or
 race acceptance follows from these observations.
+
+## Earlier native producer binding
 
 The muted normal-menu run `temp/runs/20261012T230343.828131Z` reproduces the
 wait with the AA-corrected EXE SHA256
