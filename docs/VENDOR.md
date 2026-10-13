@@ -12,11 +12,53 @@ Historical upstream reference documents and the hardcoded private PRX helper rem
 
 Public vendor tools are limited to 14 generation/extraction dependencies, enforced by `VENDOR_TOOLS` in the staged-source auditor. Other research/port helpers, baselines, diagnostic output and generic templates remain in the same private reference archive. They are not required by the documented build/generation workflow. Any reused helper must receive a separate provenance review before publication.
 
-Clean upstream observed `5244db92669b54831c6d3ebb7a96d58c4dbfa6df` (v0.13) versus local v0.11 base. Reuse selectively, preserve fixes and attribution. The snapshot of 18 open PRs / 7 issues is time-specific: recheck before contributing.
+Clean upstream was refreshed to `a2c20108af45174dbb7d3e2f87f6acaaef09c6b4`
+(v0.14.0, PR246) on 2026-10-14. The earlier `5244db9`/v0.13 survey is historical.
+Reuse selectively, preserving curated fixes, component licenses and attribution.
 
-Existing [draft PR 230](https://github.com/sp00nznet/ps3recomp/pull/230), codex/d3d12-fp-source-capacity, commit `75a32692a6a4cb8f5a9217b78a0ab047c521d6c9`: a generic synthetic 4096-byte/256-instruction shader expands to 57382 HLSL bytes; caller capacity red 36 pass/3 fail → green 39/0, FXC ps_5_0/O3 pass, Release runtime build 0, CTest 5/5, diff-check 0. Last saved status OPEN/draft with empty check rollup: not CI success or merge approval. No game payloads in the PR. The local analogous fix is in graphics evidence.
+[PR230](https://github.com/sp00nznet/ps3recomp/pull/230),
+codex/d3d12-fp-source-capacity, commit `75a32692a6a4cb8f5a9217b78a0ab047c521d6c9`,
+is now merged (merge `89f9a32`, 2026-10-13). Its authored 4096-byte/256-instruction
+shader expands to 57382 HLSL bytes; original capacity regression 36 pass/3 fail
+became 39/0, FXC ps_5_0/O3 passed, Release runtime built and CTest passed 5/5.
+These are the original qualified checks, not native game acceptance. The local
+analogous fix is in graphics evidence; no game payloads were published.
 
-PR 213 overlaps signal/event/context work; do not duplicate it. Issue 214 KZ3 findings, PR 215 real video candidate and PR 226 null-read diagnostics are triage candidates, not adopted fixes. Private upstream research artifacts remain in a private archive.
+PR213 overlaps signal/event/context work; do not duplicate it. Private upstream
+research artifacts remain in a private archive. Earlier candidate/status lists
+are historical; inspect current source and PR state before a trial.
+
+## Combined fork testing
+
+The owner authorized a continuous integration branch in our own fork while
+retaining atomic implementation branches for later upstream proposals.
+[`combined`](https://github.com/robbe1912/ps3recomp/tree/combined) merges the
+existing fix chain through `8e40617`, fragment capacity/window changes, and
+upstream v0.14.0 at `8b244cf`. Its
+[commit map and validation boundaries](https://github.com/robbe1912/ps3recomp/blob/combined/docs/COMBINED.md)
+are canonical for that fork; unfinished observer and force-updated pointer-audit
+branches were excluded. No new upstream PR was opened.
+
+Windows Release runtime build and seven CTest tests pass locally. All 24 fork
+Python test commands exit successfully, with the POSIX interpreter fixture
+explicitly skipped on Windows. Separate authored production-source checks pass
+restart, vertex fetch, AA layout, source-2 absolute and WARP clipping. The new
+source-2 regression (`27559e1`) fails with the old behavior and passes with the
+fix. Its header comes from the same tree as its seven-argument API; a previous
+cross-tree eight-argument test result was invalid.
+
+Integration commits enable `combined` pushes in all four workflows, link the
+read-coherence module in standalone fiber/codec and direct CI fixtures, and
+remove the guest-field runner's assumption that `MV_CLANG` is always set.
+Hosted CI caught those dependency/environment failures; final hosted results
+must be checked against the exact head. These are reusable build/test fixes.
+
+This merge was not overlaid onto MotorStorm and no native game run used it.
+The basic private overflow MFC/reservation-holder mechanisms described by
+newer PR290 already exist in the curated source; that source comparison does
+not establish the cause of the current PVS wait. Scheduler PR291 remains
+untried. Original menu assets, the missing bike, normal PLAY and sustained
+performance still require native proof under their existing issues.
 
 ## Fork-first workflow
 
