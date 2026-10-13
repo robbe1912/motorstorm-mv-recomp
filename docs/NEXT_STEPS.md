@@ -26,6 +26,12 @@ semantics. The [offline reference state](research/TRANSLATION.md#read-only-rpcs3
 has individual routine anchors and a validated PPU map, but a different main
 wait/checkpoint. Neither finding closes #13 or reopens an exonerated span.
 
+The [constraint-consumer capture](research/HAVOK_REFERENCE.md#constraint-consumer-and-task-slot-exhaustion-2026-10-13)
+binds seven queued entries to a consumer whose task creation exhausts all128
+enabled slots. [#71](https://github.com/robbe1912/motorstorm-mv-recomp/issues/71)
+now targets the actual task-exit lifecycle and slot recycling; distinguish a
+genuine destruction request from ordinary async entry return before a fix.
+
 The current native acceptance DoD is entering a race through normal PLAY and seeing the original main-menu assets display normally. It requires observed native behavior. Keep driving, opponents, audio and saves as subsequent verification requirements. The user now accepts a 30 FPS cap, provided native gameplay, video and UI actually sustain 30; this is the current performance target. A diagnostic checkpoint or present/title counter does not satisfy acceptance.
 
 Original binaries, assets, firmware, generated guest code, keys, dumps and captures stay local. Issue/PR comments may contain source changes, hashes, identities and non-payload findings; follow the [source boundary](REPOSITORY.md) and [operating rules](OPERATIONS.md).
