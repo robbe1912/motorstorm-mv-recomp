@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from menu_replay import load_profile, matches, replay
-from native_pad import owned
+from native_pad import latest_frame, owned
 
 
 def synthetic_bmp(path, left, color=b'\xff\xff\xff'):
@@ -23,6 +23,35 @@ def synthetic_bmp(path, left, color=b'\xff\xff\xff'):
 
 
 class MenuReplayTests(unittest.TestCase):
+    def test_latest_completed_frame_orders_numeric_sequence_past_99(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            for number in (9, 10, 98, 99, 100, 101, 200):
+                directory = root / 'rsx' / f'frame_{number}'
+                directory.mkdir(parents=True)
+                synthetic_bmp(directory / 'backbuffer.bmp', 25)
+                if number != 200:
+                    (directory / 'manifest.txt').write_text('authored fixture')
+            self.assertEqual(latest_frame(root).parent.name, 'frame_101')
+            (root / 'rsx/frame_200/manifest.txt').write_text('authored fixture')
+            self.assertEqual(latest_frame(root).parent.name, 'frame_200')
+
+    def test_manifest_does_not_make_a_partially_written_bitmap_complete(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            for number in (99, 100):
+                directory = root / 'rsx' / f'frame_{number}'
+                directory.mkdir(parents=True)
+                synthetic_bmp(directory / 'backbuffer.bmp', 25)
+                (directory / 'manifest.txt').write_text('authored fixture')
+            bitmap = root / 'rsx/frame_100/backbuffer.bmp'
+            complete = bitmap.read_bytes()
+            for partial in (b'', b'BM', complete[:54], complete[:-1]):
+                bitmap.write_bytes(partial)
+                self.assertEqual(latest_frame(root).parent.name, 'frame_99')
+            bitmap.write_bytes(complete)
+            self.assertEqual(latest_frame(root).parent.name, 'frame_100')
+
     def test_observed_target_takes_priority_over_optional_skip(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)

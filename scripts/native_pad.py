@@ -77,9 +77,27 @@ def similarity(left, right, mode='text'):
 
 
 def latest_frame(run):
-    frames = sorted((Path(run) / 'rsx').glob('frame_*/backbuffer.bmp'))
-    complete = [f for f in frames if (f.parent / 'manifest.txt').is_file()]
-    return complete[-1] if complete else None
+    def completed_bitmap(frame):
+        # The producer writes the manifest before exporting the backbuffer.
+        # Header/payload length must therefore be complete as well.
+        with frame.open('rb') as capture:
+            header = capture.read(54)
+            size = os.fstat(capture.fileno()).st_size
+        if len(header) < 54:
+            return False
+        if header[:2] != b'BM':
+            raise ValueError('Unexpected internal BMP header')
+        offset = struct.unpack_from('<I', header, 10)[0]
+        w, h, planes, bits, compression = struct.unpack_from('<iiHHI', header, 18)
+        if w <= 0 or not h or planes != 1 or bits not in (24, 32) or compression != 0:
+            raise ValueError('Unsupported internal BMP format')
+        pitch = ((w * bits + 31) // 32) * 4
+        return size >= offset + pitch * abs(h)
+
+    frames = (Path(run) / 'rsx').glob('frame_*/backbuffer.bmp')
+    complete = [f for f in frames if (f.parent / 'manifest.txt').is_file()
+                and completed_bitmap(f)]
+    return max(complete, key=lambda f: int(f.parent.name[6:]), default=None)
 
 
 def send(run, reference, roi, mask, polls, label, timeout=15, mode='text'):

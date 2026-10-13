@@ -68,6 +68,25 @@ the expected skip input; retained red/green logs and frames remain private.
 
 Replay validates the target identity before launching, checks PID/create-time/executable/PAD_FILE ownership before writes, waits for fresh internal frames and input receipts, refuses unknown screens, and stops on timeout/error. An observed target is not a graphics or gameplay verdict. Do not request repeated manual navigation for an established checkpoint or jump directly into a guest scene. `scripts/native_pad.py --help` describes the one-step gated interface; `python scripts/check_menu_replay.py` tests the rejected blind recipe, wrong screens, ownership and observed-state progression without game bytes.
 
+Completed backbuffers are selected by numeric frame sequence, including the
+`frame_99` to `frame_100` boundary. Lexicographic ordering previously selected
+an old `frame_99` while `frame_277` was fresh; the freshness guard refused input.
+The producer writes the manifest before exporting its backbuffer, so selection
+also requires a complete BMP header and its declared pixel payload. Partial
+writes remain unavailable; unsupported completed headers still raise errors.
+The authored regressions cover numeric ordering, missing manifests, empty or
+short headers and a truncated pixel payload. Both former selectors fail their
+respective new checks; all ten menu-replay checks pass after correction.
+
+Muted named-US run `20261013T192701.416457Z`, EXE SHA256
+`e1e041a43880f7cfe71a58ee0dfb4ccc866ca524cf8ce8a7276fee52fa711e34`,
+acknowledged ordinary ticket, Anything and class inputs from completed frames
+125, 127 and 129, then observed the selected MOHAWK heading in frame 130.
+The latest completed frame was 159 when the owned run stopped explicitly at
+130.828 seconds. The private ticket-art reference was updated from an observed
+capture of this clipping candidate; no freshness/ownership threshold changed.
+This verifies replay beyond the ordering boundary, not bike or race correctness.
+
 ## Capture discipline
 
 The private baseline contains ten PPU sources, 24 SPU images and five capture hooks; it is instrumented. Original EXE/PDB are retained under build/preserved/, and rebuilt identities are in build/native/build_identity.json. Build success is not gameplay proof.
