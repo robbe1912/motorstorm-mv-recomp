@@ -50,8 +50,9 @@ cross-tree eight-argument test result was invalid.
 Integration commits enable `combined` pushes in all four workflows, link the
 read-coherence module in standalone fiber/codec and direct CI fixtures, and
 remove the guest-field runner's assumption that `MV_CLANG` is always set.
-Hosted CI caught those dependency/environment failures; final hosted results
-must be checked against the exact head. These are reusable build/test fixes.
+Hosted CI caught those dependency/environment failures. All four workflows
+(Windows, Linux, Linux Vulkan and macOS) now pass at fork head
+`71617d687335c3c004f1fe37f27c419bddfb557b`. These are reusable build/test fixes.
 
 This merge was not overlaid onto MotorStorm and no native game run used it.
 The basic private overflow MFC/reservation-holder mechanisms described by
