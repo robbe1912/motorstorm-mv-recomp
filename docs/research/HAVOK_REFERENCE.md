@@ -493,63 +493,63 @@ preceding investigation. The English input and observed MOHAWK confirmation
 have consumption receipts; intermediate navigation has no receipts and is
 user-assisted. This does not establish an entirely automated normal-PLAY
 route. The user requested termination: the launcher closed through its explicit
-stop marker at359.719s, return1/guard=true. This is not a natural crash.
+stop marker at 359.719 s, return code1/guard=true. This is not a natural crash.
 No controllable race or performance result was obtained.
 
-Two read-only completion supplements,77.968s apart, bind main native TID38544
-to guest thread1 and workers37984/26104 to guest threads8/9. Matched unwind
+Two read-only completion supplements, 77.968 s apart, bind main native TID38544
+to guest thread1 and native workers37984/26104 to guest threads8/9. Matched unwind
 metadata and control-flow proof establish the recovered entry-context
 registers; compiled header offsets bind the actual PPU/condition/mutex layouts.
-The main utility is`0x4BE34700`, with outstanding-step byte1 and worker count2.
-Its completion semaphore at+0xC has count0, mutex12 and condition8. The active
-host mutex has owner0/depth0; the condition address matches the unwound operand.
+The main utility is `0x4BE34700`, with outstanding-step byte 1 and worker count 2.
+Its completion semaphore at +0xC has count 0, mutex 12 and condition 8. The active
+host mutex has owner 0/depth 0; the condition address matches the unwound operand.
 Exactly one linked waiter is present, next=null/signalled=0. Sequential reads
 are not an atomic snapshot or evidence of release/signal chronology.
 
-The workers' original`finishJobAndGetNextJob` prologue preserves the JobQueue
-in r25 and ThreadType in r21. Their captured values bind queue`0x4BE20C00`
-and selectors0/1. Original`lockQueue` returns the DynamicData pointer held
-in r31, here`0x4BE22D80`. That pointer is not the JobQueue object. The
-captured queue lists select[0,1], [1,0] and[2] for selectors0,1 and2 respectively.
-DynamicData has active count0, waiting counts2/0 and pending ring counts0/0/7.
-The third ring has buffer`0x4BADB800`, capacity7 and head/tail0. Its entries
-were not captured. The entire1024-byte DynamicData read is identical in both
-supplements, SHA256`efdc6c9d4b5fd5bfc84ca5a0304a64db7e493d93ded59e5551cb089a29a75ee0`.
+The workers' original `finishJobAndGetNextJob` prologue preserves the JobQueue
+in r25 and ThreadType in r21. Their captured values bind queue `0x4BE20C00`
+and selectors 0/1. Original `lockQueue` returns the DynamicData pointer held
+in r31, here `0x4BE22D80`. That pointer is not the JobQueue object. The
+captured queue lists select [0,1], [1,0] and [2] for selectors 0,1 and 2 respectively.
+DynamicData has active count 0, waiting counts 2/0 and pending ring counts 0/0/7.
+The third ring has buffer `0x4BADB800`, capacity 7 and head/tail 0. Its entries
+were not captured. The entire 1024-byte DynamicData read is identical in both
+supplements, SHA256 `efdc6c9d4b5fd5bfc84ca5a0304a64db7e493d93ded59e5551cb089a29a75ee0`.
 Thus the two waiting workers' configured lists exclude the populated ring.
 
 The retained log binds the constraint consumer to this same queue: taskset
-`0x4B835600` on SPURS`0x4003F380` creates the ELF at`0x10076000`, with
-argument words[0x4BE34C80,0x4BE20C00,0,index], index0..3 and context0.
-The registered image is2,`hkspursconstraint`, whole fingerprint
-`6E32DC7CD6DED19D`. There are128 successful logged creations; their printed
-creation IDs1..128 are not the taskset's zero-based slot indices. All occur
-before the logged`GAMEFLOWMANAGER::Construct`. The error log retains624
-`CreateTask` failures for this taskset because all128 enabled bits are set,
-and256 image2 entry returns. Returns are not necessarily unique completed
+`0x4B835600` on SPURS `0x4003F380` creates the ELF at `0x10076000`, with
+argument words [0x4BE34C80,0x4BE20C00,0,index], index 0..3 and context 0.
+The registered image is 2, `hkspursconstraint`, whole fingerprint
+`6E32DC7CD6DED19D`. There are 128 successful logged creations; their printed
+creation IDs 1..128 are not the taskset's zero-based slot indices. All occur
+before the logged `GAMEFLOWMANAGER::Construct`. The error log retains 624
+`CreateTask` failures for this taskset because all 128 enabled bits are set,
+and 256 image 2 entry returns. Returns are not necessarily unique completed
 tasks: the log also records redispatch. Counts do not provide cross-log wall
 chronology or prove the original queued jobs retired.
 
-There is now a full-program reference anchor. The original124150-byte ELF
-at named-debug file offset`0xF06000`, launch-US retail file offset`0xE75380`
-and saved reference VM address`0x10075380` is byte-identical, SHA256
+There is now a full-program reference anchor. The original 124150-byte ELF
+at named-debug file offset `0xF06000`, launch-US retail file offset `0xE75380`
+and saved reference VM address `0x10075380` is byte-identical, SHA256
 `ea699fabe5dbfdabea6c42cc8f920e2be446d13f627a22de3f9bd8f5acc79fbc`.
 A bounded sparse-map search yields one structurally filtered taskset candidate,
-`0x5683A400`, SPURS`0x5004F380`, workload5. Its four nonzero TaskInfo ELF
-references are slots0..3 with arguments[0x56E39A80,0x56E25A00,0,index],
-context0 and all six task bitsets zero. That queue's DynamicData has active0,
-waiting0/0 and pending0/0/0. This is one different checkpoint, not executed
+`0x5683A400`, SPURS `0x5004F380`, workload 5. Its four nonzero TaskInfo ELF
+references are slots 0..3 with arguments [0x56E39A80,0x56E25A00,0,index],
+context 0 and all six task bitsets zero. That queue's DynamicData has active 0,
+waiting 0/0 and pending 0/0/0. This is one different checkpoint, not executed
 exit chronology or universal PPU executable equivalence. The saved-state
 source hash remains unchanged. Original bytes and candidate-search outputs
 remain private.
 
-Focused original-byte verification fully covers`lockQueue`140 bytes and
-`setSpuQueueCapacity`1516 bytes. Exported decoded bytes also match the original
+Focused original-byte verification fully covers `lockQueue` 140 bytes and
+`setSpuQueueCapacity` 1516 bytes. Exported decoded bytes also match the original
 for the constructors and launch helpers, but uncovered symbol bytes remain:
-JobQueue constructor544, utility State constructor256,`initSpurs`28,
-`startSpursTask`28 and HavokSystem constructor716. Their pseudocode is not a
-complete function-body proof. The named constraint ELF's`main` calls
-`cellSpursMain` then`cellSpursExit`; the latter invokes the taskset syscall
-entry with request0. This is an original code path, not a captured executed exit.
+JobQueue constructor 544, utility State constructor 256, `initSpurs` 28,
+`startSpursTask` 28 and HavokSystem constructor 716. Their pseudocode is not a
+complete function-body proof. The named constraint ELF's `main` calls
+`cellSpursMain` then `cellSpursExit`; the latter invokes the taskset syscall
+entry with request 0. This is an original code path, not a captured executed exit.
 
 The runtime's creation path allocates only from clear enabled bits, whereas
 its async-entry return path clears only its host running bit. Exact-revision
@@ -560,5 +560,5 @@ for [#71](https://github.com/robbe1912/motorstorm-mv-recomp/issues/71) is to
 capture the actual exit request/context, taskset bitsets and subsequent creation
 result, then test the identified lifecycle seam with independent authored
 cases for genuine exit, yield and ordinary return. Runtime/generated code and
-the executable remain unchanged. This evidence does not close#71 or#13,
+the executable remain unchanged. This evidence does not close #71 or #13,
 reopen retail mstream, or justify forcing a completion wait.

@@ -27,7 +27,7 @@ has individual routine anchors and a validated PPU map, but a different main
 wait/checkpoint. Neither finding closes #13 or reopens an exonerated span.
 
 The [constraint-consumer capture](research/HAVOK_REFERENCE.md#constraint-consumer-and-task-slot-exhaustion-2026-10-13)
-binds seven queued entries to a consumer whose task creation exhausts all128
+binds seven queued entries to a consumer whose task creation exhausts all 128
 enabled slots. [#71](https://github.com/robbe1912/motorstorm-mv-recomp/issues/71)
 now targets the actual task-exit lifecycle and slot recycling; distinguish a
 genuine destruction request from ordinary async entry return before a fix.
