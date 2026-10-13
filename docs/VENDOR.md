@@ -29,6 +29,21 @@ this overlay preserves each tree's existing behavior. This is a diagnostic
 trial, not a task-retirement correction or native race proof. No external PR
 was opened.
 
+Guest taskset layout adopts Kurtisone's merged upstream
+[PR240](https://github.com/sp00nznet/ps3recomp/pull/240), head
+`50c4b361527d219ef3c969d303c8d985c87ad05a`, cherry-picked first to our fork
+as [`3ed7f07`](https://github.com/robbe1912/ps3recomp/commit/3ed7f07).
+The curated overlay deletes only three native-field stores in CreateTask,
+DestroyTaskset and ShutdownTaskset. Their offsets 4/0/8 overlap the guest
+RUNNING bitset. All other behavior remains at the curated revision.
+Own-fork fixture [`34acdab`](https://github.com/robbe1912/ps3recomp/commit/34acdab)
+is authored source, independent of game inputs. The public checker compiles
+complete affected API definitions and the real guest-bitset builder; dispatch
+and image sizing are stubbed. All three old stores fail the fixture in both
+trees; the selected correction passes. This protects guest fields, without
+implementing genuine exit retirement or proving native race entry. See
+[native limits](research/HAVOK_REFERENCE.md#guest-taskset-layout-correction-2026-10-13).
+
 Keep new ps3recomp work on branches in [our fork](https://github.com/robbe1912/ps3recomp). Upstream branches and open PRs may also be cherry-picked into that fork for local trials. Inspect each diff, preserve attribution, record the exact commit and validate the relevant generic regression and native behavior before adopting it in this project's vendor snapshot. A trial is not an accepted fix; keep unrelated changes separate so they can be selected or reverted independently.
 
 For upstream submission, prepare a small reviewable cherry-pick of the validated fix and ask the user before opening the PR. Existing upstream PRs are context, not authorization to open or reopen one. PR233 remains closed. Keep proprietary inputs and captures private throughout this workflow.

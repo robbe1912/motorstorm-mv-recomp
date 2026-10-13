@@ -612,3 +612,33 @@ lifecycle regression before retiring slots. Do not unconditionally clear
 enabled state on every return, erase the original errors, or infer that slot
 recycling alone proves a race. Raw trace/analysis/layout artifacts stay private;
 #71 and #13 remain open.
+
+## Guest taskset layout correction, 2026-10-13
+
+[#73](https://github.com/robbe1912/motorstorm-mv-recomp/issues/73) adopts only
+the three upstream PR240 native-field store removals after a fork-first trial.
+The independent fixture compiles the complete affected API definitions and
+real BE taskset builder. A preexisting RUNNING/ENABLED pattern makes slot1
+the first free slot; creation may set only its READY and ENABLED bits, return
+BE slot1 and dispatch once. Destroy/Shutdown preserve the header. The fixture
+checks the other 128 header bytes, allocation guards and null-pointer errors.
+It stubs image sizing/dispatch and executes no game/SPU code. Baselines
+`dbe0b4b` (fork) and `b921cad` (curated) fail all three APIs; each corrected
+tree passes. `scripts/check_spurs_guest_fields.py` retains identities and
+logs privately. Attribution and exact adopted commits are in [vendor provenance](../VENDOR.md).
+
+The checked optimized native build succeeds, EXE SHA256
+`5ba10a87abd5667cc498317282b5236d51a4dcadad9cc117be7a592fb945c111`.
+Muted run `20261013T132937.665001Z` acknowledges English, PLAY, festival-help
+dismissal and SELECT A RACE. The next bike-class reference does not match;
+replay ends at required step4 without target observation. The process closes
+at its 600.718 s duration guard, return1. It contains no acknowledged MOHAWK
+confirmation and cannot establish race-load behavior. Selection assets remain
+malformed. Later intro-skip trial `20261013T134536.081481Z` reaches PLAY;
+[operations](../OPERATIONS.md) owns that narrower proof.
+
+The source-only layout contract is corrected; native race control, the physics
+completion wait and genuine task-exit retirement remain open. In particular,
+[#74](https://github.com/robbe1912/motorstorm-mv-recomp/issues/74) must distinguish
+exit from ordinary return/yield and protect task incarnation ownership. This
+three-store correction does not clear enabled state or suppress original errors.

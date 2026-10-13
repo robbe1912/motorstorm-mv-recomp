@@ -97,3 +97,12 @@ commands rather than inferring optimization from the CMake cache: checked mode
 removes `/Od` and `/Ob0` in directory scope while retaining cached defaults.
 Build identity records `optimized_checked`. A configured or compiled optimized
 binary is not evidence of a speedup, correct graphics or an achieved FPS target.
+
+`python scripts/check_spurs_guest_fields.py` compiles the complete affected
+SPURS API definitions and the real BE taskset builder against an authored
+guest-header fixture. Dispatch is stubbed; no game or SPU execution occurs.
+It checks CreateTask, DestroyTaskset and ShutdownTaskset writes, neighboring
+bits, guards, returned slot and null-pointer errors. `--baseline REV
+--expect-failure` checks the three original-store failures from a Git revision.
+Each run preserves source and binary hashes plus build/run logs under
+`temp/checks`. Both CI platforms run the corrected contract.
