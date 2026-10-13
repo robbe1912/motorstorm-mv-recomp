@@ -941,9 +941,12 @@ s32 cellSpursCreateTask(CellSpursTaskset* taskset, CellSpursTaskId* taskId,
      * ponytail: s_tasks[] is shared by every taskset and now only records the
      * last task per slot id -- enough for JoinTask2's lookup; key it by
      * (taskset, id) if a title joins tasks in two tasksets at once. */
+    spu_task_lifecycle_lock();
+    uint8_t* host_running = spu_task_running_locked(taskset_ea);
+    if (!host_running) { spu_task_lifecycle_unlock(); return CELL_SPURS_TASK_ERROR_NOMEM; }
     u32 free_slot = CELL_SPURS_MAX_TASK;
     for (u32 t = 0; t < CELL_SPURS_MAX_TASK; t++)
-        if (!(vm_read8(taskset_ea + 0x30 + t / 8) & (0x80u >> (t % 8)))) { free_slot = t; break; }
+        if (!((vm_read8(taskset_ea + 0x30 + t / 8) | host_running[t/8]) & (0x80u >> (t % 8)))) { free_slot = t; break; }
     if (free_slot < CELL_SPURS_MAX_TASK) {
         u32 i = free_slot;
         {
@@ -973,6 +976,12 @@ s32 cellSpursCreateTask(CellSpursTaskset* taskset, CellSpursTaskId* taskId,
              * SELECT_TASK picks it. Slot index i = the SPURS taskId (bitset bit). */
             spurs_taskset_add_task(taskset_ea, i, (uint64_t)elf_ea,
                                    (uint64_t)context_ea, task_arg, task_lsp);
+            spu_task_owner owner;
+            if (!spu_task_publish_locked(taskset_ea, (uint8_t*)taskset, i, &owner)) {
+                fprintf(stderr, "[cellSpurs] CreateTask ownership publication failed\n");
+                spu_task_lifecycle_unlock(); return CELL_SPURS_TASK_ERROR_STAT;
+            }
+            spu_task_lifecycle_unlock();
             /* Bridge to the image-22 dispatch so build_context uses this taskset+task. */
             g_ydkj_real_taskset_ea = taskset_ea;
             g_ydkj_real_taskid     = i;
@@ -1043,6 +1052,7 @@ s32 cellSpursCreateTask(CellSpursTaskset* taskset, CellSpursTaskId* taskId,
              * suits create+join task patterns; a workload/taskset whose SPU job
              * waits on concurrent PPU-side signals will want the async lv2
              * SPU-thread path instead — wired when a title exercises it. */
+            int launched = 0;
             if (elf) {
                 /* elf/context are guest effective addresses; translate the image
                  * pointer to host memory for fingerprint+load, but keep context
@@ -1052,13 +1062,19 @@ s32 cellSpursCreateTask(CellSpursTaskset* taskset, CellSpursTaskId* taskId,
                 if (sz)
                     /* Async: SPURS tasks are persistent workers — running them
                      * inline would block this PPU thread forever (deadlock). */
-                    spu_workload_dispatch_task(host_elf, (uint32_t)sz,
-                                               (uint32_t)(uintptr_t)context, NULL, taskset_ea, i);
+                    launched = spu_workload_dispatch_owned(host_elf, (uint32_t)sz,
+                                               (uint32_t)(uintptr_t)context, NULL, &owner);
+            }
+            if (!launched) {
+                spu_task_lifecycle_lock();
+                spu_task_cancel_locked(&owner, (uint8_t*)taskset);
+                spu_task_lifecycle_unlock();
             }
             return CELL_OK;
         }
     }
 
+    spu_task_lifecycle_unlock();
     fprintf(stderr, "[cellSpurs] CreateTask: taskset 0x%08X has no free task id (all 128 enabled)\n",
             taskset_ea);
     return CELL_SPURS_TASK_ERROR_NOMEM;

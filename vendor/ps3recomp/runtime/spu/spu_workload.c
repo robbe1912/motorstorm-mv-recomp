@@ -369,8 +369,9 @@ typedef struct {
     int                 image_id;
     uint32_t            r3[4];        /* captured race-free at dispatch time */
     int                 have_r3;
-    uint32_t            taskset_ea;   /* captured race-free at dispatch (globals get clobbered) */
+    uint32_t            taskset_ea;   /* immutable task owner for this dispatch */
     uint32_t            taskid;
+    spu_task_owner      owner;
     uint32_t            phantom_tid; /* lv2-table identity for the task-arg lane (0 = none) */
 } spu_async_job;
 
@@ -388,7 +389,7 @@ typedef struct {
  * taskset, letting the next task run), the FMOD init + DSP tasks share one LS
  * and the handler table is populated when the DSP dispatch reads it. Opt-in;
  * default keeps per-dispatch fresh LS. */
-typedef struct {
+typedef struct spu_ts_ls_slot {
     uint32_t taskset_ea;   /* 0 = free slot */
     uint32_t taskid;       /* slot key is (taskset, task): on real SPURS each
                             * task has a PRIVATE LS context (the kernel saves/
@@ -397,6 +398,8 @@ typedef struct {
                             * persistent mixer (task 0, never returns) starved
                             * its producer (task 1) forever -- the mixer then
                             * DMA-polled a NULL control EA for the whole run. */
+    uint64_t generation;
+    struct spu_ts_ls_slot* next;
     uint8_t* ls;           /* persistent LS (NULL until first task loads it) */
     int      loaded;       /* image loaded into ls */
 #ifdef _WIN32
@@ -406,8 +409,7 @@ typedef struct {
 #endif
 } spu_ts_ls_slot;
 
-#define SPU_TS_LS_MAX 24
-static spu_ts_ls_slot s_ts_ls[SPU_TS_LS_MAX];
+static spu_ts_ls_slot* s_ts_ls;
 #ifdef _WIN32
 static SRWLOCK s_ts_ls_dir = SRWLOCK_INIT;
 #else
@@ -443,26 +445,26 @@ void spu_serial_release(void){ if (spu_serial_enabled()) pthread_mutex_unlock(&s
  * briefly). Per-task keying is load-bearing: see spu_ts_ls_slot.taskid. */
 static spu_ts_ls_slot* ts_ls_get(uint32_t taskset_ea, uint32_t taskid)
 {
-    spu_ts_ls_slot* slot = NULL;
 #ifdef _WIN32
     AcquireSRWLockExclusive(&s_ts_ls_dir);
 #else
     pthread_mutex_lock(&s_ts_ls_dir);
 #endif
-    for (int i = 0; i < SPU_TS_LS_MAX && !slot; i++)
-        if (s_ts_ls[i].taskset_ea == taskset_ea && s_ts_ls[i].taskid == taskid)
-            slot = &s_ts_ls[i];
-    for (int i = 0; i < SPU_TS_LS_MAX && !slot; i++)
-        if (s_ts_ls[i].taskset_ea == 0) {
-            s_ts_ls[i].taskset_ea = taskset_ea;
-            s_ts_ls[i].taskid = taskid;
+    spu_ts_ls_slot* slot;
+    for (slot = s_ts_ls; slot; slot = slot->next)
+        if (slot->taskset_ea == taskset_ea && slot->taskid == taskid) break;
+    if (!slot) {
+        slot = calloc(1, sizeof(*slot));
+        if (slot) {
+            slot->taskset_ea = taskset_ea; slot->taskid = taskid;
 #ifdef _WIN32
-            InitializeSRWLock(&s_ts_ls[i].lock);
+            InitializeSRWLock(&slot->lock);
 #else
-            pthread_mutex_init(&s_ts_ls[i].lock, NULL);
+            pthread_mutex_init(&slot->lock, NULL);
 #endif
-            slot = &s_ts_ls[i];
-        }
+            slot->next = s_ts_ls; s_ts_ls = slot;
+        } else fprintf(stderr, "[taskset] cannot allocate persistent LS slot\n");
+    }
 #ifdef _WIN32
     ReleaseSRWLockExclusive(&s_ts_ls_dir);
 #else
@@ -489,67 +491,44 @@ static spu_ts_ls_slot* ts_ls_get(uint32_t taskset_ea, uint32_t taskid)
  * Taskset layout: bitsets of 16 bytes at +0x10 ready, +0x20 pending,
  * +0x30 enabled (task 0 = MSB of byte 0); task_info[t] at +0x80 + 0x30*t with
  * the ELF EA at +0x14 and the context save EA at +0x1C. */
-#define TS_TRACK 8
-static struct { uint32_t ea; uint8_t running[16]; } s_ts_run[TS_TRACK];
-static volatile LONG s_ts_lock;
-static uint8_t* ts_running(uint32_t taskset_ea)
+static uint8_t* ts_running(uint32_t ea) { return spu_task_running_locked(ea); }
+static void ts_lock(void) { spu_task_lifecycle_lock(); }
+static void ts_unlock(void) { spu_task_lifecycle_unlock(); }
+static void cancel_job(const spu_async_job* j)
 {
-    for (int i = 0; i < TS_TRACK; i++) if (s_ts_run[i].ea == taskset_ea) return s_ts_run[i].running;
-    for (int i = 0; i < TS_TRACK; i++) if (!s_ts_run[i].ea) { s_ts_run[i].ea = taskset_ea; return s_ts_run[i].running; }
-    /* Table full: evict an IDLE entry (no run bits) so a new taskset stays
-     * tracked -- an untracked taskset makes every dispatch scan silently
-     * no-op (signal arrives, nothing runs, gate never written). */
-    for (int i = 0; i < TS_TRACK; i++) {
-        int busy = 0;
-        for (int b = 0; b < 16; b++) if (s_ts_run[i].running[b]) { busy = 1; break; }
-        if (busy) continue;
-        { static int _n = 0;
-          if (_n++ < 8) fprintf(stderr, "[taskset] run-table full: evicting idle "
-                                "taskset 0x%08X for 0x%08X\n", s_ts_run[i].ea, taskset_ea); }
-        s_ts_run[i].ea = taskset_ea;
-        memset(s_ts_run[i].running, 0, sizeof s_ts_run[i].running);
-        return s_ts_run[i].running;
-    }
-    { static int _n = 0;
-      if (_n++ < 8) fprintf(stderr, "[taskset] run-table FULL of BUSY tasksets: "
-                            "0x%08X untracked -- dispatch disabled\n", taskset_ea); }
-    return NULL;
-}
-static void ts_lock(void)   { while (InterlockedExchange(&s_ts_lock, 1)) Sleep(0); }
-static void ts_unlock(void) { InterlockedExchange(&s_ts_lock, 0); }
-
-static void spu_taskset_mark(uint32_t taskset_ea, uint32_t t, int on)
-{
-    if (!taskset_ea || t >= 128) return;
-    ts_lock();
-    uint8_t* r = ts_running(taskset_ea);
-    uint8_t m = (uint8_t)(0x80u >> (t & 7));
-    if (r) { if (on) r[t / 8] |= m; else r[t / 8] &= (uint8_t)~m; }
-    ts_unlock();
+    if (!j->taskset_ea) return;
+    extern uint8_t* vm_base;
+    ts_lock(); spu_task_cancel_locked(&j->owner, vm_base + j->taskset_ea); ts_unlock();
 }
 
 #include "spu_task_lifecycle_trace.h"
 
-static void spu_taskset_task_exited(uint32_t taskset_ea, uint32_t done_task,
-                                    int image, const uint8_t* ls)
+static void spu_taskset_task_exited(const spu_task_owner* owner,
+                                    int image, const uint8_t* ls, int explicit_exit)
 {
     extern uint8_t* vm_base;
-    extern uint32_t g_ydkj_real_taskset_ea, g_ydkj_real_taskid;
+    uint32_t taskset_ea = owner->taskset_ea, done_task = owner->taskid;
     ts_lock();
     uint8_t* ts = vm_base + taskset_ea;
     uint8_t* run = ts_running(taskset_ea);
-    spu_task_lifecycle_trace("return-before", image, UINT32_MAX, taskset_ea, done_task, ls, ts);
-    if (done_task < 128) {
-        uint8_t m = (uint8_t)(0x80u >> (done_task & 7));
-        /* HW PM task-exit semantics: only the RUNNING bit is cleared. The old
-         * code also cleared ready(+0x10)/pending(+0x20)/enabled(+0x30) --
-         * anti-HW: RPCS3 touches enabled only in enable/disable/shutdown, and
-         * the guest's own mirror at task return showed task0 ready+enabled+
-         * not-running (it set itself up for re-dispatch). Clearing enabled
-         * forbid exactly that re-dispatch -- the mstream ATRAC hub wedge. */
-        if (run) run[done_task / 8] &= (uint8_t)~m;
+    spu_task_lifecycle_trace("return-before", image, explicit_exit ? 0 : UINT32_MAX,
+                             taskset_ea, done_task, ls, ts);
+    int accepted = spu_task_finish_locked(owner, ts, explicit_exit);
+    const char* trace_budget = getenv("SPU_TASK_LIFECYCLE_TRACE");
+    if (trace_budget && atoi(trace_budget) > 0) {
+        static unsigned count;
+        const char* filter = getenv("SPU_TASK_LIFECYCLE_IMAGE");
+        if ((!filter || atoi(filter) == image) && count++ < (unsigned)atoi(trace_budget))
+            fprintf(stderr, "[task-owner] taskset=%08X task=%u generation=%llu dispatch=%llu exit=%d accepted=%d\n",
+                taskset_ea, done_task, (unsigned long long)owner->generation,
+                (unsigned long long)owner->dispatch, explicit_exit, accepted);
     }
-    spu_task_lifecycle_trace("return-after", image, UINT32_MAX, taskset_ea, done_task, ls, ts);
+    spu_task_lifecycle_trace("return-after", image, explicit_exit ? 0 : UINT32_MAX,
+                             taskset_ea, done_task, ls, ts);
+    if (!accepted) {
+        fprintf(stderr, "[taskset] rejected stale cleanup taskset=%08X task=%u\n", taskset_ea, done_task);
+        ts_unlock(); return;
+    }
     for (uint32_t t = 0; t < 128 && run; t++) {
         uint8_t m = (uint8_t)(0x80u >> (t & 7));
         if (!(ts[0x30 + t / 8] & m) || (run[t / 8] & m)) continue;
@@ -573,18 +552,18 @@ static void spu_taskset_task_exited(uint32_t taskset_ea, uint32_t done_task,
         if (!sz) continue;
         ts[0x10 + t / 8] &= (uint8_t)~m;                 /* dispatch consumes ready */
         ts[0x20 + t / 8] &= (uint8_t)~m;                 /* pending -> started */
-        run[t / 8] |= m;
+        spu_task_owner next_owner;
+        if (!spu_task_claim_locked(taskset_ea, ts, t, &next_owner)) continue;
         fprintf(stderr, "[taskset] start task %u of taskset 0x%08X elf=0x%08X "
                         "(after task %u exited)\n", t, taskset_ea, elf, done_task);
         if (use_arg) { static int _fa = 0;
             if (_fa++ < 16) fprintf(stderr, "[taskset] task %u: no context, r3 "
                             "from CellSpursTaskArgument w0=0x%08X\n", t, argw[0]); }
-        if (!spu_workload_dispatch_task(vm_base + elf, (uint32_t)sz, ctx, task_arg, taskset_ea, t)) {
+        if (!spu_workload_dispatch_owned(vm_base + elf, (uint32_t)sz, ctx, task_arg, &next_owner)) {
             /* Dispatch refused (spawn failure / fingerprint MISS): undo the
              * running mark and re-latch ready, else the bit wedges every
              * later signal through signal_arm's "live" return. */
-            run[t / 8] &= (uint8_t)~m;
-            ts[0x10 + t / 8] |= m;
+            spu_task_cancel_locked(&next_owner, ts);
             fprintf(stderr, "[taskset] dispatch FAILED task=%u taskset=0x%08X "
                     "-- unmarked running, re-armed ready\n", t, taskset_ea);
         }
@@ -620,7 +599,7 @@ static void spu_taskset_park_beat(uint32_t ea, uint32_t id)
     for (int i = 0; i < 4; i++)
         if (s_pd[i].ea == ea && s_pd[i].id == id) { s_pd[i].beat++; return; }
 }
-static void arm_diag(uint32_t ea, uint32_t id, const char* br)
+static void arm_diag(uint32_t ea, uint32_t id, const char* br, int locked)
 {
     struct arm_diag_ent* e = NULL;
     for (int i = 0; i < 8; i++) {
@@ -636,15 +615,19 @@ static void arm_diag(uint32_t ea, uint32_t id, const char* br)
     extern uint32_t spu_taskset_parked_waitobj(uint32_t, uint32_t);
     uint8_t* ts = vm_base ? vm_base + ea : NULL;
     uint8_t m = (uint8_t)(0x80u >> (id & 7));
+    if (!locked) ts_lock();
     uint8_t* run = ts_running(ea);
+    int live = run && (run[id/8] & m);
+    int have_table = run != NULL;
+    if (!locked) ts_unlock();
     fprintf(stderr, "[taskset] arm task=%u ts=0x%08X #%u branch=%s en=%c "
             "rdy=%c pen=%c run=%c tbl=%s park=%d wo=0x%X\n",
             id, ea, e->n, br,
             (ts && (ts[0x30 + id / 8] & m)) ? '1' : '0',
             (ts && (ts[0x10 + id / 8] & m)) ? '1' : '0',
             (ts && (ts[0x20 + id / 8] & m)) ? '1' : '0',
-            (run && (run[id / 8] & m)) ? '1' : '0',
-            run ? "ok" : "FULL/NULL",
+            live ? '1' : '0',
+            have_table ? "ok" : "FULL/NULL",
             spu_taskset_parked_query(ea, id),
             spu_taskset_parked_waitobj(ea, id));
     fflush(stderr);
@@ -654,16 +637,20 @@ void spu_taskset_signal_arm(uint32_t taskset_ea, uint32_t taskId)
     extern uint8_t* vm_base;
     if (!taskset_ea || taskId >= 128) return;
     uint8_t* ts = vm_base + taskset_ea;
+    ts_lock();
     uint8_t* run = ts_running(taskset_ea);
     uint8_t m = (uint8_t)(0x80u >> (taskId & 7));
-    if (!(ts[0x30 + taskId / 8] & m)) {           /* not enabled: nothing to arm */
+    int initially_live = run && (run[taskId/8] & m);
+    int initially_enabled = ts[0x30 + taskId/8] & m;
+    ts_unlock();
+    if (!initially_enabled) {           /* not enabled: nothing to arm */
         static int _ne = 0;
         if (_ne++ < 8) fprintf(stderr, "[taskset] signal task=%u taskset=0x%08X "
                 "NOT ENABLED -- dropped\n", taskId, taskset_ea);
-        arm_diag(taskset_ea, taskId, "not-enabled");
+        arm_diag(taskset_ea, taskId, "not-enabled", 0);
         return;
     }
-    if (run && (run[taskId / 8] & m)) {
+    if (initially_live) {
         /* Run bit set: normally the task is live and its own WAIT_SIGNAL
          * consumes the signal. But a dispatch that failed to spawn (or a
          * runner that died) leaves the bit set with NO consumer -- every
@@ -724,7 +711,7 @@ void spu_taskset_signal_arm(uint32_t taskset_ea, uint32_t taskId)
                 { pd->ea = taskset_ea; pd->id = taskId; pd->n = 0; pd->beat = 0; pd->beats0 = 0; pd->heals = 0; }
             if (pd->beat != pd->beats0) { pd->beats0 = pd->beat; pd->n = 0; }
             pd->n++;
-            arm_diag(taskset_ea, taskId, "parked-skip");
+            arm_diag(taskset_ea, taskId, "parked-skip", 0);
             if (!(pd->n >= 256 && pd->heals < 3)) return;
             pd->heals++; pd->n = 0;
             extern void spu_taskset_parked_del(uint32_t, uint32_t);
@@ -747,8 +734,8 @@ void spu_taskset_signal_arm(uint32_t taskset_ea, uint32_t taskId)
     { static int _n = 0; if (_n++ < 24)
         fprintf(stderr, "[taskset] signal armed ready task=%u taskset=0x%08X\n",
                 taskId, taskset_ea); fflush(stderr); }
-    arm_diag(taskset_ea, taskId, "armed-ready");
-    if (!run) arm_diag(taskset_ea, taskId, "run-NULL (run table full of busy)");
+    arm_diag(taskset_ea, taskId, "armed-ready", 1);
+    if (!run) arm_diag(taskset_ea, taskId, "run-NULL (run table full of busy)", 1);
     for (uint32_t t = 0; t < 128 && run; t++) {
         uint8_t m2 = (uint8_t)(0x80u >> (t & 7));
         if (!(ts[0x30 + t / 8] & m2) || (run[t / 8] & m2)) continue;
@@ -761,23 +748,23 @@ void spu_taskset_signal_arm(uint32_t taskset_ea, uint32_t taskId)
         uint32_t argw[4];
         int use_arg = spu_taskset_arg_fallback(ti, argw);
         const uint32_t* task_arg = use_arg ? argw : NULL;
-        if (!elf) { if (t == taskId) arm_diag(taskset_ea, taskId, "scan-skip elf=0 (TI.elf zeroed)"); continue; }
+        if (!elf) { if (t == taskId) arm_diag(taskset_ea, taskId, "scan-skip elf=0 (TI.elf zeroed)", 1); continue; }
         size_t sz = spu_elf_image_size(vm_base + elf, 2u * 1024 * 1024);
-        if (!sz) { if (t == taskId) arm_diag(taskset_ea, taskId, "scan-skip sz=0 (bad ELF image)"); continue; }
+        if (!sz) { if (t == taskId) arm_diag(taskset_ea, taskId, "scan-skip sz=0 (bad ELF image)", 1); continue; }
         ts[0x10 + t / 8] &= (uint8_t)~m2;
         ts[0x20 + t / 8] &= (uint8_t)~m2;
-        run[t / 8] |= m2;
+        spu_task_owner next_owner;
+        if (!spu_task_claim_locked(taskset_ea, ts, t, &next_owner)) continue;
         fprintf(stderr, "[taskset] start task %u of taskset 0x%08X elf=0x%08X "
                         "(signal armed)\n", t, taskset_ea, elf);
         if (use_arg) { static int _fb = 0;
             if (_fb++ < 16) fprintf(stderr, "[taskset] task %u: no context, r3 "
                             "from CellSpursTaskArgument w0=0x%08X\n", t, argw[0]); }
-        if (!spu_workload_dispatch_task(vm_base + elf, (uint32_t)sz, ctx, task_arg, taskset_ea, t)) {
+        if (!spu_workload_dispatch_owned(vm_base + elf, (uint32_t)sz, ctx, task_arg, &next_owner)) {
             /* Dispatch refused (spawn failure / fingerprint MISS): undo the
              * running mark and re-latch ready, else the bit wedges every
              * later signal through the "live" return above. */
-            run[t / 8] &= (uint8_t)~m2;
-            ts[0x10 + t / 8] |= m2;
+            spu_task_cancel_locked(&next_owner, ts);
             fprintf(stderr, "[taskset] dispatch FAILED task=%u taskset=0x%08X "
                     "-- unmarked running, re-armed ready\n", t, taskset_ea);
         }
@@ -792,7 +779,12 @@ static unsigned s_async_disp[64], s_async_ret[64];
 static void spu_async_run(spu_async_job* j)
 {
     unsigned long long ar0 = loadtime_on() ? loadtime_us() : 0;
-    spu_taskset_mark(j->taskset_ea, j->taskid, 1);
+
+    if (j->taskset_ea) {
+        extern uint8_t* vm_base;
+        ts_lock(); int current = spu_task_start_locked(&j->owner, vm_base + j->taskset_ea); ts_unlock();
+        if (!current) { fprintf(stderr, "[taskset] rejected stale dispatch taskset=%08X task=%u\n", j->taskset_ea, j->taskid); free(j); return; }
+    }
     /* Persistent per-taskset LS: acquire (+serialize) the taskset's LS, or fall
      * back to a fresh per-dispatch LS when disabled / no taskset. */
     spu_ts_ls_slot* ts_slot = NULL;
@@ -807,8 +799,10 @@ static void spu_async_run(spu_async_job* j)
      * (equivalent to the kernel save/restore); LBP_NO_TASKSET_LS opts out. */
     { static int s_pl = -1;
       if (s_pl < 0) s_pl = getenv("LBP_NO_TASKSET_LS") ? 0 : 1;
-      if (s_pl && j->taskset_ea && j->image_id != 22)
+      if (s_pl && j->taskset_ea) {
         ts_slot = ts_ls_get(j->taskset_ea, j->taskid);
+        if (!ts_slot) { cancel_job(j); free(j); return; }
+      }
     }
     uint8_t* ls;
     if (ts_slot) {
@@ -819,6 +813,7 @@ static void spu_async_run(spu_async_job* j)
 #endif
         if (!ts_slot->ls) ts_slot->ls = (uint8_t*)calloc(1, SPU_LS_SIZE);
         ls = ts_slot->ls;
+        if (ls) spu_task_reset_ls(&ts_slot->generation, j->owner.generation, ls, SPU_LS_SIZE, &ts_slot->loaded);
         { static int _n = 0; if (_n++ < 24)
             fprintf(stderr, "[persist-ls] taskset=0x%08X task=%u image=%d %s\n",
                     j->taskset_ea, j->taskid, j->image_id,
@@ -841,10 +836,7 @@ static void spu_async_run(spu_async_job* j)
              * clear it (and re-latch ready) or the taskset wedges silently. */
             if (j->taskset_ea) {
                 extern uint8_t* vm_base;
-                spu_taskset_mark(j->taskset_ea, j->taskid, 0);
-                uint8_t* tsb = vm_base + j->taskset_ea;
-                uint8_t mb = (uint8_t)(0x80u >> (j->taskid & 7));
-                tsb[0x10 + j->taskid / 8] |= mb;
+                cancel_job(j);
                 fprintf(stderr, "[taskset] task=%u taskset=0x%08X load failed "
                         "-- unmarked running, re-armed ready\n",
                         j->taskid, j->taskset_ea);
@@ -1111,9 +1103,10 @@ static void spu_async_run(spu_async_job* j)
             memset(&phantom_opts, 0, sizeof phantom_opts);
             phantom_opts.spu_id = j->phantom_tid;
             unsigned long long r0 = loadtime_on() ? loadtime_us() : 0;
-            int32_t rc = spu_run_lifted_job_abi(j->fn, ls, j->args_ea, j->image_id,
+            uint32_t explicit_exit = 0;
+            int32_t rc = spu_run_lifted_job_abi_result(j->fn, ls, j->args_ea, j->image_id,
                                                 1, j->have_r3 ? j->r3 : 0,
-                                                j->phantom_tid ? &phantom_opts : 0);
+                                                j->phantom_tid ? &phantom_opts : 0, &explicit_exit);
             if (loadtime_on()) { char d[160];
                 snprintf(d, sizeof d, "image=%d taskset=0x%08X task=%u rc=%d dur_us=%llu",
                          j->image_id, j->taskset_ea, j->taskid, rc, loadtime_us() - r0);
@@ -1128,7 +1121,7 @@ static void spu_async_run(spu_async_job* j)
              * in a bounded loop until it actually DECODES (a >256B video GET sets
              * g_cri_video_dma) or we time out. This does NOT fake data: the task
              * only decodes if the PPU genuinely populated real work meanwhile. */
-            if (j->image_id == 22 && getenv("YDKJ_CRI_RESUME") && !g_cri_video_dma) {
+            if (!explicit_exit && j->image_id == 22 && getenv("YDKJ_CRI_RESUME") && !g_cri_video_dma) {
                 for (int attempt = 0; attempt < 400 && !g_cri_video_dma; attempt++) {
 #ifdef _WIN32
                     Sleep(3);
@@ -1141,8 +1134,8 @@ static void spu_async_run(spu_async_job* j)
                     memset(ls, 0, SPU_LS_SIZE);
                     uint32_t e2 = 0;
                     if (!spu_elf_load_to_ls(j->image, j->image_size, ls, &e2)) break;
-                    rc = spu_run_lifted_job_abi(j->fn, ls, j->args_ea, j->image_id,
-                                                1, j->have_r3 ? j->r3 : 0, 0);
+                    rc = spu_run_lifted_job_abi_result(j->fn, ls, j->args_ea, j->image_id,
+                                                1, j->have_r3 ? j->r3 : 0, 0, &explicit_exit);
                     if (g_cri_video_dma) {
                         fprintf(stderr, "[cri] RESUME: cri task DECODED real video (attempt %d)\n", attempt);
                         break;
@@ -1171,7 +1164,7 @@ static void spu_async_run(spu_async_job* j)
                   if (f) { fwrite(ls, 1, SPU_LS_SIZE, f); fclose(f);
                       fprintf(stderr, "[spu_workload] wrote local store -> %s\n", path); } } }
             fprintf(stderr, "[spu_workload] async image=%d RETURNED rc=%d "
-                    "(job ran to completion, did not loop)\n", j->image_id, rc);
+                    "(entry returned)\n", j->image_id, rc);
             { if (j->image_id > 0 && j->image_id < 64)
                   s_async_ret[j->image_id]++; }
             /* Exit-path discriminator: if the taskset still holds THIS task's
@@ -1190,12 +1183,13 @@ static void spu_async_run(spu_async_job* j)
                 }
             }
             spu_serial_release();
-            if (j->taskset_ea) spu_taskset_task_exited(j->taskset_ea, j->taskid, j->image_id, ls);
+            if (j->taskset_ea) spu_taskset_task_exited(&j->owner, j->image_id, ls, explicit_exit);
         }
         /* Persistent LS is retained in its taskset slot for the next task; a
          * per-dispatch LS is freed. */
         if (!ts_slot) free(ls);
     }
+    if (!ls) { fprintf(stderr, "[taskset] LS allocation failed\n"); cancel_job(j); }
     if (ts_slot) {
 #ifdef _WIN32
         ReleaseSRWLockExclusive(&ts_slot->lock);
@@ -1455,12 +1449,12 @@ void spu_taskset_signal_task(uint32_t taskset_ea, uint32_t taskId)
     if (!taskset_ea || taskId >= 128) return;
 #ifdef _WIN32
     AcquireSRWLockExclusive(&s_sig_lock);
-    spurs_bitset_set(taskset_ea + CSTS_SIGNALLED, taskId);
+    ts_lock(); spurs_bitset_set(taskset_ea + CSTS_SIGNALLED, taskId); ts_unlock();
     WakeAllConditionVariable(&s_sig_cv);
     ReleaseSRWLockExclusive(&s_sig_lock);
 #else
     pthread_mutex_lock(&s_sig_lock);
-    spurs_bitset_set(taskset_ea + CSTS_SIGNALLED, taskId);
+    ts_lock(); spurs_bitset_set(taskset_ea + CSTS_SIGNALLED, taskId); ts_unlock();
     pthread_cond_broadcast(&s_sig_cv);
     pthread_mutex_unlock(&s_sig_lock);
 #endif
@@ -1609,7 +1603,7 @@ int spu_taskset_wait_signal(uint32_t taskset_ea, uint32_t taskId)
             if (drain && secs >= drain) { drained = 1; break; }
         }
     }
-    if (!drained) spurs_bitset_clear(taskset_ea + CSTS_SIGNALLED, taskId);
+    if (!drained) { ts_lock(); spurs_bitset_clear(taskset_ea + CSTS_SIGNALLED, taskId); ts_unlock(); }
     ReleaseSRWLockExclusive(&s_sig_lock);
 #else
     pthread_mutex_lock(&s_sig_lock);
@@ -1623,7 +1617,7 @@ int spu_taskset_wait_signal(uint32_t taskset_ea, uint32_t taskId)
             if (drain && secs >= drain) { drained = 1; break; }
         }
     }
-    if (!drained) spurs_bitset_clear(taskset_ea + CSTS_SIGNALLED, taskId);
+    if (!drained) { ts_lock(); spurs_bitset_clear(taskset_ea + CSTS_SIGNALLED, taskId); ts_unlock(); }
     pthread_mutex_unlock(&s_sig_lock);
 #endif
     spu_taskset_park_beat(taskset_ea, taskId);   /* liveness beat for the parked-skip heal */
@@ -1642,11 +1636,11 @@ int spu_taskset_wait_signal(uint32_t taskset_ea, uint32_t taskId)
     return 0;
 }
 
-int spu_workload_dispatch_task(const uint8_t* image, uint32_t image_size,
-                               uint32_t args_ea, const uint32_t* task_arg,
-                               uint32_t taskset_ea, uint32_t taskid)
+int spu_workload_dispatch_owned(const uint8_t* image, uint32_t image_size,
+    uint32_t args_ea, const uint32_t* task_arg, const spu_task_owner* owner)
 {
-    if (taskid >= 128 || (!taskset_ea && taskid)) return 0;
+    if (owner && (!owner->taskset_ea || owner->taskid >= 128 || !owner->generation || !owner->dispatch)) return 0;
+    uint32_t taskset_ea = owner ? owner->taskset_ea : 0, taskid = owner ? owner->taskid : 0;
     if (!image || image_size == 0) return 0;
 
     uint64_t fp = spu_workload_fingerprint(image, image_size);
@@ -1701,6 +1695,7 @@ int spu_workload_dispatch_task(const uint8_t* image, uint32_t image_size,
     j->fn = fn; j->image_id = image_id;
     /* Ownership comes from this call, independently of other dispatchers. */
     j->taskset_ea = taskset_ea; j->taskid = taskid;
+    j->owner = owner ? *owner : (spu_task_owner){0};
     /* Capture the SPURS task register image NOW (PPU thread, synchronous).
      * Two sources, priority order:
      *   1. task_arg = the game's own 128-bit CellSpursTaskArgument (TI_ARGS).
@@ -1798,4 +1793,18 @@ int spu_workload_dispatch_async(const uint8_t* image, uint32_t image_size,
                                 uint32_t args_ea, const uint32_t* task_arg)
 {
     return spu_workload_dispatch_task(image, image_size, args_ea, task_arg, 0, 0);
+}
+
+int spu_workload_dispatch_task(const uint8_t* image, uint32_t image_size,
+    uint32_t args_ea, const uint32_t* task_arg, uint32_t taskset_ea, uint32_t taskid)
+{
+    if (taskid >= 128 || (!taskset_ea && taskid)) return 0;
+    if (!taskset_ea) return spu_workload_dispatch_owned(image, image_size, args_ea, task_arg, NULL);
+    extern uint8_t* vm_base;
+    spu_task_owner owner;
+    ts_lock(); int claimed = spu_task_claim_locked(taskset_ea, vm_base + taskset_ea, taskid, &owner); ts_unlock();
+    if (!claimed) return 0;
+    int result = spu_workload_dispatch_owned(image, image_size, args_ea, task_arg, &owner);
+    if (!result) { ts_lock(); spu_task_cancel_locked(&owner, vm_base + taskset_ea); ts_unlock(); }
+    return result;
 }

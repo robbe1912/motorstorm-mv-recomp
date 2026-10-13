@@ -25,6 +25,7 @@
 #define SPU_WORKLOAD_H
 
 #include "spu_context.h"
+#include "spu_task_lifecycle.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -209,6 +210,11 @@ int spu_workload_dispatch_async(const uint8_t* image, uint32_t image_size,
 int spu_workload_dispatch_task(const uint8_t* image, uint32_t image_size,
                                uint32_t args_ea, const uint32_t* task_arg,
                                uint32_t taskset_ea, uint32_t taskid);
+
+/* Already claimed immutable incarnation/dispatch identity. Caller handles a
+ * refused spawn by cancelling the claim under the lifecycle lock. */
+int spu_workload_dispatch_owned(const uint8_t* image, uint32_t image_size,
+    uint32_t args_ea, const uint32_t* task_arg, const spu_task_owner* owner);
 
 /* Number of currently registered lifted SPU binaries (diagnostics/tests). */
 unsigned spu_workload_count(void);

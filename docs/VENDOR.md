@@ -177,3 +177,24 @@ both old trees fail identity capture and generic ownership, and both corrected
 trees pass. This does not prove genuine exit recycling, fresh task incarnations
 or race entry. [Native evidence](research/HAVOK_REFERENCE.md#explicit-task-dispatch-identity-2026-10-13)
 records separate observations. No external PR was opened.
+
+## Explicit task exit and incarnation ownership
+
+Issue #74 was developed first on our ps3recomp fork branch
+`codex/task-exit-lifecycle`: `35239df`, fixture alias adapter `9bfe08d`,
+and unlaunched-claim correction `8e40617`. The selective port adds a generic
+lifecycle module, immutable generation/dispatch tokens, an actual task-EXIT
+result bridge and generation-tagged LS storage. It removes the inherited
+image22 first-EXIT exception. Ordinary entry return and generic STOP do not
+retire guest tasks. Publication, signal-bit updates and retirement share the
+lifecycle lock; guest changes use the existing VM write helpers. A failed or
+unavailable initial dispatch releases its execution claim and leaves READY
+for a subsequent legitimate attempt.
+
+Curated argument fallback, phantom identity, runner options, counters and
+unrelated diagnostics remain. The fixed host ownership/LS directory capacities
+are replaced by stable allocated records. Fixtures exercise the actual module,
+complete cleanup/API definitions and actual runner bridge with documented host
+adapters; they execute no original guest instructions. No external PR was
+opened. [Qualified native observations](research/HAVOK_REFERENCE.md#explicit-exit-incarnations-2026-10-13)
+remain separate from race and graphics acceptance.

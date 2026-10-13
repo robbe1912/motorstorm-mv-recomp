@@ -2571,33 +2571,10 @@ void spu_spurs_taskset_syscall(spu_context* ctx)   /* non-static: also called by
                 num, a[0],a[1],a[2],a[3], a[4],a[5],a[6],a[7],
                 a[8],a[9],a[10],a[11], a[12],a[13],a[14],a[15], ctx->image_id);
         fflush(stderr); } } }
-    /* NOTE (YDKJ cri_mpv): the cri task's BOOTSTRAP (func_00003040) calls the
-     * task-API syscall and EXPECTS IT TO RETURN, then branches to the real task
-     * entry (0x3050). Halting on num=0 here kills the task at bootstrap before it
-     * runs. So for image 22 we DON'T halt on num=0 -- we return so the bootstrap
-     * continues to the decode entry. (A genuine end-of-task EXIT would re-enter and
-     * spin; if that happens, gate a real halt after the task has done work.)
-     * For non-cri images keep the fork's EXIT=halt semantics. Env YDKJ_CRI_EXIT_HALT
-     * forces the old halt behaviour for comparison. */
-    /* The cri bootstrap calls EXIT once and EXPECTS IT TO RETURN, then branches to
-     * the real task entry -- so image 22 cannot halt on the first one. But a task
-     * that has since done work and calls EXIT again means it: returning there makes
-     * it re-enter and spin (observed: 6x num=0 from link 0x26E18 once the task is
-     * woken). Honour the first call, halt on the rest. Each task runs on its own
-     * host thread, so a thread-local count is per task. */
-    static _Thread_local int s_exit_seen = 0;
-    if (num == 0 && ctx->image_id == 22 && !getenv("YDKJ_CRI_EXIT_HALT")) {
-        if (s_exit_seen++ == 0) { ctx->gpr[3]._u32[0] = 0; return; }   /* bootstrap */
-        { static int _n = 0; if (_n++ < 8)
-            fprintf(stderr, "[spu] cri task EXIT #%d -- halting (was spinning)\n",
-                    s_exit_seen); }
+    if (num == 0) {
+        ctx->task_exit_requested = 1;
         ctx->status = SPU_STATUS_STOPPED_BY_STOP;
         spu_halt(ctx);
-        return;
-    }
-    if (num == 0 && (ctx->image_id != 22 || getenv("YDKJ_CRI_EXIT_HALT"))) {
-        ctx->status = SPU_STATUS_STOPPED_BY_STOP;
-        spu_halt(ctx);          /* longjmp out to spu_run_with_halt; post-run writes exit code */
         return;
     }
     /* WAIT_SIGNAL(2): REAL semantics (RPCS3 spursTasksetProcessSyscall) --
@@ -2733,7 +2710,7 @@ void spu_spurs_taskset_syscall(spu_context* ctx)   /* non-static: also called by
                     "path=no-taskset (immediate return)\n", tid); }
         return;
     }
-    /* EXIT(0, cri bootstrap)/YIELD(1)/POLL(3)/RECV_WKL_FLAG(4):
+    /* YIELD(1)/POLL(3)/RECV_WKL_FLAG(4):
      * report success and resume (return -> lifted caller continues at its link). */
     ctx->gpr[3]._u32[0] = 0;
 }

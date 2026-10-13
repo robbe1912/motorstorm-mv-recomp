@@ -52,6 +52,8 @@ def main():
     api = out/'affected_api.c'
     api.write_bytes(extract_apis(source_bytes.decode('utf-8')).encode('utf-8'))
     inputs = [fixture, api, repo/'libs/spurs/spurs_taskset.c']
+    if b'spu_task_publish_locked' in source_bytes:
+        inputs.append(repo/'runtime/spu/spu_task_lifecycle.c')
     env = build_environment()
     includes = [repo/'include', repo/'libs/spurs', repo/'runtime/spu']
     signature = re.search(r'int spu_workload_dispatch_async\([^;]+;',
@@ -70,7 +72,7 @@ def main():
         compiler = shutil.which(os.environ.get('CC', 'cc'))
         if not compiler:
             raise SystemExit('C compiler required')
-        command = [compiler, '-std=gnu17', '-O1']
+        command = [compiler, '-std=gnu17', '-O1', '-pthread']
         if override:
             command.append('-DSPURS_DISPATCH_HAS_OVERRIDE')
         command += ['-I'+str(p) for p in includes] + [*map(str, inputs), '-o', str(exe)]

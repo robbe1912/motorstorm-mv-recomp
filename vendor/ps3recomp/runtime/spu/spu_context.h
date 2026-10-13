@@ -210,6 +210,7 @@ typedef struct spu_context {
      * YIELD=1, WAIT_SIGNAL=2, POLL=3, RECV_WKL_FLAG=4; |0x10 = the v2 form), so
      * the taskset-PM emulation must read the code, not just halt. */
     uint32_t stop_code;
+    uint32_t task_exit_requested; /* Set only by the real task EXIT syscall. */
     #define SPU_STATUS_SINGLE_STEP  0x10
 
     /* SPU thread identification */

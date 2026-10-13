@@ -15,6 +15,15 @@ uint8_t *vm_base;
 uint32_t g_ydkj_real_taskset_ea, g_ydkj_real_taskid;
 uint32_t spu_thread_register_phantom(void) { return 17; }
 static unsigned s_async_disp[64], s_async_ret[64];
+#ifdef LIFECYCLE_API
+static void ts_lock(void) {}
+static void ts_unlock(void) {}
+int spu_task_claim_locked(uint32_t ea, uint8_t* h, uint32_t id, spu_task_owner* o) {
+    static uint64_t sequence; (void)h;
+    *o = (spu_task_owner){ea, id, 1, ++sequence}; return 1;
+}
+int spu_task_cancel_locked(const spu_task_owner* o, uint8_t* h) { (void)o; (void)h; return 1; }
+#endif
 static void entry(spu_context *c) { (void)c; abort(); }
 static struct { uint64_t fp; spu_lifted_entry_fn fn; int image_id; }
     s_registry[] = {{42, entry, 1}};

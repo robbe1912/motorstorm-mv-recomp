@@ -32,6 +32,10 @@ jobs:
         run: python scripts/check_spurs_guest_fields.py
       - name: Explicit SPURS dispatch identity
         run: python scripts/check_task_dispatch_identity.py
+      - name: Check task exit lifecycle and runner reason
+        run: python scripts/check_task_lifecycle.py
+      - name: Check complete task cleanup API
+        run: python scripts/check_task_exit_source.py
   capture-observer:
     runs-on: windows-latest
     steps:
@@ -64,3 +68,7 @@ jobs:
         run: python scripts/check_spurs_guest_fields.py
       - name: Explicit SPURS dispatch identity
         run: python scripts/check_task_dispatch_identity.py
+      - name: Check task exit lifecycle and runner reason
+        run: python scripts/check_task_lifecycle.py
+      - name: Check complete task cleanup API
+        run: python scripts/check_task_exit_source.py

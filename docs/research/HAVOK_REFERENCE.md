@@ -700,3 +700,86 @@ Exit reason, incarnation generation, fresh versus suspended LS and atomic
 creation/retirement remain #74. This ownership unit preserves the curated
 enabled-bit cleanup policy and the original allocator/indirect-call errors;
 dispatch counts are not a completion or gameplay claim. Retail mstream is parked.
+
+## Explicit exit incarnations,2026-10-13
+
+Issue #74 follows the explicit-dispatch-identity correction. The actual taskset
+EXIT syscall now sets a dedicated per-run result before halting. The actual ABI
+runner returns that result without changing existing options or its compatibility
+entry point. Cleanup validates taskset, slot, generation and dispatch identity;
+only a genuine EXIT retires the selected guest task. Entry return and generic
+STOP preserve task ownership. A new incarnation clears and reloads LS; an
+existing incarnation retains LS and guest context data. Creation, retirement
+and signal-bit read/modify/write use the shared lifecycle lock and VM helpers.
+Dynamic stable ownership/LS records replace the old capacity-limited directories.
+
+The authored lifecycle regression passes512 recycled slot lifetimes and1024
+lifetimes on four real host threads sharing a guest header byte. It checks
+neighbor bits, stale cleanup/cancellation, duplicate start, ordinary return,
+resumption identity and fresh versus retained LS. The actual runner fixture
+checks return/EXIT/return, ordinary STOP, no-entry and fresh context/result.
+The complete actual cleanup fixture fails both historical trees: fork
+`fda09a4` destroys ordinary-return state and accepts stale cleanup; curated
+`fc0322b` retains ENABLED after EXIT and accepts stale cleanup. Corrected
+cleanup passes. The complete actual CreateTask fixture also reproduced a
+latched execution claim when ELF extent is unavailable at fork`9bfe08d`;
+`8e40617` releases it without fabricating task completion. These fixtures use
+empty authored VM/host adapters, not original guest instruction execution.
+Build/run logs, exact commands and source/fixture/executable hashes remain in
+private timestamped checks. Existing guest-field and dispatch-identity checks
+also pass.
+
+Native trial`20261013T152617.949244Z`, EXE
+`472e4cb96af3c39783da02034257c9140397821d3b0a0a7399ded4410190b8bf`,
+matching named-US ELF`3e68c72f8fbd6a30ef30d4535462cf70f1cc86d111f56574adb7dd2c255e0706`,
+was muted with PM interpretation, six wedge probes disabled, internal captures
+and owned PAD_FILE input. It acknowledged English, PLAY, help, ticket, Anything,
+bike class and MOHAWK through the normal route. Sparse captures missed the intro
+cue; this run did not skip the movie. Internal frame74 displays the original
+track-map/loading advice, not gameplay. It ended naturally at253.25s, return0.
+There are844 complete per-thread syscall0/before/after triplets and844 accepted
+explicit-EXIT ownership records with distinct generations, reusing slots0..3.
+Each selected ENABLED bit changes1 to0; maximum observed enabled count is4,
+with no all128-enabled creation failures. These guest field reads are sequential,
+not atomic snapshots. The transcript retains370 unresolved indirect calls,
+including first target`0x6F766572`/LR`0x00A7A9D0` and final
+`0xD00A5AAC`/LR`0x00AFDC10`. Neither a natural return0 nor slot recycling proves
+physics completion. No allocator fatal was found in this bounded trial; the
+previous8320-byte failure is not declared repaired. Stderr SHA256:
+`cee2316122431603851cf1c9074be7f741989f1c7b72c01c7f645bcea197e2bd`.
+
+The capture tuple is start:count:stride. A private launcher trial accidentally
+used`1:25:480`; that reduced sampling and reached only ticket confirmation before
+the301.703s guard. Corrected trial`20261013T160214.949146Z` used`1:480:25`
+and the same EXE. Sony CROSS was acknowledged at16:02:46.801450UTC, correlation
+0.9536818202; observed PLAY followed at16:02:51.272625. Eight receipts cover
+English, intro skip and the remaining normal menu route, including attempted
+MOHAWK confirmation. It closed at301.515s by guard, return1. Latest internal
+frame76 remains the malformed MOHAWK selection preview; no successor capture
+proves a loading transition. There are1328 accepted explicit-EXIT records;
+no slot-count or PAD receipt establishes race entry. Stderr SHA256:
+`f051f30b25fac75381bb00571a6383df9c6d1c1258c9ec7b06ef171c38edbdb6`.
+
+These native trials precede only the unavailable-ELF-extent cancellation follow-up.
+The final optimized build including that follow-up has EXE SHA256
+`c360957f7496b66bf931673dd137deae21ef6a0e3213f71cef62b44f09b6b4a4`.
+Race entry, original selection graphics and frame-time acceptance remain unproven;
+#71/#13 stay open and retail mstream remains parked. The next diagnosis must use
+actual consumer/progress and invalid-call evidence after recycling, rather than
+assuming task exits completed the physics jobs.
+
+
+Final-build trial`20261013T162838.175424Z` uses that exact`c360957f...`
+EXE, unchanged matching ELF and corrected`1:480:25` sampling. Launcher and
+controller were started together to avoid leaving an unattended intro. All
+eight normal-route receipts were acknowledged; Sony skip at16:29:07.818734UTC
+scored0.9787367130 and PLAY followed at16:29:12.026987. It records956 complete
+syscall0/cleanup triplets and956 accepted EXIT records, selected ENABLED1 to0,
+maximum enabled4 and no no-free-task-ID failures. The181.031s guard ends with
+latest internal frame68 showing blank blue/malformed MOHAWK preview; no successor
+capture proves loading or gameplay. No unresolved indirect call appears within
+this bounded transcript; the earlier370 errors remain evidence, not declared
+repaired. Stderr SHA256:
+`43a5a25d0151654d11f239c0800c3cf031be008bac39bff41dbfa1fb1b5edd65`.
+A PAD receipt proves consumption, not the resulting scene transition. Later
+consumer/readiness diagnosis must keep that distinction.

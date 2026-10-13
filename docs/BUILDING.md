@@ -116,3 +116,15 @@ are adapters; no guest code or real host threads execute. Raw source, fixture
 and executable hashes and build/run logs remain under `temp/checks`. This
 checks dispatcher ownership, without proving task recycling or race entry.
 `--baseline f8d6a35 --expect-failure` reproduces both old ownership failures.
+
+The authored lifecycle regression, `python scripts/check_task_lifecycle.py`, links
+actual lifecycle code for 512 recycled and 1024 concurrent lifetimes, neighbor
+bits, stale/duplicate ownership, dispatch cancellation and generation-based LS
+reset. Its second fixture uses the actual inline runner to distinguish EXIT,
+ordinary return and generic STOP, checking fresh context and no-entry handling.
+`python scripts/check_task_exit_source.py` extracts the complete actual cleanup
+API. Baseline `--baseline fc0322b --expect-failure` reproduces retained ENABLED
+and stale-cleanup damage; corrected source passes. Fixtures use empty authored
+VM/header data and host adapters, with no original instructions. Logs and
+source/fixture/executable hashes are retained under `temp/checks`; source-only
+lifetimes do not establish executed game work or native race entry.

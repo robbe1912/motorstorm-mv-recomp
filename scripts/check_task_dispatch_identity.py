@@ -41,6 +41,8 @@ def main():
     async_body = function(source, 'spu_workload_dispatch_async')
     explicit = bool(re.search(r'^int spu_workload_dispatch_task\s*\(', source, re.M))
     bodies = (function(source, 'spu_workload_dispatch_task') + '\n' if explicit else '') + async_body
+    lifecycle = bool(re.search(r'^int spu_workload_dispatch_owned\s*\(', source, re.M))
+    if lifecycle: bodies = function(source, 'spu_workload_dispatch_owned') + '\n' + bodies
     end = source.index('} spu_async_job;') + len('} spu_async_job;')
     begin = source.rfind('typedef struct {', 0, end)
     if begin < 0:
@@ -57,6 +59,7 @@ def main():
     definitions = []
     if explicit:
         definitions.append('EXPLICIT_TASK_API')
+    if lifecycle: definitions.append('LIFECYCLE_API')
     if 'task_arg' in async_body.split('{', 1)[0]:
         definitions.append('ASYNC_HAS_ARGUMENT')
     includes = [repo/'runtime/spu', repo/'runtime/platform', repo/'tests']

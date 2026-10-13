@@ -157,14 +157,15 @@ typedef struct spu_run_opts {
     uint32_t group_id;
 } spu_run_opts;
 
-static inline int32_t spu_run_lifted_job_abi(spu_lifted_entry_fn entry,
+static inline int32_t spu_run_lifted_job_abi_result(spu_lifted_entry_fn entry,
                                              uint8_t* local_store,
                                              uint32_t args_ea,
                                              int image_id,
                                              int spurs_task_abi,
                                              const uint32_t* r3_override,
-                                             const spu_run_opts* opts)
+                                             const spu_run_opts* opts, uint32_t* task_exit_out)
 {
+    if (task_exit_out) *task_exit_out = 0;
     if (!entry) return -1;
     spu_context ctx;
     spu_context_init(&ctx, 0);
@@ -339,9 +340,18 @@ static inline int32_t spu_run_lifted_job_abi(spu_lifted_entry_fn entry,
     /* ctx is a stack local that may have taken a lock-line reservation; left
      * in the reserver set it is walked by the next PPU store to that line.
      * GH3's Havok task returning is what first hit it. */
+    if (task_exit_out) *task_exit_out = ctx.task_exit_requested;
     spu_coh_unregister(&ctx);
     if (local_store) memcpy(local_store, ctx.ls, SPU_LS_SIZE);  /* LS back out */
     return 0;
+}
+
+static inline int32_t spu_run_lifted_job_abi(spu_lifted_entry_fn entry,
+    uint8_t* local_store, uint32_t args_ea, int image_id, int spurs_task_abi,
+    const uint32_t* r3_override, const spu_run_opts* opts)
+{
+    return spu_run_lifted_job_abi_result(entry, local_store, args_ea, image_id,
+                                       spurs_task_abi, r3_override, opts, NULL);
 }
 
 static inline int32_t spu_run_lifted_job_img(spu_lifted_entry_fn entry,
