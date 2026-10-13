@@ -134,3 +134,35 @@ The [native main wait](HAVOK_REFERENCE.md#native-physics-completion-wait-2026-10
 is independently established from its matching native dumps. The reference
 and native main threads are in different waits; compare their identified
 operation contracts rather than equating addresses or scheduling states.
+
+## ps3recomp, REA and Ghidra grounding (2026-10-13, issue 24)
+
+Re-read ps3recomp architecture, graphics, porting and contribution guidance
+against upstream master `a2c20108af45174dbb7d3e2f87f6acaaef09c6b4` and REA
+guidance against main `0bc422d7bed1184a6b9fc0ea2655e4b2c5e1c4f4`.
+Reviewed current upstream candidates without adopting them. Curated native
+and fork baselines differ; [selective fork-first practice](../VENDOR.md)
+still applies. An upstream code difference is not a diagnosed native defect.
+
+REA practice requires matching target identity, retained evidence, explicit
+observation/inference/unknown distinctions, scope-compatible comparisons and
+session closure. Current supported Windows CLI admission covers native PE
+and raw NMOS 6502, not PPC ELF. The existing unchanged Java bridge against a
+disposable copy of the named Ghidra project remains a manual workflow, not
+supported Windows ELF admission. It used read-only/no-analysis processing,
+original OPD TOCs, authenticated loopback and controlled shutdown. Original
+project hashes remained unchanged; no original ELF/project was modified.
+
+Focused exports checked every decoded instruction byte against named-US ELF
+`3e68c72f8fbd6a30ef30d4535462cf70f1cc86d111f56574adb7dd2c255e0706`.
+Coverage was partial: ResourceInfo::Read `7FFB40`, 248 instructions and
+108 of 1,100 symbol bytes uncovered; SkyMeshRenderable constructor
+`6A3EF8`, 56 instructions and 100 of 324 bytes uncovered; EnvironmentType::Load
+`6A9938`, 35 instructions and 28 of 168 bytes uncovered; EnvironmentMatrixCalc
+`6A3A20`, 25 instructions and 816 of 916 bytes uncovered. The matrix routine's
+decompiler switch recovery exceeds the exported function-body coverage;
+its pseudocode is not a complete byte-verified transform contract. Local
+resource-info fields supported by decoded instructions help check the
+[environment buffer binding](GRAPHICS_AUDIO.md), but static flow does not
+establish native execution or a rendering fix. Original code, pseudocode,
+snapshots and bridge responses remain private.

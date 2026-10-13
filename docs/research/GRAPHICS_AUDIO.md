@@ -127,6 +127,54 @@ stride 32, so source identity and any guest conversion must be established
 before comparing those position representations. No complete retained index
 or position span directly matched this package; that does not prove corruption.
 
+### Resident geometry and environment binding (issue 24)
+
+The muted named-US baseline run `20261013T183511.323216Z` used EXE
+`e51e97d310cdbb17cfb8714ca3ff9a359d8f64f9b2f2414471b1b85bf9d26cc0`.
+The controller followed the observed class/model route, armed the entry
+observer before class confirmation, then retained 35 seconds after the
+MOHAWK name target. It sent no race-confirmation input. The owned process
+was verified before and after a read-only memory snapshot, then stopped
+explicitly: 88.766 seconds, guard termination, return 1. No menu or race
+acceptance follows from that run.
+
+Guest-base discovery checked original ELF bytes and process identity.
+Sequential reads took approximately 0.8 seconds, not an atomic snapshot.
+Of the inspected 96 MiB VRAM and 512 MiB MAIN regions, 66 and 137 one-MiB
+blocks respectively were readable. Unreadable blocks have explicit metadata
+and placeholder bytes; comparisons must exclude them. The interpreted
+resource objects, metadata table and dependency/name pool have recorded
+readable coverage.
+
+The complete primary bike vertex payload (964,576 bytes) matches readable
+VRAM at `C5C0EC00`, and its complete index payload (93,926 bytes) matches
+`C3171200`. The configured launch-US `bike01` and `bike01_LV02` copies share
+these payloads: equality establishes resident source bytes, not which package
+provided them, load completion, conversion or GPU consumption. The vertex
+resource `00030E22B17D9C31` has a MAIN object/descriptor linking that VRAM
+address to stride 32 and 30,143 vertices.
+
+All 14 retained attribute-zero spans from the earlier indexed-draw run also
+match this newer VRAM snapshot at their deterministic addresses. The large
+float-position buffer at `C5998000` is distinct from the resident bike
+payload. Its MAIN object and descriptor identify resource
+`000317308816E69D`, stride 32, 3,862 vertices and size `0x1E2C0`.
+Resource-info metadata links it through eight named mesh dependencies of
+the loaded `3Dsky_vehicleselect` environment: trailers, inner/outer landscape,
+balloon, blimp, ground, midday sky and clouds. This is a resource/metadata
+binding, not execution chronology or proof that every retained draw belongs
+to one particular mesh. It removes the basis for treating large coordinates
+alone as corrupted selected-bike data.
+
+Focused Ghidra work independently corroborates resource-info identifier,
+name, dependency-count and 16-byte dependency-entry contracts. Exact decoded
+instruction bytes were checked against the configured original ELF;
+incomplete function coverage remains explicit in [translation evidence](TRANSLATION.md).
+The next diagnosis must distinguish environment projection/clipping from
+the separate bike load/conversion/upload/draw path. Neither has a proven
+correction. Existing negative-w/depth mapping and upstream differences need
+their own contract and native evidence before modification.
+
 ## Audio staging
 
 Game audio uses embedded Multistream/SPURS workloads, not imported cellAdec/cellAtrac. cellAudio→WASAPI wiring and real-time ring drain do not prove correct decoded audio. Firmware flashATRAC/flashMP3 are private inputs; staging fingerprints must use actual PT_LOAD bytes. Image-relative registration alone does not correct absolute/PC-relative addresses at a different staging base.
