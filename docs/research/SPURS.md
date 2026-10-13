@@ -138,6 +138,58 @@ during the intro (explicit stop at 201.047 seconds). Both failures are retained.
 The successful run adds a validated private observed-movie optional gate, but
 uses the existing Evolution gate; the new movie gate is not runtime-verified.
 
+### Marker-state and SPU-copy journal (2026-10-13, issue 8)
+
+A private read-only observer was developed and compiled first in the own-fork
+checkout, using ignored curated-source copies. Its state key excludes fetched
+PC, scratch fields and event-mask churn; a shared context cache deduplicates
+replacement host threads. It observes two local marker words, shared header,
+image/policy and queue association, with one-second same-state samples. Separate
+callbacks run after successful plain PUT and successful atomic PUTLLC/PUTLLUC
+copies. Their source bytes and post-copy header are observations, not a total
+write order: unreserved/PPU writes can race those reads. PPU/direct writes are
+not instrumented, and context-address equality is not submission identity.
+
+The first observer opened a journal for every short-lived host thread. Run
+`20261013T205225.932877Z` exhausted CRT file handles, failed an asset open and
+exited before navigation at 2.141 seconds (return 0). This observer-induced
+failure is not game completion or a PVS diagnosis. The replacement uses one
+synchronized journal. A synthetic current-header fixture checks guest/context
+immutability, 100,000 unchanged fetch sites and 1,000 replacement host threads;
+the final cache retains two marker states plus one copy record rather than
+logging thread creation or instruction churn.
+
+Run `20261013T205422.903989Z` still exhausted 50,000 events early: 48,883 state
+changes and 1,117 SPU-copy callbacks. Its later matched wait was requested 8,
+hint/taken 8/8 and minimum 6 at active index 4, with a PM trampoline argument
+binding for `spurs_pm4`. The trace does not cover that later wait; no absence
+after its cap is evidence. Explicit stop was 108.688 seconds, return 1.
+
+The revised run `20261013T210006.781660Z` arms only after observing PLAY, then
+acknowledges the ordinary route and MOHAWK confirmation. EXE SHA256 is
+`e02c98a7a37b3cff558eb35fed464e9574c52156b62a542ebe8cb9f55ddf6bd5`.
+It retains 30,559 events below its 50,000 budget: 25,074 marker-state changes,
+5,375 successful PUTLLC-copy callbacks and 110 same-state samples. The final
+observed header is hint/taken 10/4 with all six active markers FFFF; it is
+sampled repeatedly across 15.2601949 seconds (QPC frequency 10,000,000). The
+last captured successful publication also observes that header. Matched
+EXE/PDB/actual-PC unwind and sequential live reads bind the main PVS wait to
+requested 8, taken/minimum 4, all active markers FFFF. Explicit stop is 86.625
+seconds, return 1. This differs from the earlier minimum-6 condition and directs
+this probe's next question toward claim/eligibility for the next queued jobs.
+It does not identify the first missing operation, prove continuous stability,
+name a unique submission, or explain the uninstrumented baseline: diagnostic
+serialization and timing can change which condition appears.
+
+Trace SHA256 is `af7441316d5061406267f7bfa2fa20ec6aed16d28ac591f21689b9db10564f30`;
+stderr SHA256 is `63128529fbd1e5c3bd28bba5ee69ffbef835378704545b081f5c1c18417f9714`.
+The matching final EXE/PDB and observer source are retained privately. All three
+temporary native sources were restored byte-for-byte; the own fork's tracked
+tree remained unchanged. Supported optimized baseline rebuild produced EXE
+`76e08e48b34d5aca500879287d82828194f9f86a6d8ed943114a88de0570bb41`.
+No wait was bypassed; native menu/race acceptance remains open. Issue 71 stays
+separate and retail mstream stays parked.
+
 ## Earlier native producer binding
 
 The muted normal-menu run `temp/runs/20261012T230343.828131Z` reproduces the
