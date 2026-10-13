@@ -46,7 +46,25 @@ Set-Content -LiteralPath 'temp/runs/YOUR_RUN/pad.txt' -Value '0x4000 8' -Encodin
 
 File clears on consumption; stdout acknowledges [cellPad] PAD_FILE press. Default 40 polls can auto-repeat. Hex masks: CROSS 0x4000, START 0x0008, UP 0x0010, RIGHT 0x0020, DOWN 0x0040, LEFT 0x0080. The historical “7-press” list CROSS×4, DOWN, CROSS contains six presses; screens and acknowledgments override old timing recipes.
 
-For a known menu checkpoint, use `python scripts/run.py --menu-replay PRIVATE_PROFILE.json`. The supported launcher captures game-internal backbuffers and drives normal input without desktop capture, focus or input. Schema 1 profiles contain the selected ELF SHA256, observed reference BMPs/ROIs/labels, single-button steps with 1..8 polls, and a target with optional additional checks. Profiles and reference images remain private. Text comparisons use white-glyph overlap; explicitly observed blank intro states can use exact RGB comparison. A heading alone can match a help overlay: include a distinguishing target check.
+For a known menu checkpoint, use `python scripts/run.py --menu-replay PRIVATE_PROFILE.json`. The supported launcher captures game-internal backbuffers and drives normal input without desktop capture, focus or input. Schema 1 profiles contain the selected ELF SHA256, observed reference BMPs/ROIs/labels, single-button steps with 1..8 polls, and a target with optional additional checks. Profiles and reference images remain private. Text comparisons use white-glyph overlap; exact RGB comparison requires an unchanged observed ROI. A heading alone can match a help overlay: include a distinguishing target check.
+
+Continuation profiles must include screen-gated intro skips in `optional_actions`.
+Each uses the same observed reference/ROI/label/button/polls as a required step,
+plus `after_step` (the number of required steps already acknowledged). An action
+sends once when observed; an absent intro does not block the route. The target
+is checked first. Use `mode: "contrast"` for colored or fading intro captions:
+normalized grayscale correlation retains the 0.95 match threshold and rejects
+flat references/observations. Avoid blank-screen skip gates. The regression
+checks faded captions, wrong screens, absent/repeated intros and target priority.
+
+Native trial `20261013T134536.081481Z` (EXE
+`5ba10a87abd5667cc498317282b5236d51a4dcadad9cc117be7a592fb945c111`)
+acknowledged English, then CROSS on the observed intro caption at 13:46:06 UTC.
+The next retained backbuffer shows PLAY over the original menu background;
+the owned muted run closed at 42.406 s after target observation. This proves
+intro skipping and the menu checkpoint, not ticket/3D correctness or race entry.
+The optional-skip regression fails against main `b921cad` because it omits
+the expected skip input; retained red/green logs and frames remain private.
 
 Replay validates the target identity before launching, checks PID/create-time/executable/PAD_FILE ownership before writes, waits for fresh internal frames and input receipts, refuses unknown screens, and stops on timeout/error. An observed target is not a graphics or gameplay verdict. Do not request repeated manual navigation for an established checkpoint or jump directly into a guest scene. `scripts/native_pad.py --help` describes the one-step gated interface; `python scripts/check_menu_replay.py` tests the rejected blind recipe, wrong screens, ownership and observed-state progression without game bytes.
 

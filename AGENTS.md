@@ -12,3 +12,9 @@
 - Reproduce known menu checkpoints with screen-gated normal PAD_FILE replay, not repeated requests for user navigation or scene jumps. See docs/OPERATIONS.md; scripts/check_menu_replay.py rejects the historical blind press recipe.
 - Preserve debug and retail generated trees separately. Use the original target's inputs; never replace a target tree with a sibling US mirror.
 - Build success, submitted frames and reference gameplay do not establish native gameplay or minimum 60 FPS. Report the actual observations, identities and remaining limits.
+
+## Enforced operating rules
+
+| Rule | Enforcement |
+| --- | --- |
+| Continue through observed menus and skip an observed intro once. | `scripts/menu_replay.py` owns optional screen-gated actions; `scripts/check_menu_replay.py` runs in source-audit CI and rejects the historical missing skip, blind inputs, repeated skips and wrong screens. Follow `docs/OPERATIONS.md` when preparing private profiles. |

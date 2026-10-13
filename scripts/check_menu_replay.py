@@ -10,19 +10,107 @@ from menu_replay import load_profile, matches, replay
 from native_pad import owned
 
 
-def synthetic_bmp(path, left):
+def synthetic_bmp(path, left, color=b'\xff\xff\xff'):
     w, h = 80, 40
     data = bytearray(w * h * 3)
     for y in range(10, 13):
         for x in range(left, left + 20):
             at = ((h - y - 1) * w + x) * 3
-            data[at:at + 3] = b'\xff\xff\xff'
+            data[at:at + 3] = color
     head = struct.pack('<2sIHHI', b'BM', 54 + len(data), 0, 0, 54)
     info = struct.pack('<IiiHHIIIIII', 40, w, h, 1, 24, 0, len(data), 0, 0, 0, 0)
     path.write_bytes(head + info + data)
 
 
 class MenuReplayTests(unittest.TestCase):
+    def test_observed_target_takes_priority_over_optional_skip(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            frame = root / 'target.bmp'
+            synthetic_bmp(frame, 25)
+            state = dict(reference=str(frame), roi=[0, 0, 80, 40], label='synthetic target')
+            route = dict(schema=1, elf_sha256='synthetic identity',
+                         steps=[dict(state, mask=0x4000, polls=4)], target=state,
+                         optional_actions=[dict(state, mask=8, polls=4, after_step=0)])
+            path = root / 'route.json'
+            path.write_text(json.dumps(route))
+            with patch('menu_replay.owned', return_value={'elf_sha256': 'synthetic identity'}), \
+                 patch('menu_replay.latest_frame', return_value=frame), patch('menu_replay.send') as send:
+                result = replay(root, path)
+            send.assert_not_called()
+            self.assertTrue(result['target_observed'])
+            self.assertEqual(result['optional_inputs'], [])
+
+    def test_intro_contrast_matches_faded_caption_and_rejects_wrong_or_blank_screen(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            reference, faded, wrong, blank = [root / f'{n}.bmp' for n in range(4)]
+            synthetic_bmp(reference, 25, b'\x70\xaa\xfa')
+            synthetic_bmp(faded, 25, b'\x38\x55\x7d')
+            synthetic_bmp(wrong, 45, b'\x70\xaa\xfa')
+            synthetic_bmp(blank, 25, b'\x00\x00\x00')
+            state = dict(reference=str(reference), roi=[0, 0, 80, 40],
+                         label='synthetic colored intro caption', mode='contrast')
+            self.assertTrue(matches(faded, state))
+            self.assertFalse(matches(wrong, state))
+            self.assertFalse(matches(blank, state))
+            with self.assertRaisesRegex(ValueError, 'no reliable contrast'):
+                matches(blank, dict(state, reference=str(blank)))
+
+    def test_invalid_optional_intro_actions_are_rejected_before_input(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            frame = root / 'state.bmp'
+            synthetic_bmp(frame, 25)
+            state = dict(reference=str(frame), roi=[0, 0, 80, 40], label='synthetic state')
+            step = dict(state, mask=0x4000, polls=4)
+            action = dict(step, after_step=1)
+            route = dict(schema=1, elf_sha256='synthetic identity', steps=[step], target=state)
+            path = root / 'route.json'
+            for invalid in ('blind press', dict(action, after_step=True),
+                            dict(action, after_step=-1), dict(action, after_step=2),
+                            dict(action, reference=''), dict(action, mask=0), dict(action, polls=9)):
+                with self.subTest(action=invalid):
+                    path.write_text(json.dumps(dict(route, optional_actions=[invalid])))
+                    with self.assertRaises(ValueError):
+                        load_profile(path)
+
+    def test_optional_intro_skip_is_acknowledged_once_without_blocking_menu(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            frames = []
+            for n, left in enumerate((5, 25, 25, 45, 60)):
+                p = root / f'{n}.bmp'
+                synthetic_bmp(p, left, b'\x70\xaa\xfa' if n in (1, 2) else b'\xff\xff\xff')
+                frames.append(p)
+            def state(n, **kw):
+                return dict(reference=str(frames[n]), roi=[0, 0, 80, 40], label=f'state{n}', **kw)
+            profile = dict(schema=1, elf_sha256='synthetic identity',
+                           steps=[state(0, mask=0x4000, polls=4), state(3, mask=0x40, polls=4)],
+                           optional_actions=[state(1, mode='contrast', mask=8, polls=4, after_step=1)],
+                           target=state(4))
+            path = root/'route.json'
+            path.write_text(json.dumps(profile))
+            calls = []
+            def acknowledged(run, reference, roi, mask, polls, label, **kwargs):
+                calls.append(mask)
+                return dict(observed_frame=str(reference), acknowledged=True)
+            with patch('menu_replay.owned', return_value={'elf_sha256': 'synthetic identity'}), \
+                 patch('menu_replay.latest_frame', side_effect=frames), \
+                 patch('menu_replay.send', side_effect=acknowledged), patch('menu_replay.time.sleep'):
+                result = replay(root, path)
+            self.assertEqual(calls, [0x4000, 8, 0x40])
+            self.assertEqual(len(result['optional_inputs']), 1)
+            self.assertEqual(result['inputs'], 2)
+            # Intro absent: no speculative skip and no mandatory intro wait.
+            calls.clear()
+            with patch('menu_replay.owned', return_value={'elf_sha256': 'synthetic identity'}), \
+                 patch('menu_replay.latest_frame', side_effect=[frames[0], frames[3], frames[4]]), \
+                 patch('menu_replay.send', side_effect=acknowledged), patch('menu_replay.time.sleep'):
+                result = replay(root, path)
+            self.assertEqual(calls, [0x4000, 0x40])
+            self.assertEqual(result['optional_inputs'], [])
+
     def test_historical_blind_six_press_recipe_is_rejected(self):
         # OPERATIONS' historical "7-press" recipe was actually six timed presses.
         with tempfile.TemporaryDirectory() as d:

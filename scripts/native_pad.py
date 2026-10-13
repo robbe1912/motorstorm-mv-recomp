@@ -26,8 +26,8 @@ def owned(run):
 
 
 def frame_signature(path, roi, mode='text'):
-    """Text mask or exact RGB ROI of an internal 24/32-bit BMP."""
-    if mode not in ('text', 'pixels'):
+    """Text mask, grayscale contrast or exact RGB ROI of an internal BMP."""
+    if mode not in ('text', 'contrast', 'pixels'):
         raise ValueError('Unknown screen comparison mode')
     b = Path(path).read_bytes()
     if b[:2] != b'BM' or len(b) < 54:
@@ -49,14 +49,27 @@ def frame_signature(path, roi, mode='text'):
             at = offset + row * pitch + ix * (bits // 8)
             if mode == 'pixels':
                 mask.extend(b[at:at + 3])
+            elif mode == 'contrast':
+                blue, green, red = b[at:at + 3]
+                mask.append((29 * blue + 150 * green + 77 * red) // 256)
             else:
                 mask.append(int(min(b[at:at + 3]) >= 235))
     return bytes(mask)
 
 
-def similarity(left, right):
+def similarity(left, right, mode='text'):
     if len(left) != len(right):
         return 0.
+    if mode == 'contrast':
+        n = len(left)
+        sx, sy = sum(left), sum(right)
+        vx = n * sum(x*x for x in left) - sx*sx
+        vy = n * sum(y*y for y in right) - sy*sy
+        if not n or vx < 16*n*n:
+            raise ValueError('Reference ROI has no reliable contrast')
+        if vy < 4*n*n:
+            return 0.
+        return (n*sum(x*y for x,y in zip(left,right))-sx*sy) / (vx*vy)**.5
     union = sum(bool(a or b) for a, b in zip(left, right))
     if union < 20:
         raise ValueError('Reference ROI has no reliable text; use a text-bearing ROI')
@@ -85,7 +98,7 @@ def send(run, reference, roi, mask, polls, label, timeout=15, mode='text'):
         if previous['observed_frame'] == str(frame):
             raise ValueError('Wait for a new internal frame after the previous input')
     left, right = frame_signature(reference, roi, mode), frame_signature(frame, roi, mode)
-    score = float(left == right) if mode == 'pixels' else similarity(left, right)
+    score = float(left == right) if mode == 'pixels' else similarity(left, right, mode)
     if score < .95:
         raise ValueError(f'Unexpected screen ({score:.3f}); no input sent')
     pad = run / 'pad.txt'
@@ -138,7 +151,7 @@ def main():
     ap.add_argument('--mask', type=lambda s: int(s, 0), required=True)
     ap.add_argument('--polls', type=int, default=4)
     ap.add_argument('--label', required=True)
-    ap.add_argument('--mode', choices=('text', 'pixels'), default='text')
+    ap.add_argument('--mode', choices=('text', 'contrast', 'pixels'), default='text')
     args = ap.parse_args()
     print(json.dumps(send(args.run, args.reference, tuple(map(int, args.roi.split(','))),
                           args.mask, args.polls, args.label, mode=args.mode), indent=2))
