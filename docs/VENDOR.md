@@ -163,3 +163,17 @@ malformed geometry are qualified in [graphics evidence](research/GRAPHICS_AUDIO.
 Issue 214's gist V5 concerns a separate register-file/Vulkan proposal; no gist
 or RPCS3 implementation was copied. Private observers, generated guest code,
 captures and helper trial files are excluded. No external PR was opened.
+
+Explicit async task ownership (#78) was authored and tested first on own fork
+`codex/task-dispatch-identity`, commits
+[`f7104c0`](https://github.com/robbe1912/ps3recomp/commit/f7104c0a622388b19e49547265db2c62daf23026)
+and fixture adapter `fda09a4`. Only the explicit dispatch API, task caller
+arguments and captured-owner context reads are overlaid. The generic async
+entry has no task owner. Curated argument handling, phantom registration,
+diagnostics, host launch and task-return cleanup remain at their prior behavior;
+the fork's different retirement policy is not imported. The authored fixture
+compiles the complete dispatch functions against fingerprint/spawn adapters;
+both old trees fail identity capture and generic ownership, and both corrected
+trees pass. This does not prove genuine exit recycling, fresh task incarnations
+or race entry. [Native evidence](research/HAVOK_REFERENCE.md#explicit-task-dispatch-identity-2026-10-13)
+records separate observations. No external PR was opened.

@@ -642,3 +642,61 @@ completion wait and genuine task-exit retirement remain open. In particular,
 [#74](https://github.com/robbe1912/motorstorm-mv-recomp/issues/74) must distinguish
 exit from ordinary return/yield and protect task incarnation ownership. This
 three-store correction does not clear enabled state or suppress original errors.
+
+## Explicit task dispatch identity, 2026-10-13
+
+[#78](https://github.com/robbe1912/motorstorm-mv-recomp/issues/78) isolates the
+owner handoff prerequisite to #74. The dispatcher previously read the last
+caller's shared taskset/slot globals after fingerprint resolution. An authored
+fingerprint adapter publishes caller B's taskset `0x20000`, slot7 before A's
+capture. Both complete old dispatch functions capture B for A, and generic
+policy dispatch inherits B as a task owner. Their actual-source fixtures fail
+both checks. The new task API receives owner values explicitly; generic async
+work receives zero ownership. CreateTask, return redispatch and signal redispatch
+pass their local identities; worker context reads use the captured job owner.
+The inherited optional event diagnostic remains a generic unowned dispatch;
+it is disabled in native MotorStorm trials.
+
+Both corrected trees pass 256 owner-preserving dispatches, generic ownership,
+argument copies, invalid slot rejection, registry miss and spawn refusal. This
+is a dispatch-boundary regression: thread creation, phantom registration and
+timing are adapters, not executed host threads or guest tasks. Actual guest-header
+API fixtures also pass after their dispatch adapter is updated. The full fork
+workload unit compiles; the optimized curated native build succeeds, EXE SHA256
+`09a7e77f35c7eebc741e95e60bd9749cf6eb235aa875060b1945b690728260a2`.
+Fork provenance is in [VENDOR](../VENDOR.md), checker usage in [BUILDING](../BUILDING.md).
+
+Muted native run `20261013T140401.886289Z` skips the observed Sony intro, reaches
+PLAY and acknowledges help dismissal, race ticket, bike class and MOHAWK
+confirmation. Internal captures show the original video, logo and bike-class
+icon; race-selection tickets and the MOHAWK 3D preview remain malformed. Its
+300 s duration guard closes at 301.610 s, return1, only seven seconds after
+MOHAWK confirmation. This is an attempted normal race start, without race-entry
+proof. Replay correction: two nested menus share SELECT A RACE: the ticket
+points screen, then the Anything event screen. They require separate observed
+confirmations. The class crop also included moving background
+video, causing an exact-pixel gate failure. Private continuation gates now
+require the observed ticket text and a crop inside the bike silhouette, with
+the unchanged 0.95 correlation threshold. Captures and private profiles are ignored.
+
+Longer run `20261013T140946.452559Z` with the same EXE acknowledges the two
+race menus separately, bike class and MOHAWK confirmation. The captured trace
+has 256 matching per-thread request0/before/after triplets, covers all128 slot
+IDs, and retains the selected enabled bit in every cleanup pair. Maximum
+enabled count is128, followed by all-enabled creation failures. The older run
+covered126 IDs; the independent dispatcher regression establishes the ownership
+fault, while this native comparison also includes the earlier guest-field fix
+and cannot isolate every effect. Guest fields are sequential reads, not atomic
+snapshots or generation proof. The selected bike preview remains malformed;
+internal frame68 reaches the original track-map/loading advice screen, then
+no further capture arrives before the 480.453 s duration guard closes the
+process, return1. This is race loading, without native race entry or control.
+Final stderr SHA256 is
+`3fd53f1e2fd8ac5cf0817d43c1b833c6c088ff77cb046d01a5551f66fe9089d9`.
+The earlier 8320-byte allocator fatal and unresolved indirect-call error do
+not appear in this bounded run; this does not establish their correction.
+
+Exit reason, incarnation generation, fresh versus suspended LS and atomic
+creation/retirement remain #74. This ownership unit preserves the curated
+enabled-bit cleanup policy and the original allocator/indirect-call errors;
+dispatch counts are not a completion or gameplay claim. Retail mstream is parked.

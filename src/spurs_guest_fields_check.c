@@ -42,6 +42,16 @@ int spu_workload_dispatch_async(const uint8_t *p, uint32_t n, uint32_t a
     return 1;
 }
 
+int spu_workload_dispatch_task(const uint8_t *p, uint32_t n, uint32_t a,
+                               const uint32_t *arg, uint32_t ts, uint32_t id) {
+    if (ts != 0x10000 || id != 1 || arg != NULL) abort();
+    return spu_workload_dispatch_async(p, n, a
+#ifdef SPURS_DISPATCH_HAS_OVERRIDE
+                                      , arg
+#endif
+                                      );
+}
+
 #define TS 0x10000u
 static int failures;
 static void prepare(uint8_t expected[128]) {

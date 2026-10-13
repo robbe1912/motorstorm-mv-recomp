@@ -106,3 +106,13 @@ bits, guards, returned slot and null-pointer errors. `--baseline REV
 --expect-failure` checks the three original-store failures from a Git revision.
 Each run preserves source and binary hashes plus build/run logs under
 `temp/checks`. Both CI platforms run the corrected contract.
+
+`python scripts/check_task_dispatch_identity.py` compiles complete actual async
+dispatch APIs with an authored fingerprint adapter that publishes another
+caller's identity before capture. It checks 256 owner-preserving dispatches,
+unowned generic work, copied arguments, invalid slots, registry misses and
+spawn refusal. Thread creation, phantom registration and diagnostic timing
+are adapters; no guest code or real host threads execute. Raw source, fixture
+and executable hashes and build/run logs remain under `temp/checks`. This
+checks dispatcher ownership, without proving task recycling or race entry.
+`--baseline f8d6a35 --expect-failure` reproduces both old ownership failures.

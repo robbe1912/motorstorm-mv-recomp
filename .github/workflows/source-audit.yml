@@ -30,6 +30,8 @@ jobs:
         run: python scripts/check_memory_capacity.py
       - name: Actual SPURS guest-field contract
         run: python scripts/check_spurs_guest_fields.py
+      - name: Explicit SPURS dispatch identity
+        run: python scripts/check_task_dispatch_identity.py
   capture-observer:
     runs-on: windows-latest
     steps:
@@ -60,3 +62,5 @@ jobs:
         run: python scripts/check_memory_capacity.py
       - name: Actual SPURS guest-field contract
         run: python scripts/check_spurs_guest_fields.py
+      - name: Explicit SPURS dispatch identity
+        run: python scripts/check_task_dispatch_identity.py
