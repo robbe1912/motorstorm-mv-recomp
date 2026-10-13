@@ -2541,10 +2541,16 @@ static void spu_ef_deliver_owed(spu_context* ctx, uint32_t wobj)
                 (unsigned)bits, wobj); }
 }
 
+#include "spu_task_lifecycle_trace.h"
+
 void spu_spurs_taskset_syscall(spu_context* ctx)   /* non-static: also called by the pure interpreter (spu_interp.c) */
 {
     uint32_t raw = ctx->gpr[3]._u32[0];
     uint32_t num = raw & 0x0F;
+    if (num == 0 || num == 1)
+        spu_task_lifecycle_trace("syscall", ctx->image_id, raw,
+            spu_task_trace_be32(ctx->ls + 0x27BC),
+            spu_task_trace_be32(ctx->ls + 0x27D4), ctx->ls, NULL);
     /* SPU_SYSCALL_IMG=<n>: every syscall of image n, uncapped (the 24-line
      * budget is spent by FMOD's WAIT_SIGNAL loop long before a later task). */
     static int s_si = -2;

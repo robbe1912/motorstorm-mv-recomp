@@ -562,3 +562,53 @@ result, then test the identified lifecycle seam with independent authored
 cases for genuine exit, yield and ordinary return. Runtime/generated code and
 the executable remain unchanged. This evidence does not close #71 or #13,
 reopen retail mstream, or justify forcing a completion wait.
+
+## Executed constraint exit requests, 2026-10-13
+
+An opt-in, image-filtered lifecycle trace was added first on own fork commit
+`dbe0b4b`; only its logging hooks were overlaid, preserving curated cleanup.
+The checked optimized build passed, EXE SHA256
+`a0996b8aa794ddf49f7bc9b722ea35cd43b959be0e6487c272a35d582b7c6298`.
+Owned muted run `20261013T011944.197576Z`, PID36928, records the same named
+ELF identity and trace budget2048/image2 in its launch metadata.
+
+Five consumed packets are retained: English, observed main-menu PLAY,
+festival-help dismissal, SELECT A RACE and MOHAWK confirmation. The replay
+reports four route inputs and a separate bike confirmation; one configured
+class-selection step has no receipt. No fully acknowledged route or native
+race control is claimed. Internal captures retain real intro video and the
+malformed selection graphics.
+
+The stderr trace contains 256 request0 events and 256 paired before/after
+entry-return cleanup events. A bounded parser validates every triplet by
+native thread, taskset `0x4B835600`, image2, task ID and monotonic tick order.
+All requests have exit-context fields x2FC0=0/x2FD4=0; each selected enabled
+bit remains1 after cleanup. Maximum enabled count is128. There are 126 distinct
+observed task IDs, not128 unique completed tasks; duplicate/absent slot
+identities require separate ownership investigation. The stderr SHA256 is
+`a4eef55cb0b07d9cd50a84ad3044fce26571a5fb41add0f327435793420597c5`.
+The trace budget was not exhausted. These are sequential reads and per-thread
+event ordering, not an atomic taskset snapshot. Existing source handles this
+request by halting, then clears only host running state after return.
+
+The process later executes the original Havok allocator fatal for an 8320-byte
+request and logs unresolved indirect target `0x88F50115` on guest thread8,
+LR `0xB12350`. It calls `sys_process_exit(0)`; final metadata records349.906s,
+return0, guard=false. Zero exit status does not make this successful gameplay.
+No driving, playable race or minimum frame-rate result is claimed.
+
+Upstream PR240 was rechecked and is now merged, commit
+`308aeaeea9de306a084495916a6e61493bee3e3c`. It removes three native-struct
+writes from the guest taskset. The curated creation path still increments
+`taskset->taskCount`. An isolated compiled probe using the actual header
+confirms native fields initialized/taskCount/shutdownRequested at offsets 0/4/8.
+Incrementing the native counter changes byte4 of the real guest RUNNING
+bitset. This probe is layout evidence, not an executed API regression or fix.
+
+The next corrections must separate guest-layout corruption, explicit task
+destruction, ordinary return/yield and fresh task incarnations. Validate the
+merged upstream layout change on our fork first, then use an independent
+lifecycle regression before retiring slots. Do not unconditionally clear
+enabled state on every return, erase the original errors, or infer that slot
+recycling alone proves a race. Raw trace/analysis/layout artifacts stay private;
+#71 and #13 remain open.

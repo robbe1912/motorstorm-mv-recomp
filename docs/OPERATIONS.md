@@ -10,6 +10,14 @@ python scripts/run.py --seconds 600 --capture-havok-only
 
 Each invocation creates a unique temp/runs/UTC_TIMESTAMP with launch.json, stdout/stderr logs, resources.jsonl, frames.csv, pad.txt and final.json after closure. Launch identity includes EXE/ELF hashes, PID/create_time and capture profile. It uses configured isolated userdata and mutes host audio. `--capture-havok` activates existing hooks if present plus graphics/audio probes and sparse RSX capture. `--capture-havok-only` enables the existing Havok observer without those additional probes. The flags are mutually exclusive; empty output does not prove those boundaries executed.
 
+`--trace-task-lifecycle N` enables a separate task exit/return diagnostic budget,
+1..4096 events per runtime component. `--trace-task-image ID` optionally restricts
+it to a registered image without spending the budget on other images. The
+launcher records both knobs in `launch.json`. Exit/yield requests and ordinary
+entry-return cleanup are distinct events. The trace reports sequential exit
+context and enabled-bit reads; it changes no task bits and does not prove an
+atomic snapshot or race acceptance. It is disabled by default.
+
 Owned child limits: 600s, available physical ≥4GiB, available commit ≥12GiB, private ≤14GiB. Write stop.txt in its run directory for closure. final.json distinguishes guards from natural exits; always inspect fatal logs even on exit 0. Match PID/create_time before attaching/stopping; preserve ordinary user RPCS3.
 
 Process creation is reported separately from window readiness. The launcher

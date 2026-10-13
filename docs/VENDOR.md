@@ -20,6 +20,15 @@ PR 213 overlaps signal/event/context work; do not duplicate it. Issue 214 KZ3 fi
 
 ## Fork-first workflow
 
+Task lifecycle diagnostics are authored first on own fork branch
+`codex/task-lifecycle-trace`, commit
+[`dbe0b4b`](https://github.com/robbe1912/ps3recomp/commit/dbe0b4b).
+Only the shared opt-in trace header and corresponding call sites are overlaid.
+The fork baseline and curated snapshot have different cleanup implementations;
+this overlay preserves each tree's existing behavior. This is a diagnostic
+trial, not a task-retirement correction or native race proof. No external PR
+was opened.
+
 Keep new ps3recomp work on branches in [our fork](https://github.com/robbe1912/ps3recomp). Upstream branches and open PRs may also be cherry-picked into that fork for local trials. Inspect each diff, preserve attribution, record the exact commit and validate the relevant generic regression and native behavior before adopting it in this project's vendor snapshot. A trial is not an accepted fix; keep unrelated changes separate so they can be selected or reverted independently.
 
 For upstream submission, prepare a small reviewable cherry-pick of the validated fix and ask the user before opening the PR. Existing upstream PRs are context, not authorization to open or reopen one. PR233 remains closed. Keep proprietary inputs and captures private throughout this workflow.
