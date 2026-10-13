@@ -166,3 +166,14 @@ resource-info fields supported by decoded instructions help check the
 [environment buffer binding](GRAPHICS_AUDIO.md), but static flow does not
 establish native execution or a rendering fix. Original code, pseudocode,
 snapshots and bridge responses remain private.
+
+A subsequent private matrix-export trial used the original ELF's 916-byte
+symbol extent explicitly in the disposable copy, disassembled its aligned
+addresses and retained separate declared-body versus decoded-byte counts.
+It recovered 224 instructions (896 bytes), all exactly matching the original
+ELF. Twenty bytes at `6A3A54` through `6A3A64` remain outside the decoded
+instruction coverage; their role is not established by that verifier.
+The initial strict body/decoded-count equality check rejected this result;
+the extent-aware check reports the gap instead of calling the declared body
+complete. Original project hashes remain unchanged. No native transform
+execution or rendering correction is inferred.
