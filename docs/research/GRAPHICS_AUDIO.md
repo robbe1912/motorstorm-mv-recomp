@@ -75,6 +75,58 @@ both native and fork trees; the supported optimized baseline rebuilt as EXE
 SHA256 `992697a15fd9523898ff84c64152f9329912e7f3942f05ac67e132972cea54b9`.
 Original vehicle appearance and normal-PLAY racing remain unaccepted.
 
+### Resource-request observer correction (issue 24)
+
+The original named-US `ResourceSystem::Find` routine at `00820B8C` preserves
+r5 as its identifier pointer, compares the eight-byte value through that pointer
+with resource-tree keys, and writes the result handle through r4. The previous
+entry observer mislabeled the r4 output buffer as an identifier. Its 96-byte
+snapshots cannot establish request identity or lookup completion. Incoming r0
+values alone are not a substitute for argument proof.
+
+The authored observer now reads exactly eight bytes through r5. The existing
+synthetic observer check supplies distinct r4/r5 buffers: the old header fails
+this assertion, the corrected header passes, and the guest-memory/context,
+probe-off silence, arm gating and quota checks still pass. Original/generated
+inputs remain unchanged; this corrects diagnostics, not rendering.
+
+Supported optimized build `20261013T182131.195519Z` produced EXE SHA256
+`e51e97d310cdbb17cfb8714ca3ff9a359d8f64f9b2f2414471b1b85bf9d26cc0`.
+Muted owned run `20261013T182637.264949Z` used the same named-US ELF and launch-US
+disc as the preceding draw capture. Screen-gated inputs followed normal PLAY
+to the class screen, armed entry observation before class confirmation, then
+observed MOHAWK at internal frame 59. No race-confirmation input was sent.
+Entry requests name `bike01` and `bike01_LV02`; those names are now observed
+at this checkpoint, but they do not bind the earlier GPU draws to a resource.
+
+All 64 retained `rsfind` records contain readable eight-byte identifiers. Among
+these are two vertex-buffer requests, `0003800BF78C6600` and
+`00033C08B34987C5`, and index-buffer request `000471421626BC98`. The explicit
+64-event stage quota was reached before the later vehicle-load entries; absence
+of other requests after that cap has no diagnostic meaning. Requests are entry
+observations, not successful results or draw-consumption proof. After 35 more
+seconds of observation, frame 70 still has the blue malformed preview. The
+run ended on its explicit stop marker at 86.735 seconds, return 1; vehicle
+rendering and normal-PLAY racing remain unaccepted.
+
+A separate baseline run `20261013T181712.409242Z` observed the same package
+names, but used the old r4 observer and stopped at the first selected-name
+screen (54.625 seconds, return 1). That screen showed a loading emblem; target
+recognition alone did not establish model-load completion. A later read-only
+VRAM snapshot attempt against the corrected run found its PID already terminal
+and captured no memory. No replacement run was launched on that failure.
+
+The launch-US `vehicles/bike01_LV02.rpk` copy is 3299524 bytes, SHA256
+`48639f882b6e0e5cdd8341bcaf7da81156f63e88c1b58918af4a59b55021e000`.
+Its primary StreamFormat version `0x10000` specifies HALF3 positions, not
+float32 positions, followed by another HALF3 field at TEXCOORD usage 7.
+The primary buffer has stride 32 and 30143 vertices. Source positions decoded
+according to that format are unit-sized; treating its first 12 bytes as float3
+was not a valid source interpretation. The retained GPU draw uses float3 with
+stride 32, so source identity and any guest conversion must be established
+before comparing those position representations. No complete retained index
+or position span directly matched this package; that does not prove corruption.
+
 ## Audio staging
 
 Game audio uses embedded Multistream/SPURS workloads, not imported cellAdec/cellAtrac. cellAudio→WASAPI wiring and real-time ring drain do not prove correct decoded audio. Firmware flashATRAC/flashMP3 are private inputs; staging fingerprints must use actual PT_LOAD bytes. Image-relative registration alone does not correct absolute/PC-relative addresses at a different staging base.

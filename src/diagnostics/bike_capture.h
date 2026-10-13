@@ -109,8 +109,9 @@ static void bike_probe_entry(ppu_context* ctx, const char* stage)
         bike_probe_string(f,"name",(uint32_t)ctx->gpr[4]);
     }
     if (!strcmp(stage,"rsfind")) {
-        /* ResourceIdentifier blob (r4): dump raw so its layout is observable. */
-        bike_probe_dump(f,"identifier",(uint32_t)ctx->gpr[4],96);
+        /* Find reads its eight-byte ResourceIdentifier through r5. r4 is the
+         * output handle, whose entry value does not establish a result. */
+        bike_probe_dump(f,"identifier",(uint32_t)ctx->gpr[5],8);
     }
     if (!strcmp(stage,"sor") || !strcmp(stage,"vtload")) {
         /* this=r3, resource system=r4, stream=r5; dump stream header. */

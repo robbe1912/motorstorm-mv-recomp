@@ -91,7 +91,11 @@ After observing the selection screen, create that run's `bike/arm.txt` before th
 next acknowledged input. This replaces a fixed boot-time cutoff. The selected
 private generated tree must already contain validated entry probes; this profile
 does not install them. Per-stage quotas are independent and exhaustion is logged.
-Synthetic observer checks cover disabled output, capture gating and quotas;
+`rsfind` captures the eight-byte ResourceIdentifier through r5; r4 is the output
+handle, whose entry contents cannot establish a result. Older captures labeled
+the r4 buffer as `identifier` and do not provide request-identifier snapshots.
+Synthetic observer checks cover the distinct r4/r5 arguments, disabled output,
+capture gating and quotas;
 normal-menu geometry/material capture and the bike render remain unverified.
 
 `--capture-textures` snapshots compressed uploads into owned `textures/`, with

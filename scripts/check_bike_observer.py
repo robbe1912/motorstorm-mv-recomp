@@ -99,6 +99,12 @@ void other_tu_probe(ppu_context* ctx) { bike_probe_entry(ctx,"rsload"); }
     print(result.stdout.decode(errors='replace').strip())
     if result.returncode:
         print(result.stderr.decode(errors='replace'))
+    else:
+        identifiers = list(capture.glob('*_rsfind.txt'))
+        expected = 'dump identifier ea=00000200 size=8 readable=1\n  00000200: 00 01 02 03 04 05 06 07\n'
+        if len(identifiers) != 1 or expected not in identifiers[0].read_text(encoding='utf-8'):
+            raise SystemExit('FAIL: ResourceSystem::Find identifier must come from r5, not the r4 output handle')
+        print('PASS: Find captures the eight-byte r5 identifier, distinct from the r4 output handle')
     raise SystemExit(result.returncode)
 
 
