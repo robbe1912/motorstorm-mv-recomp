@@ -175,6 +175,67 @@ the separate bike load/conversion/upload/draw path. Neither has a proven
 correction. Existing negative-w/depth mapping and upstream differences need
 their own contract and native evidence before modification.
 
+### Preserve homogeneous clip-W (issue 24)
+
+The retained environment draw uses constants 260–263 for its world transform
+and 64–67 for final projection; constants 256–259 are not its final projection.
+CPU evaluation of captured positions/constants puts every vertex of draw 10
+behind the camera. The curated vertex decompiler nevertheless emitted a
+negation of the entire clip vector when W was negative, making that geometry
+eligible for rasterization. The inspected fork and current upstream emit direct
+scale/offset output instead; reference agreement alone was not the proof.
+
+A bounded hardware D3D11 replay compiled the actual captured HLSL and used its
+474 uploaded vertices and constant block. With depth clipping disabled, no
+culling and an authored coverage-only fragment shader, the former output
+covered 391 pixels where zero was required. The positive-W control draw covered
+425 pixels. An ignored curated-source trial in the own ps3recomp fork removed
+only the W-sign negation, regenerated HLSL through the actual decompiler, and
+verified equality except for that line. The behind-camera replay then covered
+zero pixels; the control remained at 425. This isolates clipping coverage,
+not game materials, depth interactions or complete D3D12 behavior.
+
+The selective native port removes that single emission while preserving other
+curated depth/viewport behavior. `python scripts/check_rsx_clip.py` compiles an
+authored NV40 MOV fixture through production `rsx_vp_decompile` and performs
+pixel readback. The old source renders the behind-camera triangle (8,192 pixels)
+and fails; the corrected source rejects it and retains the visible control
+(8,192 pixels). Explicit hardware and WARP runs pass. CI uses WARP deliberately;
+it is not native-game or hardware-performance acceptance. No original shader,
+vertex, constant or asset payload is in the published regression.
+
+Supported optimized build `20261013T190744.410183Z` produced EXE SHA256
+`e1e041a43880f7cfe71a58ee0dfb4ccc866ca524cf8ce8a7276fee52fa711e34`.
+Muted named-US run `20261013T192701.416457Z` used the ordinary observed route,
+including the Evolution-caption skip, ticket, Anything and bike-class inputs.
+The selected MOHAWK heading was observed in frame 130; after 35 more seconds,
+the desert environment was visible without the prior enormous blue triangles.
+The logo appears intact in the retained ticket and selection captures, matching
+the user's qualified observation. Ground stippling and the bike-loading emblem
+remain. No race-confirmation input was sent. Explicit stop at 130.828 seconds,
+guard termination and return 1 do not establish bike completion or racing.
+
+Replay defects were corrected separately under issue 85. The first candidate
+run `20261013T191355.170966Z` retained the ticket view but timed out on an old
+reference and stale lexicographic frame selection; duration guard stopped it
+at 301.532 seconds. Run `20261013T192050.549517Z` stopped its controller on a
+partial BMP and subsequently exhausted workspace disk space; its final JSON
+write failed. Missing native process and terminal launcher/controller handles
+establish termination, not a complete final record or acceptance. Redundant
+render-target BMPs from these two runs were removed while retaining backbuffers,
+manifests and logs. The successful repeat capped capture at 180 frames and
+updated only the observed private ticket-art reference. Issue 24, original-menu
+acceptance and normal-PLAY racing remain open; retail mstream remains parked.
+
+The subsequent muted run `20261013T193559.785161Z` used the same EXE and
+acknowledged all eight ordinary-route inputs, including one MOHAWK confirmation
+from fresh frame 63 (text match 1.0). Sixty more seconds were retained before
+explicit stop at 112.765 seconds, guard termination and return 1. Last completed
+frame 77 remained SELECT A BIKE with the environment and no bike model; the
+loading emblem was absent in that still. No race successor or driving was
+observed. This does not identify a new wait/producer or prove which load stage
+failed; the scoped PVS evidence remains separate.
+
 ## Audio staging
 
 Game audio uses embedded Multistream/SPURS workloads, not imported cellAdec/cellAtrac. cellAudio→WASAPI wiring and real-time ring drain do not prove correct decoded audio. Firmware flashATRAC/flashMP3 are private inputs; staging fingerprints must use actual PT_LOAD bytes. Image-relative registration alone does not correct absolute/PC-relative addresses at a different staging base.

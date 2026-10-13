@@ -709,28 +709,10 @@ static int rsx_vp_decompile_impl(
     emit(&o,
         "    VSOutput Out;\n"
         "    float4 _p = o[0];\n"
-        /* RSX clips sign-agnostically: a vertex whose clip w is negative
-         * still rasterizes (MotorStorm's menu quads emit o[0].w from a
-         * constant (-1,1,0,0).x, i.e. w = -1, and the hardware shows them;
-         * D3D12 discards any vertex with w <= 0). Negating the whole clip
-         * vector leaves x/w, y/w and z/w -- every NDC coordinate -- exactly
-         * unchanged while making w positive, so screen positions and
-         * winding match the RSX for every primitive, mixed-sign included.
-         *
-         * Negation alone still fails the z clip test. RSX clips a vertex
-         * only outside |z| <= |w| (sign-agnostic in w); D3D12 demands the
-         * mapped z sit in [0, w]. The two rules agree only when the harness
-         * maps the guest z lane with the GL pair (scale 0.5, offset 0.5).
-         * The UI passes get an identity z lane instead, and vertices the
-         * RSX shows then fall past D3D's near plane -- either half of a
-         * mixed-sign quad -- cutting the primitive (half tickets, clipped
-         * diamond, cut loading symbol). Pull the mapped z onto the nearer
-         * clip boundary when, and only when, the vertex sits inside the
-         * RSX volume |z| <= |w|: every vertex the RSX shows keeps
-         * rasterizing, every vertex the RSX clips stays clipped, and a
-         * GL-mapped lane makes both pulls dead code, so only previously
-         * clipped-in-error vertices move at all. */
-        "    if (_p.w < 0.0) _p = -_p;\n"
+        /* Preserve signed homogeneous W. Negating the clip vector keeps
+         * NDC coordinates but changes the clip half-space, admitting
+         * behind-camera geometry and breaking mixed-sign primitives.
+         * Keep the existing viewport-Z boundary mapping separately. */
         "    float _w = _p.w;\n"
         "    float _s = vp_posscale.z;\n"
         "    float _o = vp_posoffset.z;\n"

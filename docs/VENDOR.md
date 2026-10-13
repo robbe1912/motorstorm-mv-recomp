@@ -198,3 +198,17 @@ complete cleanup/API definitions and actual runner bridge with documented host
 adapters; they execute no original guest instructions. No external PR was
 opened. [Qualified native observations](research/HAVOK_REFERENCE.md#explicit-exit-incarnations-2026-10-13)
 remain separate from race and graphics acceptance.
+
+## Signed homogeneous vertex output
+
+Issue 24's clipping correction was trialed first in the own task-lifecycle
+fork checkout using an ignored copy of the curated vertex decompiler; the
+tracked fork already preserves signed W. Compiling the real candidate and
+replaying retained shader/upload/constants rejected behind-camera geometry
+without changing the visible control. The selective native port removes only
+the erroneous W-sign emission and replaces its unsupported sign-agnostic
+comment; other curated viewport/depth behavior stays separate. The public
+pixel-readback fixture is authored and contains no captured game payload.
+[Native limitations](research/GRAPHICS_AUDIO.md#preserve-homogeneous-clip-w-issue-24)
+include the remaining bike-loading emblem and stippled ground. No external PR
+was opened.
