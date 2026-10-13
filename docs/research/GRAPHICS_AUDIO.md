@@ -15,6 +15,66 @@ Menu 69-op capture: clear/copy no-video placeholder 320×180, composite 1536×12
 
 Named path: VideoPlayer::Render 2644D0 → FwMemcpy C7C724 upload 384000 bytes → QuadRenderable videoTexture → TRIANGLE_STRIP/DrawArrays C8D230. Caller MotorStormRender::viewRenderPreGUI 275548, gate 275668..275694. These are debug target identifiers, not guaranteed retail mappings. Diagnose actual resource/frame selection/read/decode/upload/render boundary before touching overlay shaders.
 
+## Current vehicle-preview observation (2026-10-13, issue 24)
+
+The user reports oversized malformed blue triangles and heavy z-fighting in
+the vehicle preview, with the platform base appearing normal. This is a
+vehicle-specific discriminator, not proof of faulty materials or pointers.
+Internal frame 71 of muted run `20261013T171346.818831Z` independently shows
+SELECT A BIKE / MOHAWK INDIANA and oversized blue geometry. It cannot establish
+temporal z-fighting from a single image. The run uses named-US debug ELF
+`3e68c72f8fbd6a30ef30d4535462cf70f1cc86d111f56574adb7dd2c255e0706`
+and the corresponding launch-US disc; its EXE identity and diagnostic limits
+are recorded in [SPURS evidence](SPURS.md). The platform observation remains
+user-reported. Original bike acceptance in issue 24 remains unmet.
+
+Next distinguish raw index/attribute fetch from vertex-program transforms,
+then material/depth state, retaining both vehicle and platform draws at the
+same ordinary selection checkpoint. Prior ticket source equality, exposure
+coherence and AA layout gains do not exonerate this vehicle's geometry path.
+
+### Indexed input comparison at the observed bike screen
+
+Muted named-US run `20261013T175851.392347Z`, EXE SHA256
+`0533a502da57f4f6dcf0bccb3e795a54d4fb4b72da3f92152099d7ef17306fde`,
+reached the selected MOHAWK view through acknowledged normal menu inputs.
+The private draw observer armed after that screen was observed; no race
+confirmation was sent. Fourteen indexed callbacks targeting `0x00D00000`
+retained raw guest indices/attribute spans, actual host vertices, active VP
+state and constants, bound FP snapshot, and compiled VS. The run ended by
+its explicit stop marker after 58.547 s, return 1; this was a diagnostic stop.
+
+An independent offline reconstruction follows the retained BE indices,
+configured restart sentinel and strip winding. Every reconstructed count
+matches its captured host vertex count. All 53,904 compared components of
+float32/half positions, UB colors and half UVs have zero mismatches. CMP
+attributes were
+excluded from this initial comparison, and this does not validate every
+vertex-fetch format, shader transform, material, depth state or draw.
+Several float3/stride32 draws using attribute0 offset `0x05998000` already
+contain coordinates around plus/minus 10000 before vertex shading. A separate
+half/stride26 draw has unit-sized positions. Neither is yet bound to the
+selected bike or platform resource; the user's platform observation remains
+a useful discriminator, rather than an established draw identity.
+
+Read-only copies from the configured launch-US archive have hashes differing
+from the earlier bike-resource inventory: `vehicles/bike.rpk`,69855 bytes,
+SHA256 `16edaa61982ad78b79c0b21a0d395edc025b20ed9346660e03dda9280d6c4375`;
+`vehicles/bike01.rpk`,3499060 bytes,
+SHA256 `c9fe832bc34c084a818ddd060de50a35f504ea3e41456449208a8a7dc10e443c`.
+Do not equate these targets or infer corruption from an unmatched byte sample.
+The next seam is resource identity and any guest conversion before upload.
+
+A second resource-binding run `20261013T180447.409407Z`, with the same EXE,
+consumed English selection but timed out waiting for the next observed menu
+step. It did not arm bike or draw observation; no vehicle conclusion follows.
+An attempted observed-movie skip was refused because the internal frame was
+stale. The run reached its 181.125 s guard, return 1. No input retry or scene
+shortcut was used. Temporary backend hooks were restored byte-for-byte in
+both native and fork trees; the supported optimized baseline rebuilt as EXE
+SHA256 `992697a15fd9523898ff84c64152f9329912e7f3942f05ac67e132972cea54b9`.
+Original vehicle appearance and normal-PLAY racing remain unaccepted.
+
 ## Audio staging
 
 Game audio uses embedded Multistream/SPURS workloads, not imported cellAdec/cellAtrac. cellAudio→WASAPI wiring and real-time ring drain do not prove correct decoded audio. Firmware flashATRAC/flashMP3 are private inputs; staging fingerprints must use actual PT_LOAD bytes. Image-relative registration alone does not correct absolute/PC-relative addresses at a different staging base.
