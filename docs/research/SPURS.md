@@ -90,6 +90,54 @@ the supported optimized rebuild succeeds with EXE SHA256
 Private summaries and EXE/PDB pairs are retained. No producer correction or
 race acceptance follows from these observations.
 
+### Published clipping fix: fresh PVS binding (2026-10-13)
+
+The clipping correction in own PR #87 removes the oversized environment
+triangles, but does not establish completion of vehicle loading or normal PLAY.
+Supported optimized build `20261013T195103.541804Z` produces EXE SHA256
+`61b74e4d10efcdaf7f38a9a87be8b14c60097c85f1713f2fbe3948a01a8249ff`.
+A private layout program compiled against the current SPU/PPU headers independently
+matches the stored offsets and sizes (268,960 and 1,104 bytes). No temporary
+runtime hooks are installed for this capture.
+
+Muted named-US run `20261013T201913.840310Z` follows the ordinary observed route,
+including an observed Evolution skip and acknowledged MOHAWK confirmation.
+After 30 seconds, bounded read-only sampling produces a minidump, matched
+EXE/PDB CodeView admission, actual-PC metadata unwinds and sequential live reads.
+Main native TID 39524 is in `JobListPrivate::StallForJobMarker` (`C5C424`) through
+`PVSPPUThread::Wait` (`87D278`). The CFG-dominating RSI=entry-RCX assignment and
+restored Windows nonvolatile register bind PPU context `0x489B52F670`, guest
+thread 1. Object `40044410` points to queue `40044480`; requested/hint/taken are
+8/8/8, active markers `[FFFF, FFFF, FFFF, 6, FFFF, FFFF]`, minimum 6.
+
+The PM trampoline argument proof binds TID 32932 (`spurs_pm3`) to context
+`0x22300539280`, registry slot 7. Its captured LS independently identifies
+physical SPU 3 and queue `40044480`, with local record words 6/7. The context's
+`spu_id` field is 0; neither that field, registry slot nor thread name substitutes
+for the physical-number proof. LS SHA256 is
+`2271d01b108b487de42e7399e3f3984e458c59016d40424caebd477ef3a1b593`.
+All 22 registered contexts were covered without registry truncation. Diagnostic
+context PC `2178` is not promoted to an executed guest instruction. The actual
+native producer unwind reaches `interp_run_until_impl` and the PM trampoline.
+
+Explicit stop at 108.688 seconds terminates the owned run with return 1. Stderr
+SHA256 is `49113434d6ea0e69990a2634ddab438ef520b893134367205dbbca955a924d53`.
+Eight acknowledged inputs do not prove a race successor. This single snapshot
+and later live reads are not atomic, a unique-submission identity or instruction
+chronology; they do not identify the first missing operation. Issues #8/#13/#24
+remain open, #71 remains separate and retail mstream remains parked. Next trace
+the late producer's state transitions and submission lifetime without allowing
+early interpreter-fetch churn to exhaust coverage. Existing compared CPU spans
+remain scoped and are not reopened by this binding.
+
+Two preceding attempts yield no memory evidence: run `200352.667867Z` rejected
+the diagnostic log's reserved evidence prefix before creating a dump (explicit
+stop at 106.625 seconds); corrected-log run `200854.236002Z` timed out after
+English, missed caption gates and exhausted its finite internal-capture budget
+during the intro (explicit stop at 201.047 seconds). Both failures are retained.
+The successful run adds a validated private observed-movie optional gate, but
+uses the existing Evolution gate; the new movie gate is not runtime-verified.
+
 ## Earlier native producer binding
 
 The muted normal-menu run `temp/runs/20261012T230343.828131Z` reproduces the
