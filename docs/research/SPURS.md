@@ -190,6 +190,70 @@ tree remained unchanged. Supported optimized baseline rebuild produced EXE
 No wait was bypassed; native menu/race acceptance remains open. Issue 71 stays
 separate and retail mstream stays parked.
 
+### Queue contracts and uncapped PPU watch (2026-10-14, issue 8)
+
+Read-only REA queries reused the existing named project in disposable copies;
+original project hashes stayed unchanged. Independent original-ELF comparisons
+give complete decoded symbol coverage for `Init` (`C5D1C0`, 89 instructions),
+`CheckJobList` (`C5C094`, 45), `ResetList` (`C5BF38`, 39) and `InsertHole`
+(`C5C7CC`, 35). Job headers begin at queue+0x20, stride eight. Ordinary inserted
+holes have type 3, not an all-zero header; `CheckJobList` stops at a zero type.
+The queries of `AddJob` and `AddNopJob` each leave 100 symbol bytes undecoded;
+neither is claimed complete. Private evidence is under
+`temp/research/rea/existing-20261013T232237` and `...232247`, with independent
+verification JSON. Earlier pilot exports used stale focus addresses and are
+not evidence for these contracts.
+
+The retained marker-state run `210006.781660Z` has zero headers at slots 4/5,
+populated slots 6..9 and hint/taken 10/4. This differs from earlier minimum-6
+captures and does not establish corruption, an intentional hole or its writer.
+
+Two following muted runs use baseline EXE
+`76e08e48b34d5aca500879287d82828194f9f86a6d8ed943114a88de0570bb41`
+and the same named-US target. The existing PPU watch covers 256 bytes from
+`40044480`. Its records precede plain stores; 64-bit stores are split into two
+records, while store-conditionals report success. Host function names can alias
+through identical-code folding; guest LR/TID are separate caller evidence.
+This is not all-writer coverage or a global commit chronology.
+
+- Run `20261013T231549.081046Z` exhausted 20,000 prints before PLAY; no later
+  absence follows. Explicit stop: 100.765 seconds, return 1. Its old helper
+  associated the dump's native PC with later live guest registers and returned
+  an unrelated object/request. Discard that live binding. The actual dump holds
+  object `40044410`, requested marker 2, guest thread 1. A later fixed-address
+  queue read has hint/taken 8/8 and all markers FFFF; these are different times.
+- Run `20261013T232053.780391Z` removes the print cap and retains 57,154 PPU
+  records, including 8,809 after the recorded MOHAWK-acknowledgment byte bound.
+  Those later records include 207 reset-counter/marker sequences with guest
+  LR `67396C`, and further submissions with LR `87D9A4`, all guest TID 1.
+  Thus this instrumented run continues queue work after confirmation; it is
+  not evidence of an immediate permanent wait. The dump-resident context later
+  requests marker 8 on object `40044410`. Sequential queue samples have
+  hint/taken 10/10 and active markers `[FFFF, FFFF, 4, 5, FFFF, FFFF]`.
+  Slots 4/5 are populated here. Explicit stop: 98.703 seconds, return 1.
+
+The latter run's stderr SHA256 is
+`e18fbd8b88d232504783f8b0f78de8371a77b80e37aba493f0fc1028304645e3`;
+dump SHA256 is `6c4dfccf3eb169258722dbe668d2a29a1e62297dd7320d34eba790772d236c5f`.
+Private `ppu_watch_analysis.json`, `dump_context_binding.json` and the preserved
+route receipts identify the analysis. Its final internal frame 65 shows the
+recognizable desert environment and logo but no bike. The user confirms the
+environment looks broadly right with remaining artifacts and that the original
+vehicle should drive up the hill. Neither the entrance animation nor a race
+successor is observed. The PVS wait is not yet established as the missing-bike
+cause; diagnostics can change timing and the observed marker.
+
+The private marker helper now takes guest GPRs from the matched minidump's
+captured context, refusing missing/ambiguous memory instead of falling back to
+live registers. Its regression reproduces the real old object/request mismatch,
+recovers both retained contexts and rejects absent/truncated/invalid inputs.
+Earlier retained 164817, 201913, 205422 and 210006 object/request bindings agree
+with their dumps. Object/queue reads remain later sequential observations;
+no whole-process atomicity follows. See the reusable [capture rule](../OPERATIONS.md#bind-registers-to-their-capture).
+No runtime source or native build changed in this analysis. Next distinguish
+the late producer's execution/publication from repeated queue reuse before
+choosing a semantic fix. Issues #8/#24/#13 remain open; retail stays parked.
+
 ## Earlier native producer binding
 
 The muted normal-menu run `temp/runs/20261012T230343.828131Z` reproduces the

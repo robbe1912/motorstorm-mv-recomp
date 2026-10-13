@@ -97,6 +97,18 @@ Before native symbolization check EXE/PDB CodeView GUID+age. Actual PC, unwound 
 
 RSX_CAP=start:count:interval plus RSX_CAP_DIR retains manifests/backbuffer/targets locally. Shader identity must use bound snapshots, not later recycled addresses. Check print budgets before inferring dead threads. Brightness, title FPS, presents/s or an autosave read are not acceptance.
 
+## Bind registers to their capture
+
+A metadata unwind restores a context pointer, not the old contents at that
+pointer. Offline analysis can take long enough for live guest GPRs to belong
+to a later operation. Prefer bytes retained in the same matched minidump,
+using the verified context layout and an unambiguous memory extent. If absent,
+report the missing evidence; a later live read is not a substitute. Preserve
+EXE/PDB/dump identities and each read's source/time. Guest objects, queues and
+LS read afterward remain sequential observations, not a whole-process atomic
+snapshot. The [retained PVS mismatch](research/SPURS.md#queue-contracts-and-uncapped-ppu-watch-2026-10-14-issue-8)
+demonstrates why this matters and records the private helper correction.
+
 ## Closure discipline
 
 Historical tools of the parked retail lane stay archived with that lane in [parked mstream](research/PARKED_MSTREAM.md); they may hardcode old paths, so inspect and rebase them into a fresh ignored experiment directory before use. Current run.py is the supported launcher. Match guest vm_base/ELF before memory dumping.
