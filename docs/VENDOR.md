@@ -66,6 +66,18 @@ not establish the cause of the current PVS wait. Scheduler PR291 remains
 untried. Original menu assets, the missing bike, normal PLAY and sustained
 performance still require native proof under their existing issues.
 
+## Boundary-history diagnostic trial
+
+Generic opt-in interpreter boundary capture was developed and tested on own-fork
+`codex/spu-boundary-history`, commits `e9954e3` and `c619594`. Its source, reader,
+fixtures and configuration guide remain in that separate diagnostic branch,
+not the combined correctness baseline. The temporary curated overlay was only
+the shared header and two interpreter insertions; both were removed after the
+native probe and the supported noninstrumented build passed. Captured GPR/LS
+payloads stay private. [Native evidence and limits](research/SPURS.md#filtered-boundary-history-2026-10-14-issue-8)
+record the bounded ordered witness, overwritten history, strict archived-image
+admission and remaining PVS wait. No upstream PR or native acceptance is claimed.
+
 ## Fork-first workflow
 
 Task lifecycle diagnostics are authored first on own fork branch

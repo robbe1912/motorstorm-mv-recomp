@@ -190,6 +190,81 @@ tree remained unchanged. Supported optimized baseline rebuild produced EXE
 No wait was bypassed; native menu/race acceptance remains open. Issue 71 stays
 separate and retail mstream stays parked.
 
+### Filtered boundary history (2026-10-14, issue 8)
+
+The next issue-8 probe distinguishes retained allocation, release followed by
+reallocation, and independently changing descriptor state. It does not reopen
+the already-replayed allocator arithmetic or authorize clearing occupied pages.
+Own-fork `codex/spu-boundary-history` commits `e9954e3`/`c619594` add a generic,
+opt-in callback after actual interpreter fetch and before decode. PC/policy and
+an optional big-endian LS-word filter precede bounded per-context capture. Each
+record retains all GPRs and a configured LS range, with matching sequence/commit
+markers; the reader reports gaps, incomplete replacements and overwritten prefix.
+Payloads remain private. Authored C/C++ filter/wrap/concurrency/torn-record checks
+and actual-interpreter callback-removal red/green pass. Linux and Windows hosted
+workflows pass at exact `c6195945c40d9d708293090cbf0bb62221ff3919`.
+
+Only the shared header and two interpreter insertions were temporarily overlaid.
+Diagnostic native EXE SHA256 is
+`cd8ea77e473c57a9d1eacd93240a3ec9851e79b4f7287067342544321dfbe2da`.
+Configuration selects audited allocation/reset/removal/release/retirement
+boundaries, queue word at LS 13F0 and range C00--1BFF, capacity 1024 per context.
+A first controller preflight failed on an unavailable historical reference,
+before input. Replacement profiles use only retained original BMPs whose SHA
+matches an acknowledged receipt; thresholds were unchanged. Subsequent muted,
+owned runs acknowledged observed intro skips and normal MOHAWK confirmation,
+then stopped explicitly. No desktop control or scene jump occurred.
+
+Run `20261014T114659.393992Z` observes 15 seconds after confirmation. Its
+same-dump main requests 4 on object `0x4004C510`; the later queue `0x4004C580`
+read has hint/taken/minimum 4/4/4 and no active marker. This is not the conditional
+blocked PVS case, nor proof that it cannot occur later. The configured repeat
+extends the post-confirmation observation window to 60 seconds; observed intro
+timing still differs between runs. Run
+`20261014T115033.457459Z` recaptures object `0x40044410`, request 8; later queue
+`0x40044480` has hint/taken 8/8 and lane-3 minimum marker 6.
+
+Exact-image unwind and the unique CFG-dominating RSI=entry-RCX proof bind native
+TID 28056 to context `0x2A3005CC480`. Independently decoded LS identifies physical
+lane 3 and local markers 6/7; thread name and registry slot 20 are not this proof.
+All 5120 retained observations across five rings match independently hashed
+original-ELF instruction words at their recorded PCs. The admitted producer ring
+retains sequences 37266--38289, 1024 records, no gaps or invalid slots; 37265
+prefix records were overwritten. In 252 same-TID, adjacent-PC before/successor
+pairs, observed map-store bytes match the prior GPR value's architectural
+big-endian encoding: 42 pairs each at 1B04, 1B0C, 2CFC, 2D00, 314C and 3150.
+This constrains those stores, not every intervening instruction or writer.
+
+A final retained witness, entirely on native TID 23320, includes retirement
+stores reducing occupied pages 253 -> 112 -> 24, then allocation restoring
+24 -> 165 -> 253, followed by the next local-job reset with occupancy still 253
+and local records 6/7. The corresponding callback sequence is 38249--38289.
+Thus the observed tail contains release followed by reallocation, not simple
+never-released retention. It does **not** prove the new allocation is wrong or
+should be freed while job 6 remains active. `late_boundary_admission.json` and
+private `analyze_boundary.py` retain hashes, source checks, paired effects,
+witness sequence and qualifications.
+
+The full producer tail spans 96 native TIDs; a retained context address is not a
+lifetime or submission identifier. Sequences order committed preexecution
+callbacks, not instruction retirement or cross-context execution. Later suspended
+LS has the same final page maps but differs elsewhere in the captured range.
+Do not collapse these observations into one atomic state. The next discriminant
+is job/service return and completion versus retirement/publication, not another
+replay of the exonerated allocation arithmetic. The first missing progress
+operation remains unproved.
+
+Both final native images retain desert/sky/menu text, ground artifacts and no
+bike or race. No visual, gameplay or performance acceptance follows. Exact
+instrumented PE/PDB copies were archived. Private offline helpers now accept an
+explicit archived image without weakening EXE/PDB/dump or module-identity gates;
+the archive reproduces the same producer proof after relinking, while the new
+nonmatching current image is rejected. Temporary interpreter bytes were restored
+exactly, the verified header removed, and the supported noninstrumented build
+passed (EXE `112c219f13f1a849119a34219aa6bf138331904b0c3b085fce43fb77b8e3bef6`).
+This is still the off-main policy-argument trial; issues 8, 24 and 13 remain open,
+71 stays separate, and retail mstream stays parked.
+
 ### Policy workload argument trial (2026-10-14, issue 8)
 
 Issue [8 evidence](https://github.com/robbe1912/motorstorm-mv-recomp/issues/8#issuecomment-6158109859)
