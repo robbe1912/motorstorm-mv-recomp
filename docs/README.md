@@ -6,6 +6,7 @@ Each subject has one canonical owner. Begin with [setup and target](BUILDING.md)
 |---|---|
 | Dependencies, private inputs/keys, generation/build | [Building](BUILDING.md) |
 | Owned process guards, input, capture, cleanup | [Operations](OPERATIONS.md) |
+| Complete native work cycle, paused usable build and resume map | [Native workflow](NATIVE_WORKFLOW.md) |
 | Atomic work and dependency navigation | [Issue tracking](NEXT_STEPS.md) |
 | Failing native resource, controls, reference compatibility | [Havok/reference](research/HAVOK_REFERENCE.md) |
 | Shared PPU/SPU fixes and regression scope | [Runtime](research/RUNTIME.md) |

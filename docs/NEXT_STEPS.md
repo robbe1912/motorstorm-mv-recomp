@@ -37,3 +37,10 @@ The current native acceptance DoD is entering a race through normal PLAY and see
 Original binaries, assets, firmware, generated guest code, keys, dumps and captures stay local. Issue/PR comments may contain source changes, hashes, identities and non-payload findings; follow the [source boundary](REPOSITORY.md) and [operating rules](OPERATIONS.md).
 
 Historical closed reference findings and scoped exclusions remain in [Havok/reference](research/HAVOK_REFERENCE.md) and [parked mstream](research/PARKED_MSTREAM.md). The closed top-right flashing defect is reopened only on a reproduced regression. Required PM interpretation is a development dependency to measure and correct through compiled semantic parity, never blindly disable. [Setup](BUILDING.md) owns target/architecture facts; research pages own evidence.
+
+## User-requested pause checkpoint (2026-10-14)
+
+Feature iteration is paused. See [native workflow](NATIVE_WORKFLOW.md) for the
+restored boot-capable EXE, saved draft stack, evidence/tooling limits and complete
+resume order. Sampler97/PR98 is explicitly unaccepted and stays off combined;
+restoring the earlier baseline is not a claim that race/graphics DoD is achieved.
