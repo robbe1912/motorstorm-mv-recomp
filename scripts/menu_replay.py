@@ -6,6 +6,13 @@ from pathlib import Path
 from native_pad import frame_signature, latest_frame, owned, send, similarity
 
 
+def references(state):
+    variants = state.get('reference_variants', [])
+    if not isinstance(variants, list) or any(not isinstance(p, str) or not p for p in variants):
+        raise ValueError('reference_variants must list observed internal image paths')
+    return [state['reference']] + variants
+
+
 def load_profile(path):
     p = json.loads(Path(path).read_text())
     if not isinstance(p, dict) or p.get('schema') != 1 or not p.get('elf_sha256'):
@@ -22,23 +29,34 @@ def load_profile(path):
     for n, step in enumerate(states):
         if not step.get('reference') or not step.get('label') or not isinstance(step.get('roi'), list) or len(step['roi']) != 4:
             raise ValueError(f'Step {n} requires an internal reference/ROI/label; no blind replay')
-        signature = frame_signature(step['reference'], step['roi'], step.get('mode', 'text'))
-        if step.get('mode') == 'contrast':
-            similarity(signature, signature, 'contrast')
+        for reference in references(step):
+            signature = frame_signature(reference, step['roi'], step.get('mode', 'text'))
+            if step.get('mode') == 'contrast':
+                similarity(signature, signature, 'contrast')
         for extra in step.get('checks', []):
-            frame_signature(extra['reference'], extra['roi'], extra.get('mode', 'text'))
+            for reference in references(extra):
+                signature = frame_signature(reference, extra['roi'], extra.get('mode', 'text'))
+                if extra.get('mode') == 'contrast':
+                    similarity(signature, signature, 'contrast')
         if n < len(states) - 1:
             if step.get('mask') not in (0x4000, 8, 16, 32, 64, 128) or not 1 <= step.get('polls', 0) <= 8:
                 raise ValueError('Profile uses invalid button/hold')
     return p
 
 
-def matches(frame, state):
+def matching_reference(frame, state):
     mode = state.get('mode', 'text')
-    left = frame_signature(state['reference'], state['roi'], mode)
     right = frame_signature(frame, state['roi'], mode)
-    primary = left == right if mode == 'pixels' else similarity(left, right, mode) >= .95
-    return primary and all(matches(frame, check) for check in state.get('checks', []))
+    for reference in references(state):
+        left = frame_signature(reference, state['roi'], mode)
+        primary = left == right if mode == 'pixels' else similarity(left, right, mode) >= .95
+        if primary and all(matches(frame, check) for check in state.get('checks', [])):
+            return reference
+    return None
+
+
+def matches(frame, state):
+    return matching_reference(frame, state) is not None
 
 
 def replay(run, profile_path, timeout=480):
@@ -68,7 +86,8 @@ def replay(run, profile_path, timeout=480):
                     handled = False
                     for n, action in enumerate(profile.get('optional_actions', [])):
                         if n not in optional_done and index >= action['after_step'] and matches(frame, action):
-                            event = send(run, action['reference'], action['roi'], action['mask'], action['polls'],
+                            reference = matching_reference(frame, action)
+                            event = send(run, reference, action['roi'], action['mask'], action['polls'],
                                          action['label'], mode=action.get('mode', 'text'))
                             last_input_frame = Path(event['observed_frame'])
                             optional_done.add(n)
@@ -79,7 +98,8 @@ def replay(run, profile_path, timeout=480):
                         continue
                     if index < len(profile['steps']) and matches(frame, profile['steps'][index]):
                         step = profile['steps'][index]
-                        event = send(run, step['reference'], step['roi'], step['mask'], step['polls'],
+                        reference = matching_reference(frame, step)
+                        event = send(run, reference, step['roi'], step['mask'], step['polls'],
                                      step['label'], mode=step.get('mode', 'text'))
                         last_input_frame = Path(event['observed_frame'])
                         index += 1

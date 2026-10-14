@@ -18,4 +18,4 @@
 | Rule | Enforcement |
 | --- | --- |
 | Staged workflow YAML must parse, including step indentation. | `scripts/check_repository.py` validates the actual index in the installed pre-commit hook and CI; `--self-test` rejects the historical nested-step mistake. Install `requirements.txt` for PyYAML. |
-| Continue through observed menus and skip an observed intro once. | `scripts/menu_replay.py` owns optional screen-gated actions; `scripts/check_menu_replay.py` runs in source-audit CI and rejects the historical missing skip, blind inputs, repeated skips and wrong screens. Follow `docs/OPERATIONS.md` when preparing private profiles. |
+| Continue through observed menus and skip an observed intro once. | `scripts/menu_replay.py` owns optional screen-gated actions and `reference_variants` under one action; `scripts/check_menu_replay.py` runs in source-audit CI and rejects the historical missing skip, unmatched fade, blind inputs, repeated skips and wrong screens. Follow `docs/OPERATIONS.md` when preparing private profiles; caption semantics still require visual inspection. |

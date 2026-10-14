@@ -54,7 +54,17 @@ plus `after_step` (the number of required steps already acknowledged). An action
 sends once when observed; an absent intro does not block the route. The target
 is checked first. Use `mode: "contrast"` for colored or fading intro captions:
 normalized grayscale correlation retains the 0.95 match threshold and rejects
-flat references/observations. Avoid blank-screen skip gates. The regression
+flat references/observations. For visibly verified fades, `reference_variants`
+lists additional private BMP paths using the same ROI/mode. They belong to the
+same action: any matching variant selects the reference used for the acknowledged
+send, then consumes that action once. Keep the 0.95 threshold; do not duplicate
+skip actions for alternate images. Avoid blank-screen skip gates. The regression
+for issue104 rejects ignoring an observed variant and reusing an action on a
+second variant. Native runs `20261014T233820.319968Z` and
+`20261014T233859.335448Z` each acknowledge one CROSS8 on the Sony caption and
+reach visually inspected PLAY frame11; both close at about 38.5 seconds. They
+use EXE `d9b1af564150eb048ede3cfaa39ae809035433917ddc0c5adb8618cb1e96c33b`.
+These are intro/menu receipts, without a graphics or race verdict. The regression
 checks faded captions, wrong screens, absent/repeated intros and target priority.
 
 Native trial `20261013T134536.081481Z` (EXE
@@ -88,6 +98,12 @@ capture of this clipping candidate; no freshness/ownership threshold changed.
 This verifies replay beyond the ordering boundary, not bike or race correctness.
 
 ## Capture discipline
+
+The Havok observer check allows 120 seconds for its compiler/linker and 15
+seconds for the synthetic observer executable. It prints compiler duration and
+exit status; compiler errors, timeouts and observer assertion failures remain
+fatal. The separate compile budget addresses repeated 30-second deadlines on
+cold hosted Windows builds (issue108); it changes no native runtime limits.
 
 The private baseline contains ten PPU sources, 24 SPU images and five capture hooks; it is instrumented. Original EXE/PDB are retained under build/preserved/, and rebuilt identities are in build/native/build_identity.json. Build success is not gameplay proof.
 
