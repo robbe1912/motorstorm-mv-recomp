@@ -888,7 +888,7 @@ The game-free contract now lives on fork branch `codex/depth-clear-contract`
 rsx_process_method decode into the address-keyed cache. The reversed order
 fails all six on WARP and hardware and leaves the prior-frame color
 untouched. The z24-high order passes twelve of twelve cases while the legacy
-control still fails six. Evidence: `temp/issue94-depth/20261014T194936`
+control fails four. Evidence: `temp/issue94-depth/20261014T194936`
 (red) and `20261014T194940` (green) in the fork.
 
 The curated decoder now reads z24 from bits 31:8 and stencil from the low
@@ -900,10 +900,51 @@ the baseline signature `(53.6, 64.4, 82.1)`; the broken candidate showed the
 warm retained smear `(95.2, 88.7, 77.8)`. The user confirms the skybox.
 
 Remaining observed defects on the same scene stay open on issue 94:
-pure-white background props such as camper vans (missing textures), a blurry
-backdrop, a grey platform and no preview vehicle. Limits: the decode covers
+a blurry backdrop, a grey platform and no persistent preview vehicle. The user
+confirms that white camper vans are correct original props; they are not evidence
+of missing textures. UP/DOWN livery changes reportedly show the vehicle for one
+frame with the wrong material, then it disappears; a dense native witness and
+draw/material/state trace are still required. Limits: the decode covers
 D24S8 only; Z16 clear packing, other zeta formats and post-growth content
 remain untested; no depth-as-texture sampling.
+
+### Recovery audit (2026-10-15, issue 94)
+
+Fresh authored fixture compilation at own-fork `18061de` passes 12/12 readbacks
+on WARP and hardware; the legacy control fails 4/12. Private source hashes,
+build log and readbacks: main `temp/audit-20261015/depth-20261014T233451Z`.
+This exercises the real cache helper and command decoder. The fixture simulates
+backend binding/recording, so it does not prove the entire production backend.
+
+The local ownership retries, SELF_FB experiment and environment passthrough
+were reverted in `aed81af`, `e412834`, `1c86529` and `9bcb8a3`. Earlier PR text
+claiming that ownership retries deterministically fixed replay is withdrawn:
+run `20261014T213856.719775Z` reported lost ownership while rendering continued.
+The cause remains unresolved. The separate PAD_FILE sharing retry remains a
+candidate; it has no authored actual-send sharing/ownership-loss regression yet.
+
+The inherited `to-preview-5s.json` skip reference was an autosave warning, not
+a cinematic. Its timed claim and CROSS2 gate are rejected. The corrected private
+route uses one acknowledged CROSS8 after LANGUAGE on the inspected Sony caption,
+ROI `[740,490,400,15]`, contrast threshold 0.95. Muted owned run
+`20261014T233356.731003Z`, EXE SHA256
+`d9b1af564150eb048ede3cfaa39ae809035433917ddc0c5adb8618cb1e96c33b`,
+acknowledges the skip at 23:34:26.811852 UTC (score 0.957759), then reaches PLAY
+in frame11, visually inspected. The launcher closes at 38.484 seconds.
+The wider Sony ROI missed at 0.9499 in the preceding explicitly stopped run;
+the threshold was retained and the caption crop corrected. This proves one
+corrected early-caption skip, without establishing race or scene correctness.
+The prior Evolution-caption skip also reached PLAY. Repeated-hold causality for
+the separate Havok 8320-byte allocation failure remains unproved.
+
+Repeat run `20261014T233507.334993Z` missed a different Sony fade (score 0.864),
+so the single-reference gate is not accepted as reliable. Issue104 adds explicit
+observed `reference_variants` under the same optional action, without lowering
+the threshold. With that tooling, consecutive runs `20261014T233820.319968Z`
+and `20261014T233859.335448Z` each acknowledge exactly one caption CROSS8
+(scores 0.992368 and 1.0), reach visually inspected PLAY frame11 and close at
+about 38.5 seconds. Private `temp/audit-20261015/intro-only.json` and the normal
+preview route use the corrected gate. These are intro receipts, not race proof.
 
 ### Public rendering references
 
