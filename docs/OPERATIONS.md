@@ -89,6 +89,12 @@ This verifies replay beyond the ordering boundary, not bike or race correctness.
 
 ## Capture discipline
 
+The Havok observer check allows 120 seconds for its compiler/linker and 15
+seconds for the synthetic observer executable. It prints compiler duration and
+exit status; compiler errors, timeouts and observer assertion failures remain
+fatal. The separate compile budget addresses repeated 30-second deadlines on
+cold hosted Windows builds (issue108); it changes no native runtime limits.
+
 The private baseline contains ten PPU sources, 24 SPU images and five capture hooks; it is instrumented. Original EXE/PDB are retained under build/preserved/, and rebuilt identities are in build/native/build_identity.json. Build success is not gameplay proof.
 
 Record same-resource raw ID/length/hash, root/variants and lookup args at the same operation. Current observer: four 16MiB raw slots, fatal dump budget 128MiB and buffer 16MiB. Successful animations previously exhausted the 128-event quota; reserve fatal budget and cover both constructors. A fatal_gate label can describe a successful animation-present gate, not a fatal. Heavy diagnostics change timing.

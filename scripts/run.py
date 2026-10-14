@@ -33,6 +33,12 @@ def main():
     if args.menu_replay and hashlib.sha256(c['elf'].read_bytes()).hexdigest()!=replay_profile['elf_sha256']:
         raise SystemExit('Menu replay target differs from configured ELF; no process launched')
     if not exe.is_file(): raise SystemExit('Build first: python scripts/project.py build')
+    # User-approved storage policy, before any native process or PAD replay.
+    # Referenced/failed/evidence runs and the supplied profile are protected.
+    from prune_runs import automatic
+    automatic(ROOT, args.menu_replay)
+    if psutil.disk_usage(ROOT).free < 16*1024**3:
+        raise SystemExit('Insufficient free disk space: need at least 16 GiB before native startup')
     out=ROOT/'temp/runs'/datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ'); out.mkdir(parents=True)
     env=dict(os.environ)
     # Clear inherited diagnostics before applying the documented booting configuration.
@@ -98,13 +104,15 @@ def main():
             try:
                 cpu=round(proc.cpu_percent(None),1);threads=proc.num_threads();read_b=proc.io_counters().read_bytes
             except (psutil.Error,AttributeError,NotImplementedError):pass
-            with (out/'resources.jsonl').open('a') as f:f.write(json.dumps({'elapsed':elapsed,'private':private,'cpu_percent':cpu,'threads':threads,'io_read_bytes':read_b,'physical_available':m.available_phys,'commit_available':m.available_commit})+'\n')
+            disk_available=psutil.disk_usage(ROOT).free
+            with (out/'resources.jsonl').open('a') as f:f.write(json.dumps({'elapsed':elapsed,'private':private,'cpu_percent':cpu,'threads':threads,'io_read_bytes':read_b,'physical_available':m.available_phys,'commit_available':m.available_commit,'disk_available':disk_available})+'\n')
             if (out/'stop.txt').exists():reason='explicit stop marker';break
             if replay_result:
                 ok,value,finished=replay_result[0]
                 if not ok:reason='menu replay failed: '+str(value);break
                 if time.monotonic()-finished>=5:reason='menu replay target observed; graphics verdict separate';break
             if elapsed>args.seconds:reason='bounded duration elapsed';break
+            if disk_available<8*1024**3:reason='disk space limit reached';break
             if private>14*1024**3 or m.available_phys<4*1024**3 or m.available_commit<12*1024**3:reason='resource limit reached';break
             time.sleep(2)
         else: reason='guest process exited; inspect logs for outcome'

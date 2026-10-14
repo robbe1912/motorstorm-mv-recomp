@@ -5,6 +5,10 @@ import json
 import re
 import subprocess
 from pathlib import Path, PurePosixPath
+try:
+    import yaml
+except ImportError:
+    raise SystemExit('Workflow validation requires PyYAML: python -m pip install -r requirements.txt')
 
 ROOT = Path(__file__).resolve().parents[1]
 TOP = {'.gitignore', 'README.md', 'AGENTS.md', 'LICENSE', 'CMakeLists.txt', 'requirements.txt'}
@@ -54,6 +58,19 @@ def problem(name, data):
         return 'lifted original guest instructions'
     if has_key(data):
         return 'bundled platform key signature; supply private headers/PS3_KEYS_FILE'
+    if name.startswith('.github/workflows/'):
+        try:
+            workflow = yaml.safe_load(data)
+            jobs = workflow.get('jobs') if isinstance(workflow, dict) else None
+            if not isinstance(jobs, dict) or not jobs:
+                return 'workflow must define jobs; validate staged YAML with check_repository.py'
+            for job in jobs.values():
+                if not isinstance(job, dict) or not isinstance(job.get('steps'), list):
+                    return 'workflow job must define a steps list; align sibling step indentation'
+                if any(not isinstance(step, dict) or not ('run' in step or 'uses' in step) for step in job['steps']):
+                    return 'workflow steps must be run/uses mappings; align sibling step indentation'
+        except yaml.YAMLError as exc:
+            return 'invalid workflow YAML; align sibling steps: '+str(exc)
     return None
 
 def indexed_blobs():
@@ -92,6 +109,11 @@ def main():
                ('vendor/ps3recomp/tools/stderr_revert2.txt',b'old diagnostic output'),
                ('config/other.json',b'personal')]
         for name,data in cases:assert problem(name,data),name
+        # Actual mistake: a new step nested under the previous step's run key.
+        bad_workflow=b'jobs:\n  audit:\n    steps:\n      - run: echo first\n        - name: retention\n          run: echo second\n'
+        assert problem('.github/workflows/source-audit.yml', bad_workflow)
+        good_workflow=bad_workflow.replace(b'        - name:',b'      - name:').replace(b'          run:',b'        run:')
+        assert problem('.github/workflows/source-audit.yml', good_workflow) is None
         synthetic=bytes(range(16))
         digest={hashlib.sha256(synthetic).hexdigest()}
         assert has_key(('key='+synthetic.hex()).encode(),digest)

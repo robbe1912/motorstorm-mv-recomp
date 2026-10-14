@@ -6,6 +6,7 @@ import argparse
 import datetime
 from pathlib import Path
 import subprocess
+import time
 from project import ROOT, build_environment
 
 FIXTURE = r'''#include <stdint.h>
@@ -46,9 +47,13 @@ def main():
     exe = out/'observer.exe'
     env = build_environment()
     log = out/'compile.log'
-    with log.open('wb') as stream:
-        result = subprocess.run([env['MV_CLANG'], '/std:c++17', '/I'+str(ROOT/'vendor/ps3recomp/include'), str(source), '/Fe'+str(exe)], cwd=out, env=env, stdout=stream, stderr=subprocess.STDOUT, timeout=30)
     print('Compiler diagnostics:', log, flush=True)
+    started = time.monotonic()
+    with log.open('wb') as stream:
+        # A cold hosted Windows compiler/linker can exceed 30 seconds.
+        # Keep compilation bounded separately from the observer execution.
+        result = subprocess.run([env['MV_CLANG'], '/std:c++17', '/I'+str(ROOT/'vendor/ps3recomp/include'), str(source), '/Fe'+str(exe)], cwd=out, env=env, stdout=stream, stderr=subprocess.STDOUT, timeout=120)
+    print(f'Compiler completed in {time.monotonic()-started:.3f}s; exit {result.returncode}', flush=True)
     if result.returncode:
         print(log.read_text(errors='replace'))
         raise SystemExit(result.returncode)
