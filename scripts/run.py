@@ -33,6 +33,10 @@ def main():
     if args.menu_replay and hashlib.sha256(c['elf'].read_bytes()).hexdigest()!=replay_profile['elf_sha256']:
         raise SystemExit('Menu replay target differs from configured ELF; no process launched')
     if not exe.is_file(): raise SystemExit('Build first: python scripts/project.py build')
+    # User-approved storage policy, before any native process or PAD replay.
+    # Referenced/failed/evidence runs and the supplied profile are protected.
+    from prune_runs import automatic
+    automatic(ROOT, args.menu_replay)
     out=ROOT/'temp/runs'/datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ'); out.mkdir(parents=True)
     env=dict(os.environ)
     # Clear inherited diagnostics before applying the documented booting configuration.
