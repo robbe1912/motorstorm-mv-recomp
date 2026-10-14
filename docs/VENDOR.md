@@ -30,6 +30,11 @@ are historical; inspect current source and PR state before a trial.
 
 ## Combined fork testing
 
+The off-main policy workload-argument trial selectively ports own-fork atomic
+`680f097`. Its observed descriptor-write difference and black-background native
+regression are recorded in [SPURS evidence](research/SPURS.md#policy-workload-argument-trial-2026-10-14-issue-8).
+This trial has not been promoted to the native main branch.
+
 The owner authorized a continuous integration branch in our own fork while
 retaining atomic implementation branches for later upstream proposals.
 [`combined`](https://github.com/robbe1912/ps3recomp/tree/combined) merges the

@@ -190,6 +190,66 @@ tree remained unchanged. Supported optimized baseline rebuild produced EXE
 No wait was bypassed; native menu/race acceptance remains open. Issue 71 stays
 separate and retail mstream stays parked.
 
+### Policy workload argument trial (2026-10-14, issue 8)
+
+Issue [8 evidence](https://github.com/robbe1912/motorstorm-mv-recomp/issues/8#issuecomment-6158109859)
+precedes the production edit. This remains a native trial with a visual regression,
+not completion of issues 8, 24 or 13.
+
+Baseline `20261014T001553.193625Z` retained 256 hardware write hits and two
+stopped-event dumps for slots 4/5, with clean register restoration/detachment.
+Dump `701aa7ab44a17e429de5c300379e43bb5e43a80f61e5d986313268415dd6c864`
+matches baseline EXE `76e08e48b34d5aca500879287d82828194f9f86a6d8ed943114a88de0570bb41`.
+Actual TID 14252 unwinds from memcpy through `mfc_do_transfer`, MFC submission,
+`spu_wrch`, interpreter and PM trampoline: a normal SPU DMA PUT missed by PPU
+text-watch coverage. The CFG argument proof binds context `0x220806100B0`.
+The exact native caller's straight block stores restored nonvolatile R15 to
+argument 5 and immediate zero to argument 8. Same-dump stack arguments 5--8
+are `[0x40044480, 1, 0x4003F380, 0]`: workload data, workload ID, SPURS EA,
+supplied SPU number. Incidental register values are not physical-SPU proof.
+
+Original policy entry shifts r4 to select the low word as job-list EA; its
+optional initializer separately uses the first word and can PUT all ones at
+that EA plus its progress-lane offset. Duplicating the low workload word into
+both words incorrectly enables this initializer on the job-list object.
+Restored opcode/source agreement alone does not prove the exact executed SPU PC.
+Fork atomic `680f097` packs scalar u64 high32/low32 in words 0/1, clearing 2/3,
+as its taskset path already did. The actual-store authored fixture fails three
+low/high/mixed cases on both old sources and passes five cases after correction.
+Only this block was selectively ported; PM interpretation/resume stay intact.
+
+Supported native build yielded EXE
+`8b5cbaf6b177d7c1f317c60da6d5e60bae514802f5689880743ca72dca60c1eb`.
+Run `20261014T003245.274483Z` acknowledged the observed intro skip and normal
+MOHAWK confirmation. Its bounded watch retained 256 zero-valued writes, no
+nonzero slot-4/5 hit and clean cleanup; this is not all-writer absence proof.
+Later entries 0--7 are contiguous, hint/taken 8/8. The same-dump PPU requests 8;
+later active lane 4 is marker 6. PVS remains blocked. Final internal frame 71
+has intact menu text/logo over black, while baseline frame 67 shows the desert.
+Neither shows a bike/race. **The native trial stays off main.**
+
+Matched TID 26428's PM trampoline binds context `0x205805BC540`. Later registry
+slot 21 / LS identifies lane 4, queue `0x40044480`, local markers 6/7. Original
+publication span 3180--33A7 matches byte for byte, SHA256
+`82d1e523af70c1c6b0e7c89b4b0f61ab83bba9e184d7ccbedca5e3b659ab6714`.
+The native sample in `mfc_for` through `spu_wrch` is not a deadlock proof.
+Compiler-derived layout matches the 268,960-byte captured context; later tag
+mask/status are both 8, not evidence of an incomplete selected tag then.
+The first missing progress operation is still unproved. Reads remain sequential;
+registry slot, diagnostic PC and `spu_id` do not identify an executed instruction.
+
+Private artifacts include `data-watch/workload-data-callsite-admission.json`,
+`late_producer_admission.json`, exact-image unwinds, original-byte disassemblies,
+watch logs, receipts and both final images. Runs were muted/owned and explicitly
+stopped. Earlier resource-guard/controller/identity failures gave no writer proof.
+The generic observer subtracts the FILETIME epoch as an integer before division,
+retaining exact identity without tolerance; authored write/new-thread/dump/detach
+and no-hit-deadline regressions pass. Observation changes timing.
+Exact PE/PDB copies are preserved before future relinks. A private archived PE
+with matching CodeView but different timestamps was restored in a new copy to
+the full recorded baseline SHA; the archive was untouched and identity gates
+were not weakened. CodeView alone is insufficient binary identity.
+
 ### Queue contracts and uncapped PPU watch (2026-10-14, issue 8)
 
 Read-only REA queries reused the existing named project in disposable copies;

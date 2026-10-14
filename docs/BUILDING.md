@@ -128,3 +128,11 @@ and stale-cleanup damage; corrected source passes. Fixtures use empty authored
 VM/header data and host adapters, with no original instructions. Logs and
 source/fixture/executable hashes are retained under `temp/checks`; source-only
 lifetimes do not establish executed game work or native race entry.
+
+The authored scalar-u64 policy-entry regression,
+`python scripts/check_spurs_policy_arguments.py`, compiles the actual four r4
+stores with authored register/context adapters. Five zero/low/high/mixed/all-ones
+cases check the preferred high32/low32 pair. Production also clears the trailing
+words; that clearing is not an assertion in this fixture. Old packing fails
+three preferred-pair cases. This checks entry representation, not guest execution
+or native menu/race acceptance; hashes and logs remain private.
