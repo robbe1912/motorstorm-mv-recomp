@@ -4,6 +4,11 @@ Fresh main repository has no old game-bearing history. Allowed content: handwrit
 
 The audit checks the **actual Git index**, including force-added files. It rejects unapproved paths, binaries/media, private folders/config, generated guest names/headers and known bundled key signatures. Local pre-commit hook and GitHub source-audit workflow run the same check. Documentation links/source ownership are checked separately.
 
+It also checks staged workflow YAML syntax and job/step shapes using PyYAML
+from `requirements.txt`, not just the working-tree copy. The self-test rejects
+the historical nested-step indentation mistake. This is not full GitHub Actions
+semantic validation; hosted execution remains required.
+
 ```powershell
 python scripts/check_repository.py --self-test
 python scripts/check_repository.py
