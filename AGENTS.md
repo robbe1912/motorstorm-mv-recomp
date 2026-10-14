@@ -17,4 +17,4 @@
 
 | Rule | Enforcement |
 | --- | --- |
-| Continue through observed menus and skip an observed intro once. | `scripts/menu_replay.py` owns optional screen-gated actions; `scripts/check_menu_replay.py` runs in source-audit CI and rejects the historical missing skip, blind inputs, repeated skips and wrong screens. Follow `docs/OPERATIONS.md` when preparing private profiles. |
+| Continue through observed menus and skip an observed intro once. | `scripts/menu_replay.py` owns optional screen-gated actions and `reference_variants` under one action; `scripts/check_menu_replay.py` runs in source-audit CI and rejects the historical missing skip, unmatched fade, blind inputs, repeated skips and wrong screens. Follow `docs/OPERATIONS.md` when preparing private profiles; caption semantics still require visual inspection. |
