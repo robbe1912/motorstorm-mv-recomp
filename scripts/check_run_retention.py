@@ -22,7 +22,8 @@ class RetentionTests(unittest.TestCase):
         self.root = self.repo / 'temp/runs'
         self.root.mkdir(parents=True)
         self.old = self.run_dir('20200101T000000.000000Z')
-        self.new = self.run_dir('20990101T000000.000000Z')
+        self.recent = [self.run_dir(f'209901{day:02d}T000000.000000Z') for day in range(1, 11)]
+        self.new = self.recent[-1]
         self.live = patch.object(retention, 'native_live', return_value=False)
         self.live.start()
 
@@ -48,14 +49,21 @@ class RetentionTests(unittest.TestCase):
         return {x['run'] for x in self.plan()['eligible']}
 
     def test_default_keeps_newest_ten(self):
-        self.assertFalse(self.eligible())
+        self.assertEqual(self.eligible(), {self.old.name})
+        self.assertTrue(all(p.exists() for p in self.recent))
 
     def old_plan(self):
-        return retention.plan(self.repo, keep=1)
+        return retention.plan(self.repo)
 
     def test_dry_run_does_not_remove(self):
         self.assertEqual([x['run'] for x in self.old_plan()['eligible']], [self.old.name])
         self.assertTrue(self.old.exists())
+
+    def test_policy_cannot_be_weakened(self):
+        with self.assertRaises(ValueError):
+            retention.plan(self.repo, days=13)
+        with self.assertRaises(ValueError):
+            retention.plan(self.repo, keep=9)
 
     def test_archive_metadata_before_pruning(self):
         receipts = retention.apply(self.old_plan())
@@ -93,7 +101,7 @@ class RetentionTests(unittest.TestCase):
         self.assertFalse(self.old_plan()['eligible'])
 
     def test_external_profile_pin(self):
-        report = retention.plan(self.repo, keep=1, extra_pins=[self.old.name])
+        report = retention.plan(self.repo, extra_pins=[self.old.name])
         self.assertFalse(report['eligible'])
 
     def test_unexpected_exit(self):

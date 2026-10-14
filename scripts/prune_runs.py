@@ -124,8 +124,8 @@ def reason(run, protected, cutoff, newest):
 
 def plan(repo, days=14, keep=10, now=None, extra_pins=()):
     repo = Path(repo).absolute()
-    if days < 1 or keep < 1:
-        raise ValueError('Retention requires positive age and newest-run count')
+    if days < 14 or keep < 10:
+        raise ValueError('Approved minimum retention is 14 days and newest 10 runs')
     root = repo / 'temp/runs'
     if not (repo / '.git').exists() or not root.is_dir():
         raise ValueError('Expected repository with temp/runs')

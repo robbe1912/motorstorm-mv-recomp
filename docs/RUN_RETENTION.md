@@ -26,7 +26,8 @@ python scripts/prune_runs.py --repo E:/GitRepos/motorstorm-convolution-capture
 
 Default CLI behavior is a dry run. Add `--apply` to execute the same policy.
 The main-checkout launcher hook does not change an older worktree's launcher.
-Do not lower the age/newest limits merely because the drive is filling.
+The API rejects limits below14 days/newest10; CLI overrides cannot silently
+weaken the approved policy merely because the drive is filling.
 
 Protection is conservative:
 
