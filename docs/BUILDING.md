@@ -154,3 +154,9 @@ decoding before filtering, clamp/wrap, remapping, named units and LOD/bias;
 it also rejects insufficient source capacity and cube overlap. Logs and hashes
 remain in ignored `temp/checks/rsx-alias-*`. This is a sampling-contract test,
 not native race or performance acceptance.
+
+The unmerged guest-sampler candidate adds `python scripts/check_rsx_sampler.py`
+(WARP) and `--device hardware` (explicit adapter, no fallback): authored D3D12
+sampler-table pixel regression. This does not prove native game acceptance;
+convolution currently rejects explicitly before LANGUAGE. See the
+[graphics evidence](research/GRAPHICS_AUDIO.md).

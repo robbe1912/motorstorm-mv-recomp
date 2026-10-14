@@ -831,3 +831,56 @@ S/T, a high texture unit, border and mirror. Decoder checks anisotropy, signed
 LOD bias, LOD bounds and explicit unsupported-address rejection. Evidence:
 `temp/checks/rsx-sampler-20261014T133640.242508Z`. Backend binding integration
 and native verification are still required; this does not establish hill causality.
+
+### Immutable guest sampler candidate: native convolution blocker (2026-10-14, issue97)
+
+Own-fork `codex/rsx-sampler-evidence` snapshots address/filter/control0/border per
+draw and binds guest descriptors through immutable16-sampler tables at root3.
+Complete decoded arrays deduplicate;64 tables per parity bank consume2048 entries.
+Capacity and unsupported modes fail explicitly. Constant-index references in
+final generated HLSL determine used samplers; cached PSOs retain their mask.
+Missing mask for an active guest PSO fails explicitly. Packed XY16F aliases derive
+the existing point/clamp or linear/wrap policy from guest registers and include
+it in shader identity; other alias policies remain unsupported.
+
+`scripts/check_rsx_sampler.py` now uses authored D3D12 device/root/SRV+sampler
+heaps/PSOs/draw/copy/fence/readback. Seven cases cover repeat, linear interpolation,
+point/clamp font control, mixed addressing, unit7, border and mirror. Old fixed
+states fail five; candidate WARP and explicit hardware (NVIDIA10DE/2216) pass seven.
+All immutable tables are populated before submission. Checks also cover generated
+sampler-use mask, anisotropy, signed bias/LOD and explicit convolution rejection.
+This does not execute the complete backend recorder/cache. WARP evidence:
+`temp/checks/rsx-sampler-20261014T174053.423884Z`; hardware:
+`temp/checks/rsx-sampler-20261014T135850.462545Z`. Predecessor D3D11 descriptor-bridge
+checks do not establish D3D12 binding correctness.
+
+Supported native and own-fork runtime builds pass; native acceptance fails:
+
+- Run134902, EXEd0939bb7..., explicit stop78.484s: unsupported u0 address60030303,
+  filter04074000,control080078000. No completed frame/language receipt.
+- Run135358, EXE9d150f18..., explicit stop98.531s: same state, mask0001. That older
+  lookup could default to the atlas mask, so exact shader identity was unproven.
+- Stronger run `temp/runs/20261014T174110.163281Z`, EXE
+  `9726985d1f72c2ab78802008968d00df6479e30cd09023ab3561cc88043c2e2d`, matches
+  cached active guest PSO: FP01F8C8C1, mask0001, same u0 state. Named-US ELF SHA
+  remains3e68c72f8fbd6a30ef30d4535462cf70f1cc86d111f56574adb7dd2c255e0706.
+  Owned visible muted native; no PAD input. Launch/final and sampler-failure.json
+  retained; owned explicit stop, not a normal exit.
+
+Public PSL1GHT/RPCS3 enums identify convolution min7/mag4 and kernel2=Gaussian;
+they do not prove RSX coefficients/offsets, edge or LOD behavior. Generic Gaussian
+literature and other emulators' approximate linear mappings are not an oracle.
+Reference-only downloads remain ignored; no reference implementation code copied.
+No approximation or suppressed diagnostic introduced. This candidate stays
+unmerged, off combined. Capture the exact shader/texture on the prior working
+baseline and build an authored impulse/checkerboard convolution oracle before
+promotion. Native boot and the original moving-terrain repro must then pass.
+Mip-chain upload is independently incomplete. Issues94/24/13 stay open; retail
+mstream remains parked. Atomic sampler backlog: [issue97](https://github.com/robbe1912/motorstorm-mv-recomp/issues/97).
+
+User stopped iteration and paused the native goal on2026-10-14. Preserve sampler
+candidate separately; restore working `codex/asset-extraction-guide` /f15ed4b for
+normal launches. Own-fork candidate is052c17c (not combined). Final capture-only
+trial174655 used strict-decoder EXE10de369e..., then user-requested owned stop;
+private picked shader files were retained without further interpretation. Do not
+restart that trial automatically. No kernel approximation or native acceptance.

@@ -54,6 +54,9 @@ jobs:
         run: python scripts/check_rsx_clip.py
       - name: Packed XY16F render-target sampling (WARP)
         run: python scripts/check_rsx_texture_alias.py
+
+      - name: Guest D3D12 sampler pixel regression (WARP)
+        run: python scripts/check_rsx_sampler.py
       - name: Screen-gated menu replay regression
         run: python scripts/check_menu_replay.py
       - name: Actual indexed strip restart regression
