@@ -30,6 +30,11 @@ are historical; inspect current source and PR state before a trial.
 
 ## Combined fork testing
 
+The off-main policy workload-argument trial selectively ports own-fork atomic
+`680f097`. Its observed descriptor-write difference and black-background native
+regression are recorded in [SPURS evidence](research/SPURS.md#policy-workload-argument-trial-2026-10-14-issue-8).
+This trial has not been promoted to the native main branch.
+
 The owner authorized a continuous integration branch in our own fork while
 retaining atomic implementation branches for later upstream proposals.
 [`combined`](https://github.com/robbe1912/ps3recomp/tree/combined) merges the
@@ -60,6 +65,18 @@ newer PR290 already exist in the curated source; that source comparison does
 not establish the cause of the current PVS wait. Scheduler PR291 remains
 untried. Original menu assets, the missing bike, normal PLAY and sustained
 performance still require native proof under their existing issues.
+
+## Boundary-history diagnostic trial
+
+Generic opt-in interpreter boundary capture was developed and tested on own-fork
+`codex/spu-boundary-history`, commits `e9954e3` and `c619594`. Its source, reader,
+fixtures and configuration guide remain in that separate diagnostic branch,
+not the combined correctness baseline. The temporary curated overlay was only
+the shared header and two interpreter insertions; both were removed after the
+native probe and the supported noninstrumented build passed. Captured GPR/LS
+payloads stay private. [Native evidence and limits](research/SPURS.md#filtered-boundary-history-2026-10-14-issue-8)
+record the bounded ordered witness, overwritten history, strict archived-image
+admission and remaining PVS wait. No upstream PR or native acceptance is claimed.
 
 ## Fork-first workflow
 

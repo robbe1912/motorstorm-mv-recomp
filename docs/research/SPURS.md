@@ -190,6 +190,168 @@ tree remained unchanged. Supported optimized baseline rebuild produced EXE
 No wait was bypassed; native menu/race acceptance remains open. Issue 71 stays
 separate and retail mstream stays parked.
 
+### Filtered boundary history (2026-10-14, issue 8)
+
+The next issue-8 probe distinguishes retained allocation, release followed by
+reallocation, and independently changing descriptor state. It does not reopen
+the already-replayed allocator arithmetic or authorize clearing occupied pages.
+Own-fork `codex/spu-boundary-history` commits `e9954e3`/`c619594` add a generic,
+opt-in callback after actual interpreter fetch and before decode. PC/policy and
+an optional big-endian LS-word filter precede bounded per-context capture. Each
+record retains all GPRs and a configured LS range, with matching sequence/commit
+markers; the reader reports gaps, incomplete replacements and overwritten prefix.
+Payloads remain private. Authored C/C++ filter/wrap/concurrency/torn-record checks
+and actual-interpreter callback-removal red/green pass. Linux and Windows hosted
+workflows pass at exact `c6195945c40d9d708293090cbf0bb62221ff3919`.
+
+Only the shared header and two interpreter insertions were temporarily overlaid.
+Diagnostic native EXE SHA256 is
+`cd8ea77e473c57a9d1eacd93240a3ec9851e79b4f7287067342544321dfbe2da`.
+Configuration selects audited allocation/reset/removal/release/retirement
+boundaries, queue word at LS 13F0 and range C00--1BFF, capacity 1024 per context.
+A first controller preflight failed on an unavailable historical reference,
+before input. Replacement profiles use only retained original BMPs whose SHA
+matches an acknowledged receipt; thresholds were unchanged. Subsequent muted,
+owned runs acknowledged observed intro skips and normal MOHAWK confirmation,
+then stopped explicitly. No desktop control or scene jump occurred.
+
+Run `20261014T114659.393992Z` observes 15 seconds after confirmation. Its
+same-dump main requests 4 on object `0x4004C510`; the later queue `0x4004C580`
+read has hint/taken/minimum 4/4/4 and no active marker. This is not the conditional
+blocked PVS case, nor proof that it cannot occur later. The configured repeat
+extends the post-confirmation observation window to 60 seconds; observed intro
+timing still differs between runs. Run
+`20261014T115033.457459Z` recaptures object `0x40044410`, request 8; later queue
+`0x40044480` has hint/taken 8/8 and lane-3 minimum marker 6.
+
+Exact-image unwind and the unique CFG-dominating RSI=entry-RCX proof bind native
+TID 28056 to context `0x2A3005CC480`. Independently decoded LS identifies physical
+lane 3 and local markers 6/7; thread name and registry slot 20 are not this proof.
+All 5120 retained observations across five rings match independently hashed
+original-ELF instruction words at their recorded PCs. The admitted producer ring
+retains sequences 37266--38289, 1024 records, no gaps or invalid slots; 37265
+prefix records were overwritten. In 252 same-TID, adjacent-PC before/successor
+pairs, observed map-store bytes match the prior GPR value's architectural
+big-endian encoding: 42 pairs each at 1B04, 1B0C, 2CFC, 2D00, 314C and 3150.
+This constrains those stores, not every intervening instruction or writer.
+
+A final retained witness, entirely on native TID 23320, includes retirement
+stores reducing occupied pages 253 -> 112 -> 24, then allocation restoring
+24 -> 165 -> 253, followed by the next local-job reset with occupancy still 253
+and local records 6/7. The corresponding callback sequence is 38249--38289.
+Thus the observed tail contains release followed by reallocation, not simple
+never-released retention. It does **not** prove the new allocation is wrong or
+should be freed while job 6 remains active. `late_boundary_admission.json` and
+private `analyze_boundary.py` retain hashes, source checks, paired effects,
+witness sequence and qualifications.
+
+The full producer tail spans 96 native TIDs; a retained context address is not a
+lifetime or submission identifier. Sequences order committed preexecution
+callbacks, not instruction retirement or cross-context execution. Later suspended
+LS has the same final page maps but differs elsewhere in the captured range.
+Do not collapse these observations into one atomic state. The next discriminant
+is job/service return and completion versus retirement/publication, not another
+replay of the exonerated allocation arithmetic. The first missing progress
+operation remains unproved.
+
+Both final native images retain desert/sky/menu text, ground artifacts and no
+bike or race. No visual, gameplay or performance acceptance follows. Exact
+instrumented PE/PDB copies were archived. Private offline helpers now accept an
+explicit archived image without weakening EXE/PDB/dump or module-identity gates;
+the archive reproduces the same producer proof after relinking, while the new
+nonmatching current image is rejected. Temporary interpreter bytes were restored
+exactly, the verified header removed, and the supported noninstrumented build
+passed (EXE `112c219f13f1a849119a34219aa6bf138331904b0c3b085fce43fb77b8e3bef6`).
+This is still the off-main policy-argument trial; issues 8, 24 and 13 remain open,
+71 stays separate, and retail mstream stays parked.
+
+### Policy workload argument trial (2026-10-14, issue 8)
+
+Issue [8 evidence](https://github.com/robbe1912/motorstorm-mv-recomp/issues/8#issuecomment-6158109859)
+precedes the production edit. This remains an unfinished native trial with run-dependent visual results,
+not completion of issues 8, 24 or 13.
+
+Baseline `20261014T001553.193625Z` retained 256 hardware write hits and two
+stopped-event dumps for slots 4/5, with clean register restoration/detachment.
+Dump `701aa7ab44a17e429de5c300379e43bb5e43a80f61e5d986313268415dd6c864`
+matches baseline EXE `76e08e48b34d5aca500879287d82828194f9f86a6d8ed943114a88de0570bb41`.
+Actual TID 14252 unwinds from memcpy through `mfc_do_transfer`, MFC submission,
+`spu_wrch`, interpreter and PM trampoline: a normal SPU DMA PUT missed by PPU
+text-watch coverage. The CFG argument proof binds context `0x220806100B0`.
+The exact native caller's straight block stores restored nonvolatile R15 to
+argument 5 and immediate zero to argument 8. Same-dump stack arguments 5--8
+are `[0x40044480, 1, 0x4003F380, 0]`: workload data, workload ID, SPURS EA,
+supplied SPU number. Incidental register values are not physical-SPU proof.
+
+Original policy entry shifts r4 to select the low word as job-list EA; its
+optional initializer separately uses the first word and can PUT all ones at
+that EA plus its progress-lane offset. Duplicating the low workload word into
+both words incorrectly enables this initializer on the job-list object.
+Restored opcode/source agreement alone does not prove the exact executed SPU PC.
+Fork atomic `680f097` packs scalar u64 high32/low32 in words 0/1, clearing 2/3,
+as its taskset path already did. The actual-store authored fixture fails three
+low/high/mixed cases on both old sources and passes five cases after correction.
+Only this block was selectively ported; PM interpretation/resume stay intact.
+
+Supported native build yielded EXE
+`8b5cbaf6b177d7c1f317c60da6d5e60bae514802f5689880743ca72dca60c1eb`.
+Run `20261014T003245.274483Z` acknowledged the observed intro skip and normal
+MOHAWK confirmation. Its bounded watch retained 256 zero-valued writes, no
+nonzero slot-4/5 hit and clean cleanup; this is not all-writer absence proof.
+Later entries 0--7 are contiguous, hint/taken 8/8. The same-dump PPU requests 8;
+later active lane 4 is marker 6. PVS remains blocked. Final internal frame 71
+has intact menu text/logo over black, while baseline frame 67 shows the desert.
+Neither shows a bike/race. **The native trial stays off main.**
+
+Matched TID 26428's PM trampoline binds context `0x205805BC540`. Later registry
+slot 21 / LS identifies lane 4, queue `0x40044480`, local markers 6/7. Original
+publication span 3180--33A7 matches byte for byte, SHA256
+`82d1e523af70c1c6b0e7c89b4b0f61ab83bba9e184d7ccbedca5e3b659ab6714`.
+The native sample in `mfc_for` through `spu_wrch` is not a deadlock proof.
+Compiler-derived layout matches the 268,960-byte captured context; later tag
+mask/status are both 8, not evidence of an incomplete selected tag then.
+The first missing progress operation is still unproved. Reads remain sequential;
+registry slot, diagnostic PC and `spu_id` do not identify an executed instruction.
+
+Unwatched repeats `20261014T005334.421649Z` and
+`20261014T010410.695354Z` use the same corrected EXE and display the desert again,
+with ground artifacts and no bike/race after normal MOHAWK confirmation. Thus
+003245's black background is a retained observation, not a consistently
+reproduced packing regression or proof that hardware watching caused it.
+The trial remains off main.
+
+The first external MFC collector reached its 128-overflow-node capture cap;
+136 engine files are not a demonstrated list cycle. The matching compiled PDB
+independently confirms engine size 520, slot size 528, overflow size 536/next
+at 528, and command size 32/active at 28. The revised bounded collector preserves
+partial owner metadata on failure and permits 4096 overflow nodes. During a
+requested process suspension, 010410 captures all 8 inline plus 460 overflow
+engines with unique owners and a terminated chain. Retention alone is not a leak
+or a stall cause. The controller always resumes the process before stopping it.
+
+Exact-image unwind binds TID 28208's PM trampoline to context `0x260804B6CC0`.
+Original-byte-verified LS identifies physical lane 1, queue `0x40044480`, local
+jobs 6/7. Its unique engine is idle (queue count 0, no active commands), with
+all tag completion bits set; context mask/status are 8/8 and list-stall fields
+are zero. The same-dump main requests 8; the queue read during suspension has
+hint/taken 8/8 and lane-1 minimum marker 6. These observations exclude pending
+engine commands or a missing selected completion bit **at this captured stop**;
+they do not prove instruction chronology or exclude historical ownership races.
+`late_mfc_producer_admission.json` retains hashes, PDB admission, owner mapping
+and temporal limits. The first missing guest progress operation is still open.
+
+Private artifacts include `data-watch/workload-data-callsite-admission.json`,
+`late_producer_admission.json`, exact-image unwinds, original-byte disassemblies,
+watch logs, receipts and both final images. Runs were muted/owned and explicitly
+stopped. Earlier resource-guard/controller/identity failures gave no writer proof.
+The generic observer subtracts the FILETIME epoch as an integer before division,
+retaining exact identity without tolerance; authored write/new-thread/dump/detach
+and no-hit-deadline regressions pass. Observation changes timing.
+Exact PE/PDB copies are preserved before future relinks. A private archived PE
+with matching CodeView but different timestamps was restored in a new copy to
+the full recorded baseline SHA; the archive was untouched and identity gates
+were not weakened. CodeView alone is insufficient binary identity.
+
 ### Queue contracts and uncapped PPU watch (2026-10-14, issue 8)
 
 Read-only REA queries reused the existing named project in disposable copies;

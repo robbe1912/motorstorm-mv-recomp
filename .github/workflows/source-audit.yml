@@ -30,6 +30,8 @@ jobs:
         run: python scripts/check_memory_capacity.py
       - name: Actual SPURS guest-field contract
         run: python scripts/check_spurs_guest_fields.py
+      - name: Scalar-u64 SPURS policy arguments
+        run: python scripts/check_spurs_policy_arguments.py
       - name: Explicit SPURS dispatch identity
         run: python scripts/check_task_dispatch_identity.py
       - name: Check task exit lifecycle and runner reason
@@ -68,6 +70,8 @@ jobs:
         run: python scripts/check_memory_capacity.py
       - name: Actual SPURS guest-field contract
         run: python scripts/check_spurs_guest_fields.py
+      - name: Scalar-u64 SPURS policy arguments
+        run: python scripts/check_spurs_policy_arguments.py
       - name: Explicit SPURS dispatch identity
         run: python scripts/check_task_dispatch_identity.py
       - name: Check task exit lifecycle and runner reason
