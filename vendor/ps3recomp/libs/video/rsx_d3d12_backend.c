@@ -36,6 +36,7 @@
 
 /* D3D12 headers */
 #include <d3d12.h>
+#include "rsx_d3d12_depth.h"
 #include <d3d12sdklayers.h>   /* ID3D12Debug / ID3D12InfoQueue */
 #include <dxgi1_4.h>
 #include <dxgi1_6.h>
@@ -144,6 +145,7 @@ typedef struct {
      * offscreen surface (demosaic chains its effect passes through local-
      * memory buffers and composites from them). */
     u32 rt_off;
+    u32 zeta_off, depth_slot;
     /* Which per-draw constant slot this record's constants were written to.
      * vp_record_cb writes them keyed by the RECORD index, so any pass that
      * reorders or compacts s_d3d.draws (DRAW_KEEP_TEX, DRAW_LAST_TEX,
@@ -330,6 +332,8 @@ typedef struct {
     /* Depth/stencil */
     ID3D12DescriptorHeap* dsv_heap;
     ID3D12Resource*       depth_buffer;
+    rsx_d3d12_depth_cache depth_cache;
+    u32 dsv_step;
 
     /* Dynamic vertex buffer (upload heap) */
     ID3D12Resource*       vertex_buffer;
@@ -902,12 +906,11 @@ static int init_d3d12(u32 width, u32 height)
     /* ---------------------------------------------------------------
      * Depth/stencil buffer
      * 24-bit depth + 8-bit stencil (DXGI_FORMAT_D24_UNORM_S8_UINT).
-     * One shared depth texture across both frames — RSX games on PS3
-     * typically use a single zeta surface.
+     * Slot zero supports legacy draws. Guest draws use address-keyed DSVs.
      * ---------------------------------------------------------------*/
     {
         D3D12_DESCRIPTOR_HEAP_DESC dsv_heap_desc = {0};
-        dsv_heap_desc.NumDescriptors = 1;
+        dsv_heap_desc.NumDescriptors = 1 + RSX_D3D12_DEPTH_CAPACITY;
         dsv_heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
         hr = s_d3d.device->lpVtbl->CreateDescriptorHeap(
             s_d3d.device, &dsv_heap_desc, &IID_ID3D12DescriptorHeap,
@@ -916,6 +919,8 @@ static int init_d3d12(u32 width, u32 height)
             printf("[D3D12] DSV heap creation failed\n");
             return -1;
         }
+        s_d3d.dsv_step = s_d3d.device->lpVtbl->GetDescriptorHandleIncrementSize(
+            s_d3d.device, D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
 
         D3D12_HEAP_PROPERTIES heap_props = {0};
         heap_props.Type = D3D12_HEAP_TYPE_DEFAULT;
@@ -1733,6 +1738,8 @@ static void rsx_capture_frame(u32 fi, u32 ndraws, u32 capidx)
                                 r->tex[u].w, r->tex[u].h, r->tex[u].ctrl1 & 0xFFFF,
                                 r->tex_rt[u], r->tex[u].cube);
             }
+            fprintf(mf, "      zeta=0x%08X depth_slot=%u clear_zs=%u z=%.8f s=%u\n",
+                r->zeta_off, r->depth_slot, r->clear_flags, r->clear_z, r->clear_s);
         }
         /* Per-draw VP constant banks for the first few offscreen-RT geometry
          * draws: c[0..3] is the projection row-major for most CG VPs; also scan
@@ -4700,6 +4707,25 @@ static void render_frame(void)
     if (phase_on()) s_phase.drain = perf_now() - ph0;
     phase_gpu_collect();
 
+    /* Resolve depth resources before recording. No color-target change
+     * discards an existing guest depth surface. */
+    for (u32 d = 0; d < s_d3d.draw_count && d < MAX_DRAWS; ++d) {
+        D3D12DrawRecord* dr = &s_d3d.draws[d];
+        if (!dr->is_vp) continue;
+        u32 w = dr->rt_w > s_d3d.width ? dr->rt_w : s_d3d.width;
+        u32 h = dr->rt_h > s_d3d.height ? dr->rt_h : s_d3d.height;
+        if (w < 2048) w = 2048;
+        if (h < 2048) h = 2048;
+        HRESULT result = rsx_d3d12_depth_prepare(&s_d3d.depth_cache,
+            s_d3d.device, s_d3d.dsv_heap, s_d3d.dsv_step,
+            dr->zeta_off, w, h, &dr->depth_slot);
+        if (FAILED(result)) {
+            fprintf(stderr, "[D3D12] Depth surface 0x%08X failed: 0x%08lX\n",
+                dr->zeta_off, (unsigned long)result);
+            exit(1);
+        }
+    }
+
     /* Compile the real vertex program once its microcode is captured, and keep
      * the constant bank uploaded for the VS. */
     /* The base VP pipeline gates the ENTIRE vertex-program draw pass below
@@ -5400,9 +5426,20 @@ static void render_frame(void)
             /* Keep pointer identity stable across PSO-cache eviction. */
             if (bind_reuse_on()) bound_pso->lpVtbl->AddRef(bound_pso);
             u64 bound_srv = gh.ptr;
+            u32 bound_depth_slot = 0;
             for (u32 d = 0; d < s_d3d.draw_count && d < MAX_DRAWS; d++) {
                 const D3D12DrawRecord* dr = &s_d3d.draws[d];
                 if (!dr->is_vp) continue;
+                dsv_handle = rsx_d3d12_depth_handle(
+                    s_d3d.dsv_heap, s_d3d.dsv_step, dr->depth_slot);
+                rsx_d3d12_depth_surface* depth_surface =
+                    &s_d3d.depth_cache.surfaces[dr->depth_slot - 1];
+                if (!depth_surface->initialized) {
+                    s_d3d.cmd_list->lpVtbl->ClearDepthStencilView(s_d3d.cmd_list,
+                        dsv_handle, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
+                        1.0f, 0, 0, NULL);
+                    depth_surface->initialized = 1;
+                }
                 /* The reduced-viewport passes (this title's reflection, drawn
                  * into a region of the same target) finish here -- snapshot
                  * before the full-screen scene overwrites them. */
@@ -5420,8 +5457,7 @@ static void render_frame(void)
                             s_d3d.cmd_list, 1, &rtv_handle, FALSE, &dsv_handle);
                     }
                 }
-                /* Render-to-texture: retarget when this op's surfaces differ.
-                 * Depth is a single shared buffer, so clear it per switch. */
+                /* Color and depth attachments have independent identities. */
                 int want  = dr->rt_off  ? off_rt_find(dr->rt_off)  : -1;
                 if (dr->rt_off && want < 0) {
                     fprintf(stderr, "[D3D12] Missing RT 0x%08X for op%u; draw not submitted\n",
@@ -5448,7 +5484,8 @@ static void render_frame(void)
                 for (int _m = 0; _m < 3; _m++)
                     wantm[_m] = dr->rt_mrt[_m] ? off_rt_find(dr->rt_mrt[_m]) : -1;
                 if (want != cur_rt || wantm[0] != cur_m[0] ||
-                    wantm[1] != cur_m[1] || wantm[2] != cur_m[2]) {
+                    wantm[1] != cur_m[1] || wantm[2] != cur_m[2] ||
+                    bound_depth_slot != dr->depth_slot) {
                     D3D12_CPU_DESCRIPTOR_HANDLE rh[4];
                     UINT nrt = 1;
                     rh[0] = rtv_handle;
@@ -5466,10 +5503,9 @@ static void render_frame(void)
                     D3D12_RECT sc = {0, 0, (LONG)vp.Width, (LONG)vp.Height};
                     vp_last_w = vp.Width; vp_last_h = vp.Height;
                     s_d3d.cmd_list->lpVtbl->OMSetRenderTargets(s_d3d.cmd_list, nrt, rh, FALSE, &dsv_handle);
+                    bound_depth_slot = dr->depth_slot;
                     s_d3d.cmd_list->lpVtbl->RSSetViewports(s_d3d.cmd_list, 1, &vp);
                     s_d3d.cmd_list->lpVtbl->RSSetScissorRects(s_d3d.cmd_list, 1, &sc);
-                    s_d3d.cmd_list->lpVtbl->ClearDepthStencilView(s_d3d.cmd_list, dsv_handle,
-                        D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, NULL);
                     /* RT_CLEARDBG=2: magenta-clear the surface the DRAWS bind,
                      * at the moment they bind it. The guest's own clears may go
                      * to a different surface entirely (they do here: clears to
@@ -5538,9 +5574,7 @@ static void render_frame(void)
                             D3D12_CPU_DESCRIPTOR_HANDLE rhm = off_rt_rtv(cur_m[_m]);
                             s_d3d.cmd_list->lpVtbl->ClearRenderTargetView(s_d3d.cmd_list, rhm, dr->cc, 0, NULL);
                         }
-                    /* Depth/stencil halves of the guest clear (bit0 Z, bit1
-                     * S) go to the shared DSV; dropping them left stale depth
-                     * from the previous pass rejecting this pass's pixels. */
+                    /* Apply the guest clear only to its selected depth surface. */
                     if (dr->clear_flags & 3u) {
                         D3D12_CLEAR_FLAGS cf = (D3D12_CLEAR_FLAGS)0;
                         if (dr->clear_flags & 1u) cf |= D3D12_CLEAR_FLAG_DEPTH;
@@ -6393,6 +6427,31 @@ static void d3d12_present(void* ud, u32 buffer_id)
     }
 }
 
+static void record_surface_clear(u32 rt, u32 width, u32 height, const u32 mrt[3],
+    const float color[4], u32 flags, float depth, u8 stencil)
+{
+    if (s_d3d.draw_count >= MAX_DRAWS) {
+        fprintf(stderr, "[D3D12] Clear record capacity exceeded\n");
+        exit(1);
+    }
+    D3D12DrawRecord* dr = &s_d3d.draws[s_d3d.draw_count++];
+    memset(dr, 0, sizeof(*dr));
+    dr->is_vp = 1;
+    dr->is_clear = 1;
+    dr->tex_slot = -1;
+    dr->rt_off = rt;
+    memcpy(dr->rt_mrt, mrt, sizeof(dr->rt_mrt));
+    dr->rt_w = width;
+    dr->rt_h = height;
+    dr->rt_fmt = s_d3d.current_rsx_state ? s_d3d.current_rsx_state->surface_format : 0;
+    dr->zeta_off = s_d3d.current_rsx_state ? s_d3d.current_rsx_state->surface_zeta_offset : 0;
+    cpu_surface_capture(dr);
+    memcpy(dr->cc, color, sizeof(dr->cc));
+    dr->clear_flags = flags & 3u;
+    dr->clear_z = depth;
+    dr->clear_s = stencil;
+}
+
 static void d3d12_clear(void* ud, u32 flags, u32 color, float depth, u8 stencil)
 {
     (void)ud;
@@ -6418,19 +6477,7 @@ static void d3d12_clear(void* ud, u32 flags, u32 color, float depth, u8 stencil)
      * chain (demosaic clears each effect pass's surface) -- record it, don't
      * touch the frame boundary. */
     if (rt != 0) {
-        if (s_d3d.draw_count < MAX_DRAWS) {
-            D3D12DrawRecord* dr = &s_d3d.draws[s_d3d.draw_count++];
-            memset(dr, 0, sizeof(*dr));
-            dr->is_vp = 1; dr->is_clear = 1; dr->tex_slot = -1;
-            dr->rt_off = rt; memcpy(dr->rt_mrt, mrt, sizeof(mrt));
-            dr->rt_w = rt_w; dr->rt_h = rt_h;
-            dr->rt_fmt = s_d3d.current_rsx_state ? s_d3d.current_rsx_state->surface_format : 0;
-        cpu_surface_capture(dr);
-            memcpy(dr->cc, cc, sizeof(cc));
-            dr->clear_flags = flags & 3u;   /* Z | S bits of CLEAR_SURFACE */
-            dr->clear_z = depth;
-            dr->clear_s = stencil;
-        }
+        record_surface_clear(rt, rt_w, rt_h, mrt, cc, flags, depth, stencil);
         return;
     }
 
@@ -6455,7 +6502,7 @@ static void d3d12_clear(void* ud, u32 flags, u32 color, float depth, u8 stencil)
             break;
         }
     if (!have_display_draws)
-        return;   /* keep accumulating the in-progress frame */
+        goto record_display_clear;
 
     /* A title that DOUBLE-BUFFERS the display (DeferredShading clears both
      * 0x0 and 0x440000 per frame, plus a HUD pass) issues several display
@@ -6474,7 +6521,7 @@ static void d3d12_clear(void* ud, u32 flags, u32 color, float depth, u8 stencil)
         unsigned fc = cellGcm_flip_request_count();
         if (fc != 0) {
             if (fc == s_last_present_flip)
-                return;   /* no flip since last present -> not a real boundary */
+                goto record_display_clear;
             /* A double-buffered title issues several display clears per flip
              * (DeferredShading: clear back-buffer, HUD pass, ...). They can
              * arrive in either order, so a small batch here may be an
@@ -6485,7 +6532,7 @@ static void d3d12_clear(void* ud, u32 flags, u32 color, float depth, u8 stencil)
              * the last, which a leaked tiny batch would poison), so it
              * self-scales per title with no fixed threshold. */
             if (s_frame_draws_max > 16 && s_d3d.draw_count < s_frame_draws_max / 4)
-                return;   /* intermediate: keep accumulating, flip stays pending */
+                goto record_display_clear;
             s_last_present_flip = fc;
         }
     }
@@ -6497,7 +6544,7 @@ static void d3d12_clear(void* ud, u32 flags, u32 color, float depth, u8 stencil)
      * one, a wall in the next -- which makes a single model impossible to see. */
     { static int accum = -1;
       if (accum < 0) { const char* e = getenv("RSX_ACCUM_FRAME"); accum = e ? atoi(e) : 0; }
-      if (accum) return; }
+      if (accum) goto record_display_clear; }
     if (s_d3d.initialized) {
         if (blink_dbg())
             printf("[CLEAR] presenting %u accumulated draws at frame boundary\n",
@@ -6509,6 +6556,8 @@ static void d3d12_clear(void* ud, u32 flags, u32 color, float depth, u8 stencil)
     s_d3d.draw_count   = 0;
     s_d3d.vb_offset    = 0;
     s_d3d.vp_vb_offset = 0;
+    record_display_clear:
+    record_surface_clear(0, rt_w, rt_h, mrt, cc, flags, depth, stencil);
 }
 
 static void d3d12_set_render_target(void* ud, const rsx_state* state)
@@ -7317,6 +7366,8 @@ static void d3d12_draw_arrays(void* ud, u32 primitive, u32 first, u32 count)
                                 dr->blend, dr->blend_key, 10); } }
                 dr->rt_off = current_rt_off(&dr->rt_w, &dr->rt_h, dr->rt_mrt);
                 dr->rt_fmt = s_d3d.current_rsx_state ? s_d3d.current_rsx_state->surface_format : 0;
+                dr->zeta_off = s_d3d.current_rsx_state
+                    ? s_d3d.current_rsx_state->surface_zeta_offset : 0;
         cpu_surface_capture(dr);
                 if (s_d3d.current_rsx_state) {
                     dr->vp_x = s_d3d.current_rsx_state->viewport_x;
@@ -7394,6 +7445,8 @@ static void d3d12_draw_arrays(void* ud, u32 primitive, u32 first, u32 count)
             if (pv->is_vp && pv->topology == RSX_TOPOLOGY_TRIANGLES &&
                 pv->fp_addr == fpnow && pv->fp_ctrl == fpctrlnow &&
                 pv->alpha_ctl == alphanow && pv->alpha_ref_raw == arefnow &&
+                pv->zeta_off == (s_d3d.current_rsx_state
+                    ? s_d3d.current_rsx_state->surface_zeta_offset : 0) &&
                 primitive == RSX_PRIMITIVE_TRIANGLES &&
                 pv->begin_epoch == (s_d3d.current_rsx_state
                                     ? s_d3d.current_rsx_state->begin_epoch : 0) &&
@@ -7463,6 +7516,8 @@ static void d3d12_draw_arrays(void* ud, u32 primitive, u32 first, u32 count)
                 ? (s_d3d.current_rsx_state->stencil_ref & 0xFFu) : 0;
             dr->rt_off = current_rt_off(&dr->rt_w, &dr->rt_h, dr->rt_mrt);
             dr->rt_fmt = s_d3d.current_rsx_state ? s_d3d.current_rsx_state->surface_format : 0;
+            dr->zeta_off = s_d3d.current_rsx_state
+                ? s_d3d.current_rsx_state->surface_zeta_offset : 0;
         cpu_surface_capture(dr);
             if (s_d3d.current_rsx_state) {
                 dr->vp_x = s_d3d.current_rsx_state->viewport_x;
@@ -7555,6 +7610,8 @@ static void d3d12_draw_indexed(void* ud, u32 primitive, u32 first, u32 count)
                     ? s_d3d.current_rsx_state->shader_program : 0;
         if (pv->is_vp && pv->topology == RSX_TOPOLOGY_TRIANGLES &&
             pv->fp_addr == fpnow &&
+            pv->zeta_off == (s_d3d.current_rsx_state
+                ? s_d3d.current_rsx_state->surface_zeta_offset : 0) &&
             pv->begin_epoch == (s_d3d.current_rsx_state
                                 ? s_d3d.current_rsx_state->begin_epoch : 0) &&
             pv->vb_byte_offset + pv->vertex_count * VP_VERT_STRIDE == rec) {
@@ -7613,6 +7670,8 @@ static void d3d12_draw_indexed(void* ud, u32 primitive, u32 first, u32 count)
             ? (s_d3d.current_rsx_state->stencil_ref & 0xFFu) : 0;
         dr->rt_off = current_rt_off(&dr->rt_w, &dr->rt_h, dr->rt_mrt);
         dr->rt_fmt = s_d3d.current_rsx_state ? s_d3d.current_rsx_state->surface_format : 0;
+        dr->zeta_off = s_d3d.current_rsx_state
+            ? s_d3d.current_rsx_state->surface_zeta_offset : 0;
         cpu_surface_capture(dr);
         if (s_d3d.current_rsx_state) {
             dr->vp_x = s_d3d.current_rsx_state->viewport_x;
@@ -7978,6 +8037,7 @@ void rsx_d3d12_backend_shutdown(void)
     if (s_d3d.pipeline_state)        s_d3d.pipeline_state->lpVtbl->Release(s_d3d.pipeline_state);
     if (s_d3d.pipeline_state_lines)  s_d3d.pipeline_state_lines->lpVtbl->Release(s_d3d.pipeline_state_lines);
     if (s_d3d.pipeline_state_points) s_d3d.pipeline_state_points->lpVtbl->Release(s_d3d.pipeline_state_points);
+    rsx_d3d12_depth_release(&s_d3d.depth_cache);
     if (s_d3d.depth_buffer) s_d3d.depth_buffer->lpVtbl->Release(s_d3d.depth_buffer);
     if (s_d3d.dsv_heap)     s_d3d.dsv_heap->lpVtbl->Release(s_d3d.dsv_heap);
     if (s_d3d.root_signature) s_d3d.root_signature->lpVtbl->Release(s_d3d.root_signature);
