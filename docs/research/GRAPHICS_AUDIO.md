@@ -831,3 +831,94 @@ S/T, a high texture unit, border and mirror. Decoder checks anisotropy, signed
 LOD bias, LOD bounds and explicit unsupported-address rejection. Evidence:
 `temp/checks/rsx-sampler-20261014T133640.242508Z`. Backend binding integration
 and native verification are still required; this does not establish hill causality.
+
+## Preview depth-surface identity trial (2026-10-14, issue 94)
+
+The curated D3D12 backend creates one D24S8 depth resource. It binds that
+resource for every guest surface. It also clears depth and stencil when the
+color target or MRT set changes. `surface_zeta_offset` does not select the
+attachment. This loses depth when a later color pass reuses the guest zeta.
+It also lets an unrelated surface clear the scene depth.
+
+The candidate uses an address-keyed D24S8 cache. It records the zeta offset
+for draws and ordered clears. A color or MRT change no longer clears depth.
+The frame waits for earlier GPU work before it prepares or grows resources.
+Batch merging requires the same zeta offset. Allocation failure is fatal.
+This trial does not add depth-as-texture sampling or validate other zeta
+formats, memory locations, or content preservation after resource growth.
+
+Game-free D3D12 readbacks pass all six original cases on WARP and hardware.
+They cover color-target changes, separate depth addresses, a smaller clip,
+a return to the scene, stencil preservation, and an explicit selected-surface
+clear. The authored legacy single-buffer control fails four cases. It is a
+control, not a native replay of the old renderer. The candidate source
+compiles separately in the own fork. These results do not establish a
+visible MotorStorm correction.
+
+The first isolated build has EXE SHA256
+`cc1faf37a571b201a0baa60774f472177c38bc931cfb7d128e915228aa3bd6c0`.
+Run `20261014T191239.969343Z` in the convolution-capture worktree follows
+normal screen-gated input to MOHAWK. The launcher stops after the text
+checkpoint. The final completed frame15 is black behind the menu text. Its
+manifest has 104 records and two scene-overlay draws, but no preview terrain
+geometry. Thus this run stops too early to compare flag occlusion or the
+foreground hill. The private replacement checkpoint requires an observed
+distant ridge as well as the MOHAWK text. It rejects the label-only black
+frame offline. The restored main executable remains separate. PR98 remains
+unaccepted.
+
+Run `20261014T191720.231032Z` with the same candidate reaches the selection
+scene, but the user observes correct flag draw order with a missing sky and
+retained pixels behind it. Its manifest records every far-plane clear as
+z=0.99998480 s=255. That equals the packed value 0xFFFFFF00 decoded with
+reversed fields: the curated `rsx_commands.c` read z24 from the low 24 bits
+and stencil from the top byte. See the next subsection.
+
+### Packed z24 clear decode regression and fix (2026-10-14, issue 94)
+
+RPCS3 decodes NV4097_SET_ZSTENCIL_CLEAR_VALUE for D24S8 as z24 in bits 31:8
+and stencil in bits 7:0. The own fork scaffold has carried that order since
+its first commit, so the curated vendor copy is the outlier. The reversed
+order cleared depth to 0.9999848 with stencil 255 at the far plane. The sky
+quad then failed the depth test, and the color target kept the previous
+frame pixels because the game clears depth, not color, for that pass.
+
+The game-free contract now lives on fork branch `codex/depth-clear-contract`
+(commit 18061de). Six added packed-clear cases drive the production
+rsx_process_method decode into the address-keyed cache. The reversed order
+fails all six on WARP and hardware and leaves the prior-frame color
+untouched. The z24-high order passes twelve of twelve cases while the legacy
+control still fails six. Evidence: `temp/issue94-depth/20261014T194936`
+(red) and `20261014T194940` (green) in the fork.
+
+The curated decoder now reads z24 from bits 31:8 and stencil from the low
+byte. Candidate EXE SHA256
+`ed33612e4fb8040858919fb3132fff63b1dae528f8f3aaf4bbb159dbc32dae76`.
+Owned muted replay `20261014T200115.394376Z` reaches the selection scene.
+The sky band y20-140 returns to blue-dominant `(65.4, 72.9, 82.5)` against
+the baseline signature `(53.6, 64.4, 82.1)`; the broken candidate showed the
+warm retained smear `(95.2, 88.7, 77.8)`. The user confirms the skybox.
+
+Remaining observed defects on the same scene stay open on issue 94:
+pure-white background props such as camper vans (missing textures), a blurry
+backdrop, a grey platform and no preview vehicle. Limits: the decode covers
+D24S8 only; Z16 clear packing, other zeta formats and post-growth content
+remain untested; no depth-as-texture sampling.
+
+### Public rendering references
+
+[Drakengard 3 Recompiled](https://github.com/soyjxck/dod3-recomp) reports
+native Windows D3D12 and macOS Metal gameplay. It uses the ps3recomp
+runtime family. This is project-reported native evidence, not a local
+gameplay verification.
+
+[Merged upstream PR236](https://github.com/sp00nznet/ps3recomp/pull/236)
+tracks color/depth writes by address and reads depth back through guest
+texture formats. Its depth readback hook has a Vulkan implementation. It is
+not a drop-in fix for the curated legacy D3D12 backend.
+
+[Open upstream PR280](https://github.com/sp00nznet/ps3recomp/pull/280)
+fixes live-draw depth snapshots, same-address color/depth preference, and
+sampling the bound zeta with depth writes off. Its reported test uses Proton
+and a test-only shader change. It does not prove native MotorStorm behavior.
+No wholesale backend replacement or upstream branch trial is accepted here.
