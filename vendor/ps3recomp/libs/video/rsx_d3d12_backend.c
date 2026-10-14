@@ -131,6 +131,8 @@ typedef struct {
         int set;
     } tex[16];
     int tex_rt[16];     /* pre-pass: OffRT index sampled by unit, -1 = none */
+    u32 fb_mask;        /* pre-pass: units sampling the target this draw writes;
+                         * served from a per-draw snapshot (see self_fb_*). */
     int tex_slot;       /* legacy single-slot path (atlas); -1 = none */
     int vs_idx;         /* VPVSEntry slot for this draw's vertex program (-1 = primary) */
     int blend;          /* guest blend enable at draw time */
@@ -186,6 +188,13 @@ typedef struct {
     u32 cpu_address,cpu_pitch,cpu_format;
     u64 gpu_generation,cpu_generation;
     ID3D12Resource *cpu_readback;
+    /* Feedback snapshot for draws that sample the target they render into
+     * (RSX read-after-write, e.g. MotorStorm's preview pass binding the
+     * scene target as t13). Sampling the live target is undefined in D3D12;
+     * fb_serial tags the draw the copy was taken for. */
+    ID3D12Resource       *fb;
+    D3D12_RESOURCE_STATES fb_st;
+    u64                   fb_serial;
 } OffRT;
 #define INITIAL_OFF_RTS 16
 /* Per-draw SRV windows: each VP draw gets 16 consecutive descriptors (t0-t15)
@@ -4028,6 +4037,7 @@ static int off_rt_get(u32 off, u32 w, u32 h, u32 rsx_fmt)
         cpu_surface_retire(r);
         r->res->lpVtbl->Release(r->res); r->res = NULL;   /* dims/format changed */
         if (r->up) { r->up->lpVtbl->Release(r->up); r->up = NULL; }
+        if (r->fb) { r->fb->lpVtbl->Release(r->fb); r->fb = NULL; r->fb_serial = 0; }
     } else {
         for (int i = 0; i < s_d3d.off_rt_cap; i++)
             if (!s_d3d.off_rt[i].res) { slot = i; break; }
@@ -4050,6 +4060,11 @@ static int off_rt_get(u32 off, u32 w, u32 h, u32 rsx_fmt)
                     s_d3d.off_rt[slot].up->lpVtbl->Release(s_d3d.off_rt[slot].up);
                     s_d3d.off_rt[slot].up = NULL;
                 }
+                if (s_d3d.off_rt[slot].fb) {
+                    s_d3d.off_rt[slot].fb->lpVtbl->Release(s_d3d.off_rt[slot].fb);
+                    s_d3d.off_rt[slot].fb = NULL;
+                    s_d3d.off_rt[slot].fb_serial = 0;
+                }
             }
         }
     }
@@ -4071,6 +4086,7 @@ static int off_rt_get(u32 off, u32 w, u32 h, u32 rsx_fmt)
     r->off = off; r->w = w; r->h = h; r->dxgi = (u32)want_fmt;
     r->st = D3D12_RESOURCE_STATE_COPY_DEST;
     r->used = 1;
+    r->fb = NULL; r->fb_st = D3D12_RESOURCE_STATE_COPY_DEST; r->fb_serial = 0;
 
     /* Populate the new RT from guest memory: titles CPU-initialise their
      * render-target buffers (wave fills the height fields with texels of
@@ -4272,6 +4288,59 @@ static void off_rt_transition(int slot, D3D12_RESOURCE_STATES to)
     b.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     s_d3d.cmd_list->lpVtbl->ResourceBarrier(s_d3d.cmd_list, 1, &b);
     r->st = to;
+}
+/* SELF_FB=0 disables self-target feedback (serve the live resource again). */
+static int self_fb_on(void)
+{
+    static int v = -1;
+    if (v < 0) { const char* e = getenv("SELF_FB"); v = e ? atoi(e) : 1; }
+    return v;
+}
+
+static int self_fb_ensure(OffRT* r)
+{
+    if (r->fb) return 0;
+    D3D12_HEAP_PROPERTIES hp = {0}; hp.Type = D3D12_HEAP_TYPE_DEFAULT;
+    D3D12_RESOURCE_DESC td = {0};
+    td.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    td.Width = r->w; td.Height = r->h; td.DepthOrArraySize = 1; td.MipLevels = 1;
+    td.Format = (DXGI_FORMAT)r->dxgi; td.SampleDesc.Count = 1;
+    if (FAILED(s_d3d.device->lpVtbl->CreateCommittedResource(
+            s_d3d.device, &hp, D3D12_HEAP_FLAG_NONE, &td,
+            D3D12_RESOURCE_STATE_COPY_DEST, NULL,
+            &IID_ID3D12Resource, (void**)&r->fb)))
+        return -1;
+    r->fb_st = D3D12_RESOURCE_STATE_COPY_DEST;
+    r->fb_serial = 0;
+    return 0;
+}
+
+/* Record a copy of the target's current content for the draw about to run.
+ * Must be called after every earlier draw of the frame is recorded, so the
+ * snapshot holds the ordered read-after-write state the guest expects. */
+static void self_fb_snapshot(int slot, u64 serial)
+{
+    OffRT* r = &s_d3d.off_rt[slot];
+    if (r->fb_serial == serial || !r->fb) return;
+    D3D12_RESOURCE_BARRIER b = {0};
+    b.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    b.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    if (r->fb_st != D3D12_RESOURCE_STATE_COPY_DEST) {
+        b.Transition.pResource = r->fb;
+        b.Transition.StateBefore = r->fb_st;
+        b.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
+        s_d3d.cmd_list->lpVtbl->ResourceBarrier(s_d3d.cmd_list, 1, &b);
+        r->fb_st = D3D12_RESOURCE_STATE_COPY_DEST;
+    }
+    off_rt_transition(slot, D3D12_RESOURCE_STATE_COPY_SOURCE);
+    s_d3d.cmd_list->lpVtbl->CopyResource(s_d3d.cmd_list, r->fb, r->res);
+    off_rt_transition(slot, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    b.Transition.pResource = r->fb;
+    b.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+    b.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    s_d3d.cmd_list->lpVtbl->ResourceBarrier(s_d3d.cmd_list, 1, &b);
+    r->fb_st = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    r->fb_serial = serial;
 }
 
 /* Set by the present entry point: 1 = this batch ends with a swapchain
@@ -5111,6 +5180,7 @@ static void render_frame(void)
         for (int _u = 0; _u < 16; _u++) {
             u32 wslot = DRAW_SRV_BASE + _d * 16 + (u32)_u;
             dr->tex_rt[_u] = -1;
+            dr->fb_mask &= ~(1u << _u);
             /* Display-sized sampler source -> the rendered frame. */
             if (dr->tex[_u].set && s_screen_copy &&
                 dr->tex[_u].w == s_d3d.width && dr->tex[_u].h == s_d3d.height) {
@@ -5152,6 +5222,23 @@ static void render_frame(void)
                 int rt = off_rt_find(dr->tex[_u].raw);
                 if (rt >= 0) {
                     dr->tex_rt[_u] = rt;
+                    /* A unit sampling a target this same draw writes: the live
+                     * resource cannot serve both RTV and SRV. Serve a snapshot
+                     * taken just before the draw instead. */
+                    int own = 0;
+                    if (self_fb_on() && dr->rt_off) {
+                        int trt = off_rt_find(dr->rt_off);
+                        if (trt == rt) own = 1;
+                        for (int m = 0; !own && m < 3; m++)
+                            if (dr->rt_mrt[m] && off_rt_find(dr->rt_mrt[m]) == rt) own = 1;
+                    }
+                    if (own && self_fb_ensure(&s_d3d.off_rt[rt]) == 0) {
+                        dr->fb_mask |= 1u << _u;
+                        srv_write(wslot, s_d3d.off_rt[rt].fb,
+                                  (DXGI_FORMAT)s_d3d.off_rt[rt].dxgi,
+                                  D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING);
+                        continue;
+                    }
                     srv_write(wslot, s_d3d.off_rt[rt].res, (DXGI_FORMAT)s_d3d.off_rt[rt].dxgi,
                               D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING);
                     continue;
@@ -5653,6 +5740,16 @@ static void render_frame(void)
                 }
                 /* Per-draw textures: bind this draw's t0-t15 SRV window.
                  * Any sampled offscreen RT transitions to PSR first (never
+                 * one of the currently-bound colour targets). */
+                /* Per-draw textures: bind this draw's t0-t15 SRV window.
+                 * A self-read unit serves the feedback snapshot; take it now,
+                 * after earlier draws are recorded and before this one runs. */
+                for (int _u = 0; _u < 16; _u++) {
+                    int rt = dr->tex_rt[_u];
+                    if (rt >= 0 && (dr->fb_mask & (1u << _u)))
+                        self_fb_snapshot(rt, ((u64)s_d3d.frame_count << 20) + d);
+                }
+                /* Any sampled offscreen RT transitions to PSR first (never
                  * one of the currently-bound colour targets). */
                 for (int _u = 0; _u < 16; _u++) {
                     int rt = dr->tex_rt[_u];
