@@ -1,13 +1,16 @@
 """Game-free regressions for the formerly human/timed menu reproduction loop."""
 import json
+import os
 import struct
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from menu_replay import load_profile, matches, replay
 from native_pad import latest_frame, owned
+import native_pad
 
 
 def synthetic_bmp(path, left, color=b'\xff\xff\xff'):
@@ -20,6 +23,94 @@ def synthetic_bmp(path, left, color=b'\xff\xff\xff'):
     head = struct.pack('<2sIHHI', b'BM', 54 + len(data), 0, 0, 54)
     info = struct.pack('<IiiHHIIIIII', 40, w, h, 1, 24, 0, len(data), 0, 0, 0, 0)
     path.write_bytes(head + info + data)
+
+
+class PadSendTests(unittest.TestCase):
+    def fixture(self, root, process):
+        exe = root / 'ms1_recomp.exe'
+        created = time.time() - 5
+        process.name.return_value = 'ms1_recomp.exe'
+        process.exe.return_value = str(exe)
+        process.create_time.return_value = created
+        launch = dict(pid=1, create_time=created, exe=str(exe), output=str(root),
+                      environment={'PAD_FILE': str(root / 'pad.txt')})
+        (root / 'launch.json').write_text(json.dumps(launch))
+        (root / 'pad.txt').write_text('0\n')
+        (root / 'native.log').write_text('')
+        frame = root / 'rsx/frame_00/backbuffer.bmp'
+        frame.parent.mkdir(parents=True)
+        synthetic_bmp(frame, 10)
+        (frame.parent / 'manifest.txt').write_text('authored fixture')
+        return frame
+
+    def test_actual_send_retries_sharing_but_stops_on_revoked_ownership(self):
+        for case in ('transient', 'permanent', 'revoked'):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as d, \
+                 patch('native_pad.psutil.Process') as factory:
+                root = Path(d).resolve()
+                frame = self.fixture(root, factory.return_value)
+                replace = os.replace
+                attempts = []
+                def sharing(source, target):
+                    attempts.append(target)
+                    if len(attempts) == 1 or case == 'permanent':
+                        if case == 'revoked':
+                            (root / 'final.json').write_text('{}')
+                        raise PermissionError('authored sharing violation')
+                    replace(source, target)
+                    (root / 'native.log').write_text('[cellPad] PAD_FILE press 0x4000\n')
+                with patch('native_pad.os.replace', side_effect=sharing), patch('native_pad.time.sleep'):
+                    def send():
+                        return native_pad.send(root, frame, [0, 0, 80, 40], 0x4000, 8, 'authored sharing probe')
+                    if case == 'transient':
+                        event = send()
+                        self.assertTrue(event['acknowledged'])
+                        self.assertEqual(len(attempts), 2)
+                        self.assertEqual((root / 'pad.txt').read_text(), '0x4000 8\n')
+                    else:
+                        with self.assertRaises(PermissionError if case == 'permanent' else ValueError):
+                            send()
+                        self.assertEqual((root / 'pad.txt').read_text(), '0\n')
+                        self.assertEqual(len(attempts), 6 if case == 'permanent' else 1)
+                        self.assertFalse((root / 'navigation.jsonl').exists())
+                self.assertEqual(list(root.glob('pad-*.pending')), [])
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows no-delete-sharing handle')
+    def test_actual_windows_sharing_violation_is_retried(self):
+        import ctypes
+        from ctypes import wintypes
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                                      ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+        kernel.CreateFileW.restype = wintypes.HANDLE
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel.CloseHandle.restype = wintypes.BOOL
+        with tempfile.TemporaryDirectory() as d, patch('native_pad.psutil.Process') as factory:
+            root = Path(d).resolve()
+            frame = self.fixture(root, factory.return_value)
+            handle = kernel.CreateFileW(str(root / 'pad.txt'), 0x80000000, 1, None, 3, 0x80, None)
+            self.assertNotEqual(handle, wintypes.HANDLE(-1).value)
+            closed = False
+            attempts = []
+            replace = os.replace
+            def sharing(source, target):
+                attempts.append(target)
+                replace(source, target)
+                (root / 'native.log').write_text('[cellPad] PAD_FILE press 0x4000\n')
+            def release_lock(seconds):
+                nonlocal closed
+                self.assertTrue(kernel.CloseHandle(handle))
+                closed = True
+            try:
+                with patch('native_pad.os.replace', side_effect=sharing), \
+                     patch('native_pad.time.sleep', side_effect=release_lock):
+                    event = native_pad.send(root, frame, [0, 0, 80, 40], 0x4000, 8, 'real Windows sharing')
+                self.assertTrue(event['acknowledged'])
+                self.assertEqual(len(attempts), 2)
+                self.assertEqual(list(root.glob('pad-*.pending')), [])
+            finally:
+                if not closed:
+                    kernel.CloseHandle(handle)
 
 
 class MenuReplayTests(unittest.TestCase):
