@@ -831,3 +831,70 @@ S/T, a high texture unit, border and mirror. Decoder checks anisotropy, signed
 LOD bias, LOD bounds and explicit unsupported-address rejection. Evidence:
 `temp/checks/rsx-sampler-20261014T133640.242508Z`. Backend binding integration
 and native verification are still required; this does not establish hill causality.
+
+### Restored-baseline convolution capture (2026-10-14, issue 97)
+
+Sampler PR98 remains unaccepted. Its native boot rejects Gaussian convolution
+before LANGUAGE. The restored usable executable stays unchanged:
+`a3f153bccfca241407a4736739a52cf4fa8c966eb22633c656bd05ac01affb64`.
+This investigation has no independent RSX oracle for Gaussian coefficients,
+offsets, LOD or edge rules. Enum names and generic formulas do not supply it.
+
+Muted no-input run `20261014T175706.440055Z` reaches LANGUAGE and stops explicitly
+at 70.735 s. Its frame12 manifest records frame_count721, op011, FP01F8C8C1/VS4.
+The draw writes RGBA8 target02AE1080 at 320x180 and binds unit0 to that same
+OffRT through guest addressC2AE1080, guest formatA5, remapAAE4. Op010 clears the
+target to zero. Op013 samples it into02B19480. This is a source-binding lead,
+not proof of the intended guest feedback semantics or the root cause.
+End-frame BMPs do not preserve the exact pre-draw source or alpha.
+
+The picked HLSL samples unit0 and derives a saturated threshold term from its
+blue channel. Captured constants start with -0.00699996948, 20 and 3.
+The VP supplies normalized fullscreen UVs with Y inversion. Neither shader
+contains Gaussian weights. The old FP_PICK binary dump reads later live guest
+memory; it is not automatically the bound SET-time snapshot.
+
+Restored-baseline run `20261014T180311.755705Z` follows acknowledged ordinary
+LANGUAGE, one observed intro skip, PLAY, help, ticket and class inputs.
+Frame31 reaches MOHAWK INDIANA; inspected final frame33 shows a solid but flat
+hill, terrain stipple and no visible bike. The muted owned run closes after
+target observation at 70.579 s. This proves the route remains usable, not normal
+assets, race entry or graphics acceptance. Captures and shader payloads remain
+private.
+
+An isolated capture-only build uses the same baseline renderer, not PR98.
+Its raw-copy helper first runs in the own ps3recomp checkout. An authored
+7x5 GPU smoke preserves two ordered clears, all RGBA channels and unpadded rows.
+The isolated native EXE is
+`052cd64b112b36491d308ff0486b058f9dc274f6a6aafa67f93ecdc2e51ba498`.
+Its source and output remain separate from the restored executable.
+
+Run `20261014T181650.057259Z` retains source bytes immediately before the draw
+and target bytes immediately after it, with resource states restored between
+copies. Three selected draws at renderer frames116-118 bind the same host
+resource as source and target. Raw RSX offset02AE1080 resolves to guest
+addressC2AE1080. Every retained 320x180 RGBA8 pixel is zero before and after.
+Each 230400-byte payload has SHA256
+`2a589ae1f2fa2a6328223ff195a29c9244bec633dca49139f6f231e1d79c0eb2`.
+These captures do not distinguish convolution coefficients, sampling offsets
+or edge behavior. Zero input is not a filter oracle.
+
+The verified bound FP snapshots contain 208 bytes and have SHA256
+`24b373c14f951e08e7cf5ca178f2a09fe52b132d9de1f0f2cc44690a66c03e11`.
+That hash matches the earlier picked binary for these selected draws.
+The retained GPU constant banks confirm the three threshold constants above.
+This admits these snapshots; it does not validate arbitrary later live reads.
+The next sampler prerequisite remains an independent RSX impulse/checkerboard
+readback with fractional coordinates, scale changes and boundary samples.
+
+The same owned muted run follows ordinary PLAY to MOHAWK. One observed intro
+skip and the model confirmation receive native input acknowledgments.
+Confirmation at 18:18:30.094330Z uses completed frame47. Inspected frame51 shows
+the race loading artwork; frame60 still shows loading, not gameplay.
+The guest then calls sys_process_exit(0) at 150.813 s. The launcher does not
+terminate it. The terminal log records an unresolved indirect call to D00A5AAC
+with tid9/LR00AFDC10. The existing runtime then replaces a virtual call through
+1006D448, this=4BE37300, with a no-op and r3=0. This run does not validate that
+fallback or identify the bad-state producer. No Havok observer payload is
+produced. Return0 is not race acceptance.
+The original usable EXE retains its hash above; no owned native process remains.
