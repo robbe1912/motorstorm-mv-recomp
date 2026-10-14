@@ -292,3 +292,11 @@ pixel-readback fixture is authored and contains no captured game payload.
 [Native limitations](research/GRAPHICS_AUDIO.md#preserve-homogeneous-clip-w-issue-24)
 include the remaining bike-loading emblem and stippled ground. No external PR
 was opened.
+
+Guest samplers remain an unmerged own-fork candidate on
+`codex/rsx-sampler-evidence`, selectively adapted on MotorStorm
+`codex/rsx-guest-samplers`. Authored descriptor header and D3D12 GPU fixture are
+identical; four-unit versus16-unit backend recording/caching adapters differ.
+GPU cases and both builds pass, but sampled Gaussian convolution prevents native
+boot. Do not promote to combined or claim native acceptance before fixing and
+verifying that contract (issue97). No external PR is authorized.
