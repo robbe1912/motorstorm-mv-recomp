@@ -48,6 +48,13 @@ File clears on consumption; stdout acknowledges [cellPad] PAD_FILE press. Defaul
 
 For a known menu checkpoint, use `python scripts/run.py --menu-replay PRIVATE_PROFILE.json`. The supported launcher captures game-internal backbuffers and drives normal input without desktop capture, focus or input. Schema 1 profiles contain the selected ELF SHA256, observed reference BMPs/ROIs/labels, single-button steps with 1..8 polls, and a target with optional additional checks. Profiles and reference images remain private. Text comparisons use white-glyph overlap; exact RGB comparison requires an unchanged observed ROI. A heading alone can match a help overlay: include a distinguishing target check.
 
+PAD_FILE replacement retries a sharing violation at most six times, rechecking
+ownership immediately before each attempt. A revoked run or persistent sharing
+error preserves the existing command and removes the pending file. The actual-send
+regression in `scripts/check_menu_replay.py` covers transient/permanent sharing,
+revocation during the delay, and a real Windows handle without delete sharing.
+This does not explain the separate historical replay-ownership failure.
+
 Continuation profiles must include screen-gated intro skips in `optional_actions`.
 Each uses the same observed reference/ROI/label/button/polls as a required step,
 plus `after_step` (the number of required steps already acknowledged). An action
@@ -88,6 +95,12 @@ capture of this clipping candidate; no freshness/ownership threshold changed.
 This verifies replay beyond the ordering boundary, not bike or race correctness.
 
 ## Capture discipline
+
+The Havok observer check allows 120 seconds for its compiler/linker and 15
+seconds for the synthetic observer executable. It prints compiler duration and
+exit status; compiler errors, timeouts and observer assertion failures remain
+fatal. The separate compile budget addresses repeated 30-second deadlines on
+cold hosted Windows builds (issue108); it changes no native runtime limits.
 
 The private baseline contains ten PPU sources, 24 SPU images and five capture hooks; it is instrumented. Original EXE/PDB are retained under build/preserved/, and rebuilt identities are in build/native/build_identity.json. Build success is not gameplay proof.
 
