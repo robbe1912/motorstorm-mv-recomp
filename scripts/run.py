@@ -61,7 +61,7 @@ def main():
     (out/'pad.txt').write_text('0\n')
     if args.capture_menu or args.menu_replay:
         (out/'rsx').mkdir()
-        env.update(RSX_CAP='1:100:120',RSX_CAP_DIR=str(out/'rsx'))
+        env.update(RSX_CAP=os.environ.get('RSX_CAP','1:100:120'),RSX_CAP_DIR=str(out/'rsx'))
     log=(out/'native.log').open('wb');err=(out/'native.err').open('wb')
     # Request a GUI window while keeping the launcher console hidden.
     startup=subprocess.STARTUPINFO()
