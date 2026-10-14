@@ -193,7 +193,7 @@ separate and retail mstream stays parked.
 ### Policy workload argument trial (2026-10-14, issue 8)
 
 Issue [8 evidence](https://github.com/robbe1912/motorstorm-mv-recomp/issues/8#issuecomment-6158109859)
-precedes the production edit. This remains a native trial with a visual regression,
+precedes the production edit. This remains an unfinished native trial with run-dependent visual results,
 not completion of issues 8, 24 or 13.
 
 Baseline `20261014T001553.193625Z` retained 256 hardware write hits and two
@@ -237,6 +237,33 @@ Compiler-derived layout matches the 268,960-byte captured context; later tag
 mask/status are both 8, not evidence of an incomplete selected tag then.
 The first missing progress operation is still unproved. Reads remain sequential;
 registry slot, diagnostic PC and `spu_id` do not identify an executed instruction.
+
+Unwatched repeats `20261014T005334.421649Z` and
+`20261014T010410.695354Z` use the same corrected EXE and display the desert again,
+with ground artifacts and no bike/race after normal MOHAWK confirmation. Thus
+003245's black background is a retained observation, not a consistently
+reproduced packing regression or proof that hardware watching caused it.
+The trial remains off main.
+
+The first external MFC collector reached its 128-overflow-node capture cap;
+136 engine files are not a demonstrated list cycle. The matching compiled PDB
+independently confirms engine size 520, slot size 528, overflow size 536/next
+at 528, and command size 32/active at 28. The revised bounded collector preserves
+partial owner metadata on failure and permits 4096 overflow nodes. During a
+requested process suspension, 010410 captures all 8 inline plus 460 overflow
+engines with unique owners and a terminated chain. Retention alone is not a leak
+or a stall cause. The controller always resumes the process before stopping it.
+
+Exact-image unwind binds TID 28208's PM trampoline to context `0x260804B6CC0`.
+Original-byte-verified LS identifies physical lane 1, queue `0x40044480`, local
+jobs 6/7. Its unique engine is idle (queue count 0, no active commands), with
+all tag completion bits set; context mask/status are 8/8 and list-stall fields
+are zero. The same-dump main requests 8; the queue read during suspension has
+hint/taken 8/8 and lane-1 minimum marker 6. These observations exclude pending
+engine commands or a missing selected completion bit **at this captured stop**;
+they do not prove instruction chronology or exclude historical ownership races.
+`late_mfc_producer_admission.json` retains hashes, PDB admission, owner mapping
+and temporal limits. The first missing guest progress operation is still open.
 
 Private artifacts include `data-watch/workload-data-callsite-admission.json`,
 `late_producer_admission.json`, exact-image unwinds, original-byte disassemblies,
