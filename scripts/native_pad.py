@@ -140,7 +140,14 @@ def send(run, reference, roi, mask, polls, label, timeout=15, mode='text'):
         with os.fdopen(fd, 'w', encoding='ascii') as f:
             f.write(f'0x{mask:04X} {polls}\n')
         owned(run)
-        os.replace(pending, pad)
+        for attempt in range(6):
+            try:
+                os.replace(pending, pad)
+                break
+            except PermissionError:
+                if attempt == 5 or not Path(pending).exists():
+                    raise
+                time.sleep(.2)
     finally:
         if Path(pending).exists():
             Path(pending).unlink()
