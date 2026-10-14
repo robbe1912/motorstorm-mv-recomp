@@ -23,6 +23,41 @@ def synthetic_bmp(path, left, color=b'\xff\xff\xff'):
 
 
 class MenuReplayTests(unittest.TestCase):
+    def test_reference_variants_choose_observed_gate_and_skip_only_once(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            language, primary, variant, target = [root / f'{n}.bmp' for n in range(4)]
+            for frame, left in zip((language, primary, variant, target), (5, 25, 35, 60)):
+                synthetic_bmp(frame, left, b'\x70\xaa\xfa')
+            def state(frame, **kw):
+                return dict(reference=str(frame), roi=[0, 0, 80, 40], label=frame.stem,
+                            mode='contrast', **kw)
+            action = state(primary, reference_variants=[str(variant)], after_step=1,
+                           mask=0x4000, polls=8)
+            self.assertTrue(matches(variant, action))
+            self.assertFalse(matches(target, action))
+            profile = dict(schema=1, elf_sha256='synthetic identity',
+                           steps=[state(language, mask=0x4000, polls=4)],
+                           optional_actions=[action], target=state(target))
+            path = root / 'profile.json'
+            path.write_text(json.dumps(profile))
+            def acknowledged(run, reference, *args, **kw):
+                return dict(observed_frame=reference, acknowledged=True)
+            with patch('menu_replay.owned', return_value={'elf_sha256': 'synthetic identity'}), \
+                 patch('menu_replay.latest_frame', side_effect=[language, variant, primary, target]), \
+                 patch('menu_replay.send', side_effect=acknowledged) as sent, \
+                 patch('menu_replay.time.sleep'):
+                result = replay(root, path)
+            self.assertTrue(result['target_observed'])
+            self.assertEqual(len(result['optional_inputs']), 1)
+            self.assertEqual([call.args[1] for call in sent.call_args_list],
+                             [str(language), str(variant)])
+            for invalid in (str(variant), [None], [''], [str(root / 'missing.bmp')]):
+                profile['optional_actions'][0]['reference_variants'] = invalid
+                path.write_text(json.dumps(profile))
+                with self.assertRaises((ValueError, FileNotFoundError)):
+                    load_profile(path)
+
     def test_latest_completed_frame_orders_numeric_sequence_past_99(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
