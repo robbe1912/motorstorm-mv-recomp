@@ -15,18 +15,7 @@ import psutil
 def owned(run):
     run = Path(run).resolve()
     launch = json.loads((run / 'launch.json').read_text())
-    # psutil.Process can transiently report a live Windows process as missing
-    # while the game spawns SPURS thread storms; a single miss must not end the
-    # replay while frames keep being produced. Retry briefly, then fail.
-    p = None
-    for _ in range(4):
-        try:
-            p = psutil.Process(launch['pid'])
-            break
-        except psutil.NoSuchProcess:
-            time.sleep(.3)
-    if p is None:
-        raise ValueError('Owned native process no longer exists; do not send input')
+    p = psutil.Process(launch['pid'])
     if p.name().lower() != 'ms1_recomp.exe' or abs(p.create_time() - launch['create_time']) > .01 or Path(p.exe()).resolve() != Path(launch['exe']).resolve():
         raise ValueError('Native ownership changed; do not send input')
     if Path(launch['output']).resolve() != run or (run / 'final.json').exists():
