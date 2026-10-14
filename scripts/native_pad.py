@@ -128,8 +128,8 @@ def send(run, reference, roi, mask, polls, label, timeout=15, mode='text'):
     try:
         with os.fdopen(fd, 'w', encoding='ascii') as f:
             f.write(f'0x{mask:04X} {polls}\n')
-        owned(run)
         for attempt in range(6):
+            owned(run)
             try:
                 os.replace(pending, pad)
                 break
