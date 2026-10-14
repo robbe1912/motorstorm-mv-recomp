@@ -80,6 +80,15 @@ admission and remaining PVS wait. No upstream PR or native acceptance is claimed
 
 ## Fork-first workflow
 
+Productive interrupt-return regression: own-fork `codex/spu-iret-progress`,
+commit `719ea0d`, is included in combined `20b1384`. The fork already lacks the
+curated IRET idle heuristic. The curated overlay removes only that heuristic;
+equal continuation PCs cannot establish idleness across productive execution.
+The actual-interpreter authored fixture fails old curated code and passes both
+corrected curated code and fork. It does not test complete IRQ restoration.
+[Native evidence](research/SPURS.md#productive-iret-incorrectly-classified-as-idle-2026-10-14-issue-8)
+does not establish bike/race acceptance. No external PR was opened.
+
 Task lifecycle diagnostics are authored first on own fork branch
 `codex/task-lifecycle-trace`, commit
 [`dbe0b4b`](https://github.com/robbe1912/ps3recomp/commit/dbe0b4b).

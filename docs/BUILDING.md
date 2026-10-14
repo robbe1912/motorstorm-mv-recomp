@@ -136,3 +136,12 @@ cases check the preferred high32/low32 pair. Production also clears the trailing
 words; that clearing is not an assertion in this fixture. Old packing fails
 three preferred-pair cases. This checks entry representation, not guest execution
 or native menu/race acceptance; hashes and logs remain private.
+
+
+`python scripts/check_spu_iret_progress.py` compiles the actual interpreter and
+`scripts/fixtures/spu_iret_progress.c`, an authored CPU program that increments
+a register and IRETs to one continuation seven times before its own STOP. The
+old curated idle classifier halts after five increments; the corrected runtime
+reaches eight and STOP. Unused channel/lift/recovery hooks trap. This tests
+productive returns, not native assets/race acceptance; source/executable hashes
+and full build/run logs remain in ignored `temp/checks/iret-progress-*`.

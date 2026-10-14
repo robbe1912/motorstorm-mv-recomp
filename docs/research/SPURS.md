@@ -416,6 +416,48 @@ No runtime source or native build changed in this analysis. Next distinguish
 the late producer's execution/publication from repeated queue reuse before
 choosing a semantic fix. Issues #8/#24/#13 remain open; retail stays parked.
 
+### Productive IRET incorrectly classified as idle (2026-10-14, issue 8)
+
+Archived boundary run `20261014T123214.478534Z` retains a final same-native-thread
+sequence from policy dispatch `3094` through wrapper `16270`, job main `4030`,
+kernel reset and IRQ save/restore, ending at IRET `AFC`. Original ELF windows
+independently identify the final job occupant; earlier reused high-LS addresses
+are not assumed to contain that module. Later context reads report continuation
+`4118`; these are sequential observations, not a complete instruction trace.
+The archived EXE is `cd8ea77e473c57a9d1eacd93240a3ec9851e79b4f7287067342544321dfbe2da`.
+
+Changing only `SPU_PM_IDLE_BAIL` from 4 to 64 in run
+`20261014T123852.029726Z` retains two same-thread adjacent selected `AFC` ->
+`4118` witnesses in an intact ring. A fifth ring has an invalid slot and is
+excluded. This threshold change is diagnostic, not a fix or race acceptance.
+
+The curated interpreter's IRET-bail handler counted repeated continuation PCs
+as idle and called `spu_halt` after five returns without pending events, despite
+productive intervening guest execution. The own-fork interpreter lacks this
+heuristic. An authored CPU-only program increments r80, IRETs repeatedly to
+the same continuation, and reaches its own STOP after eight increments.
+`python scripts/check_spu_iret_progress.py` compiles the actual interpreter and
+headers: the old curated source fails at five increments with synthetic park;
+the corrected curated source and fork pass eight increments, PC `118`, STOP
+status 2, no park. Unused channel/lift/recovery adapters abort. This tests the
+idle classifier, not complete IRQ register restoration or the game pipeline.
+
+The selective correction removes that classifier, retaining existing IRQ
+restoration/redispatch and the IRET diagnostic counter. Own-fork regression
+commit `719ea0d` is included in combined `20b1384`; exact-head hosted checks
+pass. No external PR was opened.
+
+Supported optimized build EXE
+`0c9997e061264243efeb62e99e769653987bdd9c4f959f875b5046e9ad32c156`
+ran muted with normal observed intro skip and menu/confirmation inputs in
+`20261014T125147.523683Z`. Main TID 7656's matched snapshot unwinds through
+`cellGcmSetWaitFlip`, not the expected `C5C424` marker frame. One sample does
+not establish a new deadlock or permanent PVS recovery. Final internal frame
+121 still shows SELECT A BIKE, desert, malformed ground/hill and no bike/race.
+Explicit-stop terminal: 182.860 seconds, return 1. Boundary recorder and the
+threshold override were absent; existing bike/filesystem diagnostics remain.
+Issues #8/#24/#13 stay open. Raw evidence and original instructions stay private.
+
 ## Earlier native producer binding
 
 The muted normal-menu run `temp/runs/20261012T230343.828131Z` reproduces the
