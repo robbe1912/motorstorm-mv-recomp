@@ -145,3 +145,12 @@ old curated idle classifier halts after five increments; the corrected runtime
 reaches eight and STOP. Unused channel/lift/recovery hooks trap. This tests
 productive returns, not native assets/race acceptance; source/executable hashes
 and full build/run logs remain in ignored `temp/checks/iret-progress-*`.
+
+On Windows, `python scripts/check_rsx_texture_alias.py` uses actual production
+packed-XY16F shader adaptation and authored texels for D3D float readback.
+Unpatched sampling must fail; WARP must pass. `--device hardware` explicitly
+selects hardware without fallback. The fixture covers signed half pairs,
+decoding before filtering, clamp/wrap, remapping, named units and LOD/bias;
+it also rejects insufficient source capacity and cube overlap. Logs and hashes
+remain in ignored `temp/checks/rsx-alias-*`. This is a sampling-contract test,
+not native race or performance acceptance.

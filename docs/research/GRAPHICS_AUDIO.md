@@ -728,4 +728,48 @@ A private wrapper previously replaced `sys.argv`, causing it to ignore supplied
 replay profiles. Those earlier wrapper results do not prove the requested full
 intro route. Use supported `scripts/run.py` and inspect its recorded profile.
 The current profile lets the intro play normally, with the main menu around
-four minutes; exact animated-image equality remains an unsuitable skip gate.
+four minutes; exact animated-image equality remains an unsuitable unattended skip gate.
+
+## Packed render-target sampling and residual stipple (2026-10-14, issue 94)
+
+The user reports pixelated/blurry motion and a translucent foreground hill;
+these are unresolved visual defects. Muted baseline run
+`20261014T130115.408755Z`, EXE
+`0c9997e061264243efeb62e99e769653987bdd9c4f959f875b5046e9ad32c156`,
+reaches MOHAWK through acknowledged normal menu inputs, including one manually
+observed internal intro-frame skip. It stops explicitly at 138.687 seconds.
+No PPU watch or bike observer is enabled. Full RSX captures retain color
+targets and draw/texture manifests; BMPs drop alpha and cannot prove raw HDR
+or packed values. The final scene target shows a solid hill, whereas display
+output shows hill ghosting and pronounced terrain stipple.
+
+Frame 65's geometry renders RGBA8 to `00D00000` plus MRT1 `01F90000`.
+Display op328 samples MRT1 as format `BF`, 1440x1280, remap `29E4`;
+the enum/layout independently identifies guest Y16_X16_FLOAT, two half floats
+per four-byte texel. The backend instead binds the matched target's RGBA8
+resource format and identity remap. That is a typed-sampling contract mismatch.
+Ranked alternatives are AA-coordinate scaling, stale history inputs, then
+depth state; a still does not identify a temporal filter by itself.
+
+Fork-first candidate decodes the packed guest ARGB bytes to half floats before
+filtering, applies the requested remap, and keys PSOs on alias state. It matches
+the backend's current one-mip static point/clamp unit0 and linear/wrap other
+units. Other formats and guest sampler policies are outside this correction.
+`python scripts/check_rsx_texture_alias.py` executes that production adapter
+on an authored RGBA8 texture: unpatched sampling fails seven float-readback
+cases; adapted WARP and hardware pass positive/negative pairs, clamp/wrap,
+pre-filter decoding, named textures, remap and LOD/bias cases. No game data.
+Own-fork full Windows runtime library and the supported native build pass.
+
+Candidate run `20261014T131633.495135Z`, EXE
+`e75da09611d4e54dce68f728c542fb131ebd2a81c0675f7d732b14e823713af0`,
+uses the same named-US target, capture settings and ordinary menu route.
+Its main menu appeared before the attempted intro observation, so no skip was
+sent; the existing observed PLAY controller continued. A bounded owned-process
+pause always resumed. Final frame37 shows a solid hill with visible rocks and
+flag, but fine terrain stippling and absent bike remain. Explicit-stop terminal:
+98.656 seconds, return1, visible owned window verified. This is partial native
+visual improvement, not issue94 closure, race entry, complete motion correctness
+or a frame-time measurement. Issues #24/#13 remain open; retail stays parked.
+Dense temporal comparison and locating the first pass with residual stipple
+remain necessary. Original captures, shaders and target bytes stay private.

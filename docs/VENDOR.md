@@ -80,6 +80,17 @@ admission and remaining PVS wait. No upstream PR or native acceptance is claimed
 
 ## Fork-first workflow
 
+Packed XY16F render-target sampling is authored on own-fork atomic branch
+`codex/rsx-xy16-rtt-view`. The new `rsx_texture_alias.h` helper and its D3D
+float-readback fixture are identical in the curated integration; the older
+fork backend has a selective adapter for its four-unit draw record and cache.
+Curated integration uses its current 16-unit records and complete negative
+cache identity. Seven authored cases fail unpatched and pass on WARP/hardware;
+Windows runtime and supported native builds pass. The first muted native view
+improves hill ghosting but retains terrain stipple and no bike. See
+[graphics evidence](research/GRAPHICS_AUDIO.md#packed-render-target-sampling-and-residual-stipple-2026-10-14-issue-94).
+This is fork-only; no external PR was opened.
+
 Productive interrupt-return regression: own-fork `codex/spu-iret-progress`,
 commit `719ea0d`, is included in combined `20b1384`. The fork already lacks the
 curated IRET idle heuristic. The curated overlay removes only that heuristic;

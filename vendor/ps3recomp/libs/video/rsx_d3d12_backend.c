@@ -277,6 +277,7 @@ typedef struct {
                              * (the title can recycle that memory per frame
                              * -- MotorStorm's blur served 0 of 20). */
     u64 ds_key;              /* packed guest depth+stencil state (PSO key)   */
+    u64 alias_key;          /* typed render-target sampling and remap identity */
     u32 cube_mask;          /* which units are cube textures (PSO key): the HLSL
                              * declares those samplers as TextureCube, so a cube
                              * and a 2D variant of the same program are different
@@ -1972,6 +1973,7 @@ static void compile_vp(void)
  * hardcoded pixel shaders for draws whose FP we can translate -- e.g.
  * gcm/cube's plasma FP `c = tex2D(t0, uv).x; out = (c, 0, c, 1)`. */
 #include "rsx_fp_decompiler.h"
+#include "rsx_texture_alias.h"
 
 /* Hash + compile the CURRENT rsx_state vertex program into the VS cache;
  * returns the cache slot (or -1). Called at draw-record time so each draw
@@ -2380,13 +2382,13 @@ static DXGI_FORMAT dr_rt_dxgi(const D3D12DrawRecord* dr)
 static int vp_fp_entry_matches(const VPFPEntry* q, u32 fp_addr, u32 vs_hash,
                                u32 blend, int nrt, u32 rtfmt, int exp32,
                                u64 ucode_hash, u32 cmask, u32 cull, u32 alpha_key,
-                               u32 unnorm_key, u32 cube_mask, u64 ds_key)
+                               u32 unnorm_key, u32 cube_mask, u64 ds_key, u64 alias_key)
 {
     return q->fp_addr == fp_addr && q->vs_hash == vs_hash &&
            q->gen == s_d3d.vp_gen && q->blend == blend && q->nrt == nrt &&
            q->rtfmt == rtfmt && q->exp32 == exp32 &&
            q->ucode_hash == ucode_hash && q->cmask == cmask && q->cull == cull &&
-           q->alpha_key == alpha_key && q->unnorm_key == unnorm_key &&
+           q->alpha_key == alpha_key && q->unnorm_key == unnorm_key && q->alias_key == alias_key &&
            q->cube_mask == cube_mask && q->ds_key == ds_key;
 }
 
@@ -2499,8 +2501,18 @@ static ID3D12PipelineState* vp_get_fp_pso(int vs_idx, u32 fp_addr, u32 blend, in
                                           DXGI_FORMAT rtfmt, u32 fp_ctrl, u32 alpha_key,
                                           u32 unnorm_mask, const u32 (*unnorm_dim)[2],
                                           u32 cmask, u32 cull, u32 cube_mask, u64 ds_key,
-                                          u32 snap_idx, u16* out_fpc_n)
+                                          u32 snap_idx, u16* out_fpc_n, const D3D12DrawRecord* dr)
 {
+    u32 alias_mask = 0, alias_remap[16] = {0};
+    for (unsigned u = 0; u < sizeof dr->tex / sizeof dr->tex[0]; ++u) {
+        int rt = dr->tex_rt[u];
+        if (dr->tex[u].set && !(cube_mask & (1u << u)) && rt >= 0 &&
+            rsx_texture_alias_xy16(dr->tex[u].fmt,
+                s_d3d.off_rt[rt].dxgi == DXGI_FORMAT_R8G8B8A8_UNORM)) {
+            alias_mask |= 1u << u; alias_remap[u] = dr->tex[u].ctrl1;
+        }
+    }
+    u64 alias_key = rsx_texture_alias_key(alias_mask, alias_remap, 1u);
     if (nrt < 1) nrt = 1; if (nrt > 4) nrt = 4;
     if (rtfmt == 0) rtfmt = DXGI_FORMAT_R8G8B8A8_UNORM;
     extern uint8_t* vm_base;
@@ -2554,7 +2566,7 @@ static ID3D12PipelineState* vp_get_fp_pso(int vs_idx, u32 fp_addr, u32 blend, in
         if (s_d3d.vp_fp[i].fp_addr != fp_addr) continue;   /* cheap reject first */
         else if (vp_fp_entry_matches(&s_d3d.vp_fp[i], fp_addr, vs_hash, blend, nrt,
                                      (u32)rtfmt, exp32, uhash, cmask, cull,
-                                     alpha_key, unnorm_key, cube_mask, ds_key)) {
+                                     alpha_key, unnorm_key, cube_mask, ds_key, alias_key)) {
             if (out_fpc_n) *out_fpc_n = s_d3d.vp_fp[i].fpc_n;
             /* Publish this entry's build-time constants for the serve
              * fallback (see vp_serve_pso_consts): the guest may recycle the
@@ -2615,6 +2627,7 @@ static ID3D12PipelineState* vp_get_fp_pso(int vs_idx, u32 fp_addr, u32 blend, in
     key.rtfmt = (u32)rtfmt; key.exp32 = exp32; key.ucode_hash = uhash;
     key.cmask = cmask; key.cull = cull; key.alpha_key = alpha_key;
     key.unnorm_key = unnorm_key; key.cube_mask = cube_mask; key.ds_key = ds_key;
+    key.alias_key = alias_key;
     key.pso = NULL;
 
     /* Register-alias writes can expand a short FP beyond 32 KiB of HLSL. */
@@ -2708,6 +2721,11 @@ static ID3D12PipelineState* vp_get_fp_pso(int vs_idx, u32 fp_addr, u32 blend, in
             printf("[FP] unnorm-scale patch fail (fp=0x%08X, mask=0x%X)\n",
                    fp_addr, unnorm_mask);
         vp_fp_cache_put(&key); return NULL;
+    }
+
+    if (rsx_texture_alias_apply(hlsl, sizeof hlsl, alias_mask, alias_remap, cube_mask, 1u) < 0) {
+        fprintf(stderr, "[RSX] XY16F render-target alias translation failed\n");
+        abort();
     }
 
     /* FP_ONE=<hex fp_addr> forces target zero to white, including MRT
@@ -5165,7 +5183,7 @@ static void render_frame(void)
             vp_get_fp_pso(dr->vs_idx, dr->fp_addr, dr->blend_key, dr_num_rts(dr),
                           dr_rt_dxgi(dr), dr->fp_ctrl, dr_alpha_key(dr),
                           dr_unnorm(dr, udim), udim, dr->cmask, dr->cull,
-                          dr_cube_mask(dr), dr->ds_key, dr->fp_snap, &pso_n);
+                          dr_cube_mask(dr), dr->ds_key, dr->fp_snap, &pso_n, dr);
             /* If the program's structure changed after this draw was recorded
              * (the guest rewrote ucode at the same address), the b1 snapshot's
              * fp_constants[N] no longer matches the compiled shader -- redo it
@@ -5545,7 +5563,7 @@ static void render_frame(void)
                                          dr->fp_ctrl, dr_alpha_key(dr),
                                          dr_unnorm(dr, udim), udim, dr->cmask,
                                          dr->cull, dr_cube_mask(dr), dr->ds_key,
-                                         dr->fp_snap, &pso_n);
+                                         dr->fp_snap, &pso_n, dr);
                     if (pso_n && dr->fp_const_n != (u32)pso_n) {
                         /* the guest rewrote the program at this address after
                          * record: refresh the record + its b1 slot to match;
