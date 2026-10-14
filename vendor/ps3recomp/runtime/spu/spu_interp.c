@@ -1024,47 +1024,10 @@ static uint32_t interp_run_until_impl(spu_context* ctx, uint32_t start_lsa, uint
                             fprintf(stderr, " %02X%02X%02X%02X%02X%02X%02X%02X",
                                 g[o],g[o+1],g[o+2],g[o+3],g[o+4],g[o+5],g[o+6],g[o+7]);
                         fprintf(stderr, "\n"); fflush(stderr); } } } } }
-            extern void spu_halt(spu_context*);   /* spu_channels.c */
-            /* Idle yield: consecutive identical-pc bails with no events
-             * pending = the PM's branch-to-self "sleep until interrupt".
-             * The real SPU parks; a host spin here wedges the lane (and the
-             * spurs kernel thread inside one run). End the run -- the next
-             * kick re-arms it. Threshold is small (default 4, override with
-             * SPU_PM_IDLE_BAIL, e.g. 24 for the old behaviour): each bail
-             * costs a full interp round-trip, and at 24 the PM burned ~25
-             * bails (~100ms) per quantum -- the menu's biggest CPU sink. */
-            { uint32_t _p = ctx->pc & SPU_LS_MASK;
-              if (_p == ctx->iret_idle_pc) ctx->iret_idle_count++;
-              else { ctx->iret_idle_pc = _p; ctx->iret_idle_count = 1; }
-              { extern volatile unsigned g_spu_iret_bails; g_spu_iret_bails++; }
-              static unsigned s_bail_max = 0;
-              if (!s_bail_max) {
-                  const char* _e = getenv("SPU_PM_IDLE_BAIL");
-                  s_bail_max = (_e && atoi(_e) > 0) ? (unsigned)atoi(_e) : 4;
-              }
-              if (ctx->iret_idle_count > s_bail_max &&
-                  (ctx->event_status & ctx->event_mask) == 0) {
-                  static int _iy = 0;
-                  if (_iy++ < 8 || (_iy % 256) == 0) {
-                      fprintf(stderr, "[pm-idle] img=%d yielding at 0x%05X after %u idle bails "
-                              "(no events pending -- SPU sleeps until next kick)\n",
-                              ctx->image_id, _p, ctx->iret_idle_count);
-                      fflush(stderr);
-                  }
-                  g_spu_trampoline_fn = 0;
-                  ctx->iret_idle_count = 0;
-                  ctx->pm_designed = 1;   /* idle-bail park: designed yield (R33) */
-                  if (ctx->pm_win_touched) {
-                      static int s_wi = 0;
-                      if (s_wi++ < 24)
-                          fprintf(stderr, "[pm-window] EXIT class=idle pc=0x%05X "
-                                  "wi=%d 12A0=0x%08X 12C0=0x%08X\n",
-                                  (uint32_t)ctx->pc & SPU_LS_MASK, ctx->wi_state,
-                                  pm_gate_lw(ctx, 0x12A0), pm_gate_lw(ctx, 0x12C0)),
-                          fflush(stderr);
-                  }
-                  spu_halt(ctx);
-              } }
+            /* Equal IRET continuation PCs do not establish idleness: guest
+             * instructions can progress between returns. Preserve normal IRQ
+             * register restoration and redispatch without a synthetic halt. */
+            { extern volatile unsigned g_spu_iret_bails; g_spu_iret_bails++; }
             g_spu_trampoline_fn = spu_indirect_branch;   /* pending re-dispatch */
             g_spu_interp_steps = steps; g_spu_interp_last_pc = ctx->pc;
             return ctx->pc; }
