@@ -12,40 +12,21 @@ from pathlib import Path
 import psutil
 
 
-def _pid_alive(pid):
-    """Kernel-side existence probe; independent of psutil's snapshot."""
-    import ctypes
-    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-    STILL_ACTIVE = 259
-    k32 = ctypes.windll.kernel32
-    h = k32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
-    if not h:
-        return False
-    try:
-        code = ctypes.c_ulong()
-        if k32.GetExitCodeProcess(h, ctypes.byref(code)):
-            return code.value == STILL_ACTIVE
-        return True
-    finally:
-        k32.CloseHandle(h)
-
 def owned(run):
     run = Path(run).resolve()
     launch = json.loads((run / 'launch.json').read_text())
     # psutil.Process can transiently report a live Windows process as missing
     # while the game spawns SPURS thread storms; a single miss must not end the
     # replay while frames keep being produced. Retry briefly, then fail.
-    deadline = time.monotonic() + 4.0
     p = None
-    while p is None:
+    for _ in range(4):
         try:
             p = psutil.Process(launch['pid'])
+            break
         except psutil.NoSuchProcess:
-            # psutil occasionally misreports live Windows PIDs under SPURS
-            # load. Cross-check with the kernel handle table before failing.
-            if time.monotonic() >= deadline or not _pid_alive(launch['pid']):
-                raise ValueError('Owned native process no longer exists; do not send input')
-            time.sleep(.5)
+            time.sleep(.3)
+    if p is None:
+        raise ValueError('Owned native process no longer exists; do not send input')
     if p.name().lower() != 'ms1_recomp.exe' or abs(p.create_time() - launch['create_time']) > .01 or Path(p.exe()).resolve() != Path(launch['exe']).resolve():
         raise ValueError('Native ownership changed; do not send input')
     if Path(launch['output']).resolve() != run or (run / 'final.json').exists():
