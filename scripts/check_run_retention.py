@@ -124,6 +124,12 @@ class RetentionTests(unittest.TestCase):
         with patch.object(retention, 'native_live', return_value=True):
             self.assertFalse(self.old_plan()['eligible'])
 
+    def test_native_arriving_during_maintenance_prevents_startup(self):
+        (self.old / '.keep').write_text('keep all fixture runs')
+        with patch.object(retention, 'native_live', side_effect=[False, False, True]):
+            with self.assertRaisesRegex(RuntimeError, 'native'):
+                retention.automatic(self.repo)
+
     def test_live_recorded_pid(self):
         data = json.loads((self.old / 'launch.json').read_text())
         data.update(pid=os.getpid(), create_time=psutil.Process().create_time())

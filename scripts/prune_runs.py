@@ -207,6 +207,8 @@ def automatic(repo, profile=None):
     report['removed'] = apply(report)
     receipt = repo / 'temp' / f'run-retention-{time.time_ns()}.json'
     receipt.write_text(json.dumps(report, indent=2), encoding='utf-8')
+    if native_live():
+        raise RuntimeError('Another native owner arrived during maintenance; refuse startup')
     print(f"Run retention: removed {len(report['removed'])} expired runs; report {receipt}")
 
 
