@@ -773,3 +773,61 @@ visual improvement, not issue94 closure, race entry, complete motion correctness
 or a frame-time measurement. Issues #24/#13 remain open; retail stays parked.
 Dense temporal comparison and locating the first pass with residual stipple
 remain necessary. Original captures, shaders and target bytes stay private.
+
+### Vertex-color terrain blending and sampler mismatch (2026-10-14, issue 94)
+
+The user specifically requested checking vertex painting, including future race
+landscapes. Retained native run `temp/runs/20261014T132520.253865Z` (EXE
+`e75da09611d4e54dce68f728c542fb131ebd2a81c0675f7d732b14e823713af0`)
+reached MOHAWK by acknowledged ordinary input and stopped explicitly after
+110.593 s. Its owned material snapshot validates process/EXE/guest base and
+records ten sequential bounded texture reads with hashes. CPU BC1 decoding shows
+detailed original diffuse and normal maps; the earlier startup texture observer
+exhausted its 32-capture quota, so absence there does not establish missing art.
+
+Copied private shader evidence into that run before future FP_PICK overwrites:
+`terrain-vp.hlsl`, `terrain-pick.hlsl`, `terrain-pick.bin`. The binary is a live
+program read, not independently admitted as the SET-time snapshot. The captured
+HLSL for FP `05B6DC81`/VS26 (frame46, ten selected draws) establishes:
+
+- Vertex input attribute3 goes directly to output1/COLOR0 (VP lines34-35,185).
+- FP line200 reads COLOR0 R/B/A into half-register1 x/z/w. Line211 uses B in
+  `h6.xyz = B * constant6.xyz + constant5.xyz`, then saturates derived terms.
+- Texture1 is sampled at line294. Lines305,324,335 form a material blend with
+  R: `h2 = R * (sample1.xyw * constant10.xxy - prior + constant11.xxy) + prior`.
+  This is vertex-color-controlled material/detail blending, not merely a final
+  RGB tint. It does not identify the artist's painting tool or establish that
+  all terrain materials or race tracks share this shader. Alpha is loaded;
+  its eventual role has not been established.
+
+Preserve attribute3 normalization, channel order, interpolation and the
+half/full-register alias semantics when investigating flat terrain. A complete
+hill mesh/vertex-color span and an isolated pixel replay remain needed; the
+shader is shared by multiple draws, so first vertices alone do not prove full
+foreground coverage. Race landscape COLOR0 and material blending need their own
+native draw/asset binding before acceptance.
+
+A separate read-only metadata candidate retained sampler address/filter/control0
+and mip counts at draw time (no sampler rendering change). Run
+`temp/runs/20261014T133222.152229Z`, EXE
+`bd23b6b14eba9ad409d36f3db582be4543ae2bc579d432ddadb14c1e163d0644`,
+frame60 shows FP05B6DC81 t0 BC1 1024-square, address60010121, filter02043F80,
+control080078010, 11 mips; related 256-square maps have9 mips. FP04DE6701 uses
+address60010101/filter02043F34 and 11-12 mips. These request repeat S/T and linear
+min/mag; the current D3D12 root signature hardcodes unit0 point/clamp for fonts.
+The display XY16F alias instead requests address60030303/filter01012000,
+point/clamp, matching its existing adapter policy. Native upload resources still
+have one mip, so the evidence rejects selecting a low uploaded mip as the direct
+explanation, but missing mip filtering remains a distinct potential source of
+motion shimmer. No sampler fix or native hill/graphics acceptance from this run.
+The owned visible muted run stopped explicitly after128.719 s, return1; one
+observed intro CROSS4 was acknowledged13:33:55.836287Z, frame48 SHA
+a6443130e5b588ec45b473c7d0fa018955aa3486aacfaf2345c7f043b5c23847.
+
+Authored sampler GPU reducer uses the production descriptor decoder: old fixed
+states fail five of seven cases, candidate WARP passes all seven. Controls retain
+point/clamp font behavior; coverage includes repeat, linear interpolation, mixed
+S/T, a high texture unit, border and mirror. Decoder checks anisotropy, signed
+LOD bias, LOD bounds and explicit unsupported-address rejection. Evidence:
+`temp/checks/rsx-sampler-20261014T133640.242508Z`. Backend binding integration
+and native verification are still required; this does not establish hill causality.
