@@ -11,6 +11,12 @@ native process. This needs no scheduled agent, tokens or background service.
 It operates only on that checkout's `temp/runs` and writes a run-retention JSON
 receipt under `temp/`. No game process is killed by maintenance.
 
+The launcher refuses a new native run below **16 GiB** free and its existing
+owned-run resource loop stops below **8 GiB** free. It logs `disk_available`
+alongside RAM/commit observations. These limits stop capture growth rather than
+silently deleting protected evidence. The low-disk pre-launch path has an
+authored red/green test against the real launcher, with no game process created.
+
 For another checkout, or for an explicit report:
 
 ```powershell

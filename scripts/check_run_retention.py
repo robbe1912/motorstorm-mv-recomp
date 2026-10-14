@@ -4,12 +4,14 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import zipfile
 
 import psutil
 import prune_runs as retention
+import run as native_launcher
 
 
 class RetentionTests(unittest.TestCase):
@@ -131,6 +133,34 @@ class RetentionTests(unittest.TestCase):
             with self.assertRaises(OSError):
                 retention.apply(self.old_plan())
         self.assertTrue((self.old / 'native.log').exists())
+
+    def disk_launch(self, free):
+        exe = self.repo / 'build/native/ms1_recomp.exe'
+        exe.parent.mkdir(parents=True, exist_ok=True)
+        exe.write_bytes(b'authored dummy, not a native executable')
+        cfg = {k: self.repo / k for k in ('elf', 'ffmpeg', 'userdata', 'disc')}
+        with patch.object(native_launcher, 'ROOT', self.repo), patch.object(native_launcher, 'config', return_value=cfg), \
+             patch.object(native_launcher.psutil, 'process_iter', return_value=[]), \
+             patch.object(native_launcher.psutil, 'disk_usage', return_value=SimpleNamespace(free=free)), \
+             patch.object(native_launcher.subprocess, 'STARTUPINFO', return_value=SimpleNamespace(dwFlags=0), create=True), \
+             patch.object(native_launcher.subprocess, 'STARTF_USESHOWWINDOW', 1, create=True), \
+             patch.object(native_launcher.subprocess, 'CREATE_NO_WINDOW', 0, create=True), \
+             patch.object(native_launcher.subprocess, 'Popen', side_effect=RuntimeError('launch boundary reached; no process created')) as launch, \
+             patch('sys.argv', ['run.py', '--seconds', '1']):
+            try:
+                native_launcher.main()
+            finally:
+                for call in launch.call_args_list:
+                    call.kwargs['stdout'].close()
+                    call.kwargs['stderr'].close()
+
+    def test_low_disk_refuses_actual_launcher(self):
+        with self.assertRaisesRegex(SystemExit, 'disk'):
+            self.disk_launch(15 * 1024**3)
+
+    def test_adequate_disk_reaches_launch_boundary(self):
+        with self.assertRaisesRegex(RuntimeError, 'launch boundary reached'):
+            self.disk_launch(16 * 1024**3)
 
     def test_junction_or_symlink_escape(self):
         with tempfile.TemporaryDirectory() as outside:
