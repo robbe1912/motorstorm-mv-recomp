@@ -60,105 +60,95 @@ static void write_be32(uint32_t addr, uint32_t val)
  * r4 = flags (page size)
  * r5 = pointer to receive allocated address (u32*)
  * -----------------------------------------------------------------------*/
-int64_t sys_memory_allocate(ppu_context* ctx)
+/* Both allocation syscalls share the same VA and physical-memory accounting. */
+static int64_t memory_allocate(uint32_t size, uint32_t flags,
+                               uint32_t addr_out, uint32_t container_id)
 {
-    uint32_t size      = LV2_ARG_U32(ctx, 0);
-    uint32_t flags     = LV2_ARG_U32(ctx, 1);
-    uint32_t addr_out  = LV2_ARG_PTR(ctx, 2);
-
-    fprintf(stderr, "[sys_memory] allocate(size=0x%X, flags=0x%X)\n",
-            size, flags);
-
-    /* Determine alignment based on page size flags */
-    uint32_t alignment;
-    if (flags & SYS_MEMORY_PAGE_SIZE_1M) {
-        alignment = 0x100000; /* 1 MB */
-    } else {
-        alignment = 0x10000;  /* 64 KB */
-    }
-
+    uint32_t alignment = (flags & SYS_MEMORY_PAGE_SIZE_1M) ? 0x100000 : 0x10000;
     size = VM_ALIGN_UP(size, alignment);
-
-    if (size == 0)
-        return (int64_t)(int32_t)CELL_EINVAL;
+    if (!size) return (int64_t)(int32_t)CELL_EINVAL;
 
     bump_lock();
-
-    /* The larger VA arena must not increase the physical memory budget. */
+    sys_mem_container_info* container = NULL;
+    if (container_id) {
+        if (container_id > SYS_MEMORY_CONTAINER_MAX ||
+            !g_sys_mem_containers[container_id - 1].active) {
+            bump_unlock();
+            return (int64_t)(int32_t)CELL_ESRCH;
+        }
+        container = &g_sys_mem_containers[container_id - 1];
+        if (container->used_size > container->total_size ||
+            size > container->total_size - container->used_size) {
+            bump_unlock();
+            return (int64_t)(int32_t)CELL_ENOMEM;
+        }
+    }
     if (s_total_allocated > SYS_MEM_USER_TOTAL ||
         size > SYS_MEM_USER_TOTAL - s_total_allocated) {
         bump_unlock();
         return (int64_t)(int32_t)CELL_ENOMEM;
     }
 
-    /* Initialize bump pointer on first call */
-    if (g_sys_mem_bump_ptr == 0)
-        g_sys_mem_bump_ptr = SYS_MEM_ALLOC_BASE;
-
-    /* Align bump pointer */
-    g_sys_mem_bump_ptr = VM_ALIGN_UP(g_sys_mem_bump_ptr, alignment);
-
-    /* LV1 dual map: every handed-out page also lives at exactly +0x05000000,
-     * so a new real allocation must not land on an earlier allocation's alias
-     * image (0x46EBC100-class ambiguity: both the EA and its primary were
-     * registered, and no EA-based rule could tell alias from real memory).
-     * Walk forward until the candidate is conflict-free; alignment steps are
-     * at most 1MB so this is a bounded, cold loop. */
-    {
-        extern int sysmem_alias_va_conflicts(uint32_t, uint32_t);
-        while (g_sys_mem_bump_ptr + size <= SYS_MEM_ALLOC_END &&
-               sysmem_alias_va_conflicts(g_sys_mem_bump_ptr, size)) {
-            g_sys_mem_bump_ptr += alignment;
-        }
-    }
-
-    /* Check if we have room */
-    if (g_sys_mem_bump_ptr + size > SYS_MEM_ALLOC_END) {
+    uint32_t address = VM_ALIGN_UP(g_sys_mem_bump_ptr ? g_sys_mem_bump_ptr : SYS_MEM_ALLOC_BASE, alignment);
+    extern int sysmem_alias_va_conflicts(uint32_t, uint32_t);
+    while (address <= SYS_MEM_ALLOC_END - size &&
+           sysmem_alias_va_conflicts(address, size)) address += alignment;
+    if (address > SYS_MEM_ALLOC_END - size) {
         bump_unlock();
         return (int64_t)(int32_t)CELL_ENOMEM;
     }
-
-    /* Find a free allocation slot */
     int slot = -1;
-    for (int i = 0; i < SYS_MEMORY_ALLOC_MAX; i++) {
+    for (int i = 0; i < SYS_MEMORY_ALLOC_MAX; i++)
         if (!g_sys_mem_allocs[i].active) { slot = i; break; }
-    }
     if (slot < 0) {
         bump_unlock();
         return (int64_t)(int32_t)CELL_ENOMEM;
     }
-
-    uint32_t alloc_addr = g_sys_mem_bump_ptr;
-    g_sys_mem_bump_ptr += size;
+    int32_t rc = vm_commit(address, size);
+    if (rc != CELL_OK) {
+        bump_unlock();
+        return (int64_t)rc;
+    }
+    extern void sysmem_alias_record(uint32_t, uint32_t);
+    sysmem_alias_record(address, size);
+    sys_mem_alloc_info* allocation = &g_sys_mem_allocs[slot];
+    allocation->addr = address;
+    allocation->size = size;
+    allocation->container_id = (int32_t)container_id;
+    allocation->page_size = alignment;
+    allocation->active = 1;
     s_total_allocated += size;
-
-    sys_mem_alloc_info* a = &g_sys_mem_allocs[slot];
-    a->active       = 1;       /* claim the slot before unlocking */
-    a->addr         = alloc_addr;
-    a->size         = size;
-    a->container_id = 0;
-    a->page_size    = alignment;  /* 0x100000 (1M) or 0x10000 (64K) */
-
+    if (container) container->used_size += size;
+    g_sys_mem_bump_ptr = address + size;
+    if (addr_out) write_be32(addr_out, address);
     bump_unlock();
-
-    /* Commit the pages (window is outside the pre-committed main region);
-     * fresh commits are already zeroed by the OS */
-    if (vm_commit(alloc_addr, size) != CELL_OK) {
-        a->active = 0;
-        return (int64_t)(int32_t)CELL_ENOMEM;
-    }
-
-    fprintf(stderr, "[sys_memory] allocate -> 0x%08X\n", alloc_addr);
-    /* Register for the LV1 SPU alias window (spu_ea_alias.c): SPURS reaches
-     * this memory from SPU side as base|0x05000000. */
-    { extern void sysmem_alias_record(uint32_t, uint32_t);
-      sysmem_alias_record(alloc_addr, size); }
-
-    if (addr_out != 0) {
-        write_be32(addr_out, alloc_addr);
-    }
-
+    fprintf(stderr, "[sys_memory] allocate -> 0x%08X\n", address);
     return CELL_OK;
+}
+
+int64_t sys_memory_allocate(ppu_context* ctx)
+{
+    return memory_allocate(LV2_ARG_U32(ctx, 0), LV2_ARG_U32(ctx, 1),
+                           LV2_ARG_PTR(ctx, 2), 0);
+}
+
+/* LV2 350: size, container ID, page flags, output pointer (r3..r6). */
+int64_t sys_memory_allocate_from_container(ppu_context* ctx)
+{
+    uint64_t size = ctx->gpr[3];
+    uint32_t cid = LV2_ARG_U32(ctx, 1);
+    uint64_t flags = ctx->gpr[5];
+    uint32_t output = LV2_ARG_PTR(ctx, 3);
+    uint32_t alignment = flags == 0 || flags == SYS_MEMORY_PAGE_SIZE_1M ? 0x100000 :
+                         flags == SYS_MEMORY_PAGE_SIZE_64K ? 0x10000 : 0;
+    if (!size) return (int64_t)(int32_t)CELL_EALIGN;
+    if (!alignment) return (int64_t)(int32_t)CELL_EINVAL;
+    if (size % alignment) return (int64_t)(int32_t)CELL_EALIGN;
+    if (size > UINT32_MAX) return (int64_t)(int32_t)CELL_ENOMEM;
+    if (!cid) return (int64_t)(int32_t)CELL_ESRCH;
+    if (!output) return (int64_t)(int32_t)CELL_EFAULT;
+    return memory_allocate((uint32_t)size, flags ? (uint32_t)flags : SYS_MEMORY_PAGE_SIZE_1M,
+                           output, cid);
 }
 
 /* ---------------------------------------------------------------------------
@@ -170,14 +160,19 @@ int64_t sys_memory_free(ppu_context* ctx)
 {
     uint32_t addr = LV2_ARG_U32(ctx, 0);
 
+    bump_lock();
     for (int i = 0; i < SYS_MEMORY_ALLOC_MAX; i++) {
-        if (g_sys_mem_allocs[i].active && g_sys_mem_allocs[i].addr == addr) {
-            s_total_allocated -= g_sys_mem_allocs[i].size;
-            g_sys_mem_allocs[i].active = 0;
+        sys_mem_alloc_info* allocation = &g_sys_mem_allocs[i];
+        if (allocation->active && allocation->addr == addr) {
+            s_total_allocated -= allocation->size;
+            if (allocation->container_id > 0 && allocation->container_id <= SYS_MEMORY_CONTAINER_MAX)
+                g_sys_mem_containers[allocation->container_id - 1].used_size -= allocation->size;
+            allocation->active = 0;
+            bump_unlock();
             return CELL_OK;
         }
     }
-
+    bump_unlock();
     return (int64_t)(int32_t)CELL_EINVAL;
 }
 
@@ -288,10 +283,17 @@ int64_t sys_memory_container_destroy(ppu_context* ctx)
         return (int64_t)(int32_t)CELL_ESRCH;
 
     sys_mem_container_info* c = &g_sys_mem_containers[container_id - 1];
-    if (!c->active)
+    bump_lock();
+    if (!c->active) {
+        bump_unlock();
         return (int64_t)(int32_t)CELL_ESRCH;
-
+    }
+    if (c->used_size) {
+        bump_unlock();
+        return (int64_t)(int32_t)CELL_EBUSY;
+    }
     c->active = 0;
+    bump_unlock();
     return CELL_OK;
 }
 
@@ -434,103 +436,6 @@ int64_t sys_mmapper_allocate_shared_memory(ppu_context* ctx)
     uint32_t shm_id = (uint32_t)(slot + 1);
     if (id_out != 0) {
         write_be32(id_out, shm_id);
-    }
-
-    return CELL_OK;
-}
-
-/* ---------------------------------------------------------------------------
- * sys_memory_allocate_from_container (lv2 350, 0x15E)
- *
- * r3 = container id
- * r4 = size
- * r5 = flags (page size)
- * r6 = pointer to receive the allocated address (u32*)
- *
- * Real-table number and ABI verified against rpcs3
- * (rpcs3/Emu/Cell/lv2/lv2.cpp: 348 allocate, 349 free, 350 allocate_from_
- * container; sys_memory.h: cid, size, flags, alloc_addr). MotorStorm's Havok
- * world memory comes through 350; leaving it stubbed returned CELL_OK without
- * writing alloc_addr, so the guest built its context on a null pointer and
- * havokresource.cpp fatal'd ("Could not load any root level object or
- * animation data") after writing the SDK version blob to NULL+0x8..0x30.
- *
- * Container policy follows container_get_size above: a real container is
- * charged against its budget; an unknown non-zero cid (MS1 passes its own
- * WWS pool handle) resolves to the default container instead of ESRCH.
- * -----------------------------------------------------------------------*/
-int64_t sys_memory_allocate_from_container(ppu_context* ctx)
-{
-    uint32_t container_id = LV2_ARG_U32(ctx, 0);
-    uint32_t size         = LV2_ARG_U32(ctx, 1);
-    uint32_t flags        = LV2_ARG_U32(ctx, 2);
-    uint32_t addr_out     = LV2_ARG_PTR(ctx, 3);
-
-    uint32_t alignment = (flags & SYS_MEMORY_PAGE_SIZE_1M) ? 0x100000 : 0x10000;
-    size = VM_ALIGN_UP(size, alignment);
-    if (size == 0)
-        return (int64_t)(int32_t)CELL_EINVAL;
-
-    /* Charge the container when it is one of ours. */
-    if (container_id >= 1 && container_id <= SYS_MEMORY_CONTAINER_MAX &&
-        g_sys_mem_containers[container_id - 1].active) {
-        sys_mem_container_info* c = &g_sys_mem_containers[container_id - 1];
-        bump_lock();
-        if (c->used_size + size > c->total_size) {
-            bump_unlock();
-            return (int64_t)(int32_t)CELL_ENOMEM;
-        }
-        c->used_size += size;
-        bump_unlock();
-    }
-
-    bump_lock();
-
-    if (g_sys_mem_bump_ptr == 0)
-        g_sys_mem_bump_ptr = SYS_MEM_ALLOC_BASE;
-    g_sys_mem_bump_ptr = VM_ALIGN_UP(g_sys_mem_bump_ptr, alignment);
-
-    if (g_sys_mem_bump_ptr + size > SYS_MEM_ALLOC_END) {
-        bump_unlock();
-        return (int64_t)(int32_t)CELL_ENOMEM;
-    }
-
-    int slot = -1;
-    for (int i = 0; i < SYS_MEMORY_ALLOC_MAX; i++) {
-        if (!g_sys_mem_allocs[i].active) { slot = i; break; }
-    }
-    if (slot < 0) {
-        bump_unlock();
-        return (int64_t)(int32_t)CELL_ENOMEM;
-    }
-
-    uint32_t alloc_addr = g_sys_mem_bump_ptr;
-    g_sys_mem_bump_ptr += size;
-    s_total_allocated  += size;
-
-    sys_mem_alloc_info* a = &g_sys_mem_allocs[slot];
-    a->active       = 1;
-    a->addr         = alloc_addr;
-    a->size         = size;
-    a->container_id = container_id;
-    a->page_size    = alignment;
-
-    bump_unlock();
-
-    if (vm_commit(alloc_addr, size) != CELL_OK) {
-        a->active = 0;
-        return (int64_t)(int32_t)CELL_ENOMEM;
-    }
-
-    fprintf(stderr, "[sys_memory] allocate_from_container(cid=0x%X, size=0x%X) -> 0x%08X\n",
-            container_id, size, alloc_addr);
-    /* Register for the LV1 SPU alias window (spu_ea_alias.c): SPURS reaches
-     * this memory from SPU side as base|0x05000000. */
-    { extern void sysmem_alias_record(uint32_t, uint32_t);
-      sysmem_alias_record(alloc_addr, size); }
-
-    if (addr_out != 0) {
-        write_be32(addr_out, alloc_addr);
     }
 
     return CELL_OK;

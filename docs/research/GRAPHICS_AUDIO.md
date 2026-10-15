@@ -1013,3 +1013,70 @@ reference with the same 0.95 threshold and once-only optional action. Run
 `20261015T000830.431354Z` then skipped once and reached inspected PLAY at
 40.484 seconds. Subsequent normal-route runs also skipped once. These are
 specific receipts, not universal reliability proof for all caption phases.
+
+
+## Container allocation ABI and native shape preservation (2026-10-15)
+
+[Issue 119](https://github.com/robbe1912/motorstorm-mv-recomp/issues/119)
+now has a production-path reproduction and a generic allocator correction.
+The curated syscall 350 handler decoded r3/r4 as container ID/size; the LV2
+ABI is size/container ID/flags/output in r3..r6. The
+[RPCS3 declaration](https://github.com/RPCS3/rpcs3/blob/2003f2404fc3db469c1b95478051be1109421522/rpcs3/Emu/Cell/lv2/sys_memory.h)
+and implementation independently establish that order. The unchanged C unit,
+called through its registered syscall, took a 6 MiB request with CID 1 and
+tracked only 1 MiB; its following ordinary allocation overlapped the requested
+extent. The corrected production unit reserves all 6 MiB. The authored fixture
+also checks page flags, IDs, physical/container/VA/slot budgets, free accounting,
+busy-container destruction and failed-commit rollback.
+
+The generic implementation is saved on the own-fork
+[container-allocation branch](https://github.com/robbe1912/ps3recomp/tree/codex/memory-container-allocation),
+implementation commit `9c72279`, CI wiring `44c5ed0`. Its native port is in the
+active worktree's curated `runtime/syscalls/sys_memory.c/.h`. It shares the
+ordinary allocator's physical budget and alias-aware VA selection; no game
+routine, memcpy, pointer or resource-lifetime bypass was added.
+
+The supported optimized build produced EXE SHA-256
+`44f7b3997e888dd4765a8d8b9bbb4c529895fd569f6368494c12348baf692826`,
+PDB `984642640a55d38951e9f5c0f495cb5427c14397cb186950d934a86fce3a28e7`,
+using the unchanged named-US ELF. Native run `20261015T163536.232616Z` used
+8 observed/acknowledged ordinary CROSS inputs, muted/windowed ownership and
+an explicit owned stop. A PDB/loaded-CodeView-bound read-only metadata snapshot
+records CID 1's allocation at `4D700000`, size `600000`, bump `4DD00000`.
+The original resource ID `000AE0A6:74683664`, size `530CB0`, fits that extent.
+The later ID `000A4B1E:E18E2AF8` now reads into `4E0BFF80..4E0D8F60`, outside
+the original buffer, rather than the former overlapping `4DBBFF80` buffer.
+Sequential snapshots alone remain insufficient for a complete free history.
+
+The deferred source/shape watch completed 85.031 seconds, 9 hits and 6 bounded
+dumps, with no failure or cleanup errors. After initialization, the watched
+shape head remains `10070CC800000001` in all recorded subsequent writes; the
+old zeroing/name-copy overwrite did not recur in this watched interval.
+The resource observer recorded 195 constructors, compared with 131 at the old
+fault. No unresolved-indirect or garbage-vcall message appeared; all 16
+incomplete fragment-program warnings remain visible. The actual-data verifier
+passes, while an explicit old-1-MiB expectation fails at that assertion.
+Private raw data/checkers/dumps stay under the run and `temp/issue119-source`.
+
+The separate 300-second control run `20261015T162223.899508Z` likewise passed
+the former corruption point, but the captured view became black. Four owned
+read-only stack snapshots in the later run distinguish ongoing loading from a
+proven permanent wait: the late main-thread sample at 16:37:54 UTC waits through
+`B15714/A012E8`, while the 16:37:59 sample executes `C5C424/87D278/6C379C` and
+other guest functions. A physics deadlock is not established by these samples.
+The next race-entry investigation must correlate progress/physics completion
+and actual backbuffers before changing semantics. Native race/graphics
+acceptance, controls/opponents/audio/saves, sustained 30 FPS and the final
+editable C/Rust plus Windows/Linux game packages remain open. This diagnostic
+run is not a frame-time benchmark; retail mstream remains parked.
+
+
+The curated regression is `python scripts/check_memory_container.py`. It compiles
+`src/memory_container_check.c` against the actual curated syscall implementation
+without original game inputs. Its authored alias adapter tests conflict avoidance;
+`check_memory_capacity.py` separately exercises the real alias registry. Both
+pass locally. Compiling the same container fixture against the preserved old
+production source fails at the 6 MiB allocation-size assertion. Source-audit CI
+runs the regression on Linux and Windows. The selected port's syscall source
+matches the native-tested hash above; this is not a clean full-game build from
+this review branch or proof of Linux game execution.
