@@ -20,8 +20,14 @@ def main():
     ap.add_argument('--trace-task-lifecycle',type=int,default=0,help='Opt-in task exit/return trace, 1..4096 events per runtime component')
     ap.add_argument('--trace-task-image',type=int,help='Restrict the lifecycle trace to a registered image ID')
     ap.add_argument('--capture-menu',action='store_true',help='Internal menu frames for screen-gated PAD_FILE reproduction; no desktop capture')
+    ap.add_argument('--capture-burst-frames',type=int,default=0,help='Opt-in once-only consecutive presented-frame burst, 1..120; arm via run-local capture-burst.arm')
+    ap.add_argument('--capture-on-pad',type=lambda value:int(value,0),default=0,help='Arm capture burst in native code when PAD_FILE consumes a matching button mask')
     ap.add_argument('--menu-replay',type=Path,help='Private observed-screen profile; normal PAD_FILE input, not a scene jump')
     args=ap.parse_args()
+    if not 0<=args.capture_burst_frames<=120: raise SystemExit('Capture burst must be 0 (disabled) or 1..120 frames')
+    if not 0<=args.capture_on_pad<=0xffff: raise SystemExit('Capture event mask must be 0 (disabled) or 1..0xffff')
+    if args.capture_on_pad and not args.capture_burst_frames: raise SystemExit('Capture input event requires --capture-burst-frames')
+    if args.capture_burst_frames and not (args.capture_menu or args.menu_replay): raise SystemExit('Capture burst requires --capture-menu or --menu-replay')
     if args.menu_replay:
         from menu_replay import load_profile
         replay_profile=load_profile(args.menu_replay)  # Reject blind routes before process creation.
@@ -62,6 +68,10 @@ def main():
     if args.capture_menu or args.menu_replay:
         (out/'rsx').mkdir()
         env.update(RSX_CAP='1:100:120',RSX_CAP_DIR=str(out/'rsx'))
+    if args.capture_burst_frames:
+        env.update(RSX_CAP_ARM_FILE=str(out/'capture-burst.arm'),RSX_CAP_BURST=str(args.capture_burst_frames))
+    if args.capture_on_pad:
+        env['RSX_CAP_PAD_MASK']=hex(args.capture_on_pad)
     log=(out/'native.log').open('wb');err=(out/'native.err').open('wb')
     # Request a GUI window while keeping the launcher console hidden.
     startup=subprocess.STARTUPINFO()
@@ -70,6 +80,8 @@ def main():
     p=subprocess.Popen([str(exe),str(c['elf'])],cwd=ROOT,env=env,stdout=log,stderr=err,creationflags=subprocess.CREATE_NO_WINDOW,startupinfo=startup)
     proc=psutil.Process(p.pid); start=time.monotonic(); reason='guard tooling failure'; terminated=False
     record={'pid':p.pid,'create_time':proc.create_time(),'exe':str(exe),'exe_sha256':hashlib.sha256(exe.read_bytes()).hexdigest(),'elf_sha256':hashlib.sha256(c['elf'].read_bytes()).hexdigest(),'output':str(out),'muted':True,'capture_menu':bool(args.capture_menu or args.menu_replay),'menu_replay':str(args.menu_replay.resolve()) if args.menu_replay else None,'capture_textures':args.capture_textures,'trace_video':args.trace_video,'capture_havok':args.capture_havok or args.capture_havok_only,'capture_bike':args.capture_bike,'loadtime_trace':args.loadtime_trace,'capture_profile':'broad' if args.capture_havok else 'havok-only' if args.capture_havok_only else 'none','environment':{k:v for k,v in env.items() if k in ('PS3_VFS_ROOT','PS3_HDD0_ROOT','PS3_SAVEDATA_ROOT','AUDIO_MUTE','PAD_FILE','CAP_HAVOK_DIR','CAP_BIKE_DIR','CAP_BIKE_ARM_FILE','LOADTIME_TRACE','LOADTIME_TRACE_FILE','SPU_PM_INTERP') or k.startswith(('SPU_PM_','TEX_','RSX_')) or k in ('VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG') or k=='SPU_WP'}}
+    record['capture_burst_frames']=args.capture_burst_frames
+    record['capture_on_pad']=args.capture_on_pad
     record['environment'].update({k:env[k] for k in ('SPU_TASK_LIFECYCLE_TRACE','SPU_TASK_LIFECYCLE_IMAGE') if k in env})
     (out/'launch.json').write_text(json.dumps(record,indent=2)); print('Owned native PID',p.pid,'output',out,flush=True)
     window_ready=False

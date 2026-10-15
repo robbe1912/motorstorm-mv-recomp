@@ -14,6 +14,7 @@
 #include "cellPad.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include "../video/rsx_capture_event.h"
 #include <string.h>
 #include <math.h>
 #include "../../runtime/platform/win32_compat.h"   /* GetTickCount64 on POSIX */
@@ -713,6 +714,7 @@ skip_inject: ;
                       unsigned m = (unsigned)strtoul(buf, &rest, 0);
                       int n = (int)strtol(rest, 0, 0);
                       if (m) { held_mask = m; held_n = n > 0 ? n : 40;
+                               rsx_capture_pad_notify(m);
                                printf("[cellPad] PAD_FILE press 0x%04X\n", m); fflush(stdout);
                                if (loadtime_on()) { char d[64];
                                    snprintf(d, sizeof d, "mask=0x%04X polls=%d", m, held_n);

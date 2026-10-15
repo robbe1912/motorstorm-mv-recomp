@@ -190,3 +190,27 @@ The merged source tree was compared with the tested integration tree and
 matched exactly before these documentation updates. This is one diagnostic
 run, not a performance comparison, clean regeneration proof or acceptance
 of assets, sound, saves, driving, opponents or minimum 60 FPS.
+
+## Bounded capture at an input event (issue 110)
+
+Use `--capture-menu --capture-burst-frames 64 --capture-on-pad 0x10` to capture
+the first matching UP command consumed by native PAD_FILE code. The input
+still requires the ordinary inspected-screen gate and receipt. A shared atomic
+notification arms a once-only renderer burst; no guest addresses, menu names
+or forced transitions are encoded in the runtime. The budget is 1..120
+presented batches with recorded operations, with unique indices shared with
+sparse navigation captures. Each manifest records reason and presenting flag.
+The burst cannot restart in the same process. Invalid budgets/masks fail
+before launch. Default capture behavior is unchanged.
+
+Without `--capture-on-pad`, an owned controller may create the run-local
+`capture-burst.arm` marker after checking ownership and the observed scene.
+For continued observation after reaching a menu, use a capture-only bounded
+launcher and a separate normal `menu_replay.replay` controller. Do not retain
+a stale target gate to avoid the normal replay launcher's target shutdown.
+Native event/manifest evidence is required in addition to selector tests.
+
+`python scripts/check_rsx_capture_schedule.py` compiles the actual selector
+and event latch with an authored game-free fixture, then checks launch
+preflight. It runs on Ubuntu and Windows. Capture readback perturbs timing;
+these runs do not prove normal frame rates or correct vehicle rendering.

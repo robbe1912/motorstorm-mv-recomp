@@ -963,3 +963,53 @@ fixes live-draw depth snapshots, same-address color/depth preference, and
 sampling the bound zeta with depth writes off. Its reported test uses Proton
 and a test-only shader change. It does not prove native MotorStorm behavior.
 No wholesale backend replacement or upstream branch trial is accepted here.
+
+## One-frame livery vehicle captured at native input (issues 24 / 110)
+
+Run `20261015T001556.521391Z`, native EXE SHA256
+`6442b20f4bbbafef96c8d916ad37a6e6ea50e5ebdd55d0151987db3f81fe9b8f`,
+followed normal LANGUAGE / observed-caption skip / PLAY / ticket / bike-class
+inputs. The original ELF identity stayed unchanged. After visually inspecting
+the selection scene, one screen-gated UP hold of four polls was acknowledged
+at `00:17:26.759008Z`. Native PAD_FILE consumption triggered the renderer
+capture directly, without a guest address condition or forced transition.
+
+All 64 complete backbuffers/manifests have consecutive frame counts
+2522..2585, capture indices 22..85, burst reason and presenting flag. The
+ignored run contains `capture-event-proof.json` with input, launch/final
+identities and hashes. It is pinned with `.keep`; original captures remain
+private. The bounded launcher ended at 141.063 seconds, with guard termination
+and return 1. This is not a race or performance acceptance run.
+
+The user's transient vehicle witness is now directly reproduced:
+
+| Capture | Guest-render frame counter | Recorded operations | Observation |
+| --- | --- | --- | --- |
+| 32 | 2532 | 376 | Loading emblem; no bike |
+| 33 | 2533 | 667 | Recognizable bike, malformed stippled/flat materials |
+| 34 | 2534 | 381 | Bike and loading emblem absent |
+
+The visible frame has 657 DRAW records and 10 CLEAR records, versus 372/4
+before and 377/4 after. It includes 125 draws using run-local VS32 into
+RT `0x02B90000`, and 141 using VS33 into RT `0x00D00000`. Neither shader group
+appears in the captured operations of frames 32, 34 or 35. These are observed
+groups, not recovered semantic shader names. A private differential records
+the remaining FP/material signatures.
+
+Next probes distinguish three explanations: cached/replayed RSX commands
+stop reaching draw recording; guest scene/visibility logic stops generating
+the bike batches; or a submission/present boundary places the batches outside
+the captured list. Compare the guest command producer, decoded draw callbacks
+and recorded batch boundaries around the same livery event. A GPU-only
+material/depth rejection cannot by itself explain the missing shader groups
+in the next captured list. The malformed material in the visible frame also
+remains unresolved. This does not establish correctly rendered assets.
+
+The earlier rebuilt run `20261015T000411.867467Z` missed the intro gate:
+its inspected Sony-caption frame 12 scored 0.80938 against the best previous
+reference. The movie continued playing; it was not a demonstrated native
+video stall. That genuine caption was added as another observed private
+reference with the same 0.95 threshold and once-only optional action. Run
+`20261015T000830.431354Z` then skipped once and reached inspected PLAY at
+40.484 seconds. Subsequent normal-route runs also skipped once. These are
+specific receipts, not universal reliability proof for all caption phases.
