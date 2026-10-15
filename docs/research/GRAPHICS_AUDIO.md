@@ -1080,3 +1080,12 @@ production source fails at the 6 MiB allocation-size assertion. Source-audit CI
 runs the regression on Linux and Windows. The selected port's syscall source
 matches the native-tested hash above; this is not a clean full-game build from
 this review branch or proof of Linux game execution.
+
+
+Capture qualification correction: in run `20261015T163536.232616Z`, frame 25
+is explicitly `presenting=0` (frame count 3001), so its black backbuffer cannot
+establish visible black race graphics. The most recent presented capture is
+frame 24 (`presenting=1`, frame count 2881), visually inspected as the original
+track-loading map/instructions. The metadata/source-watch conclusions above
+are unchanged; completed race presentation remains unverified. Future screen
+and race evidence must distinguish presented captures from offscreen work.
