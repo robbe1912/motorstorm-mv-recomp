@@ -1013,3 +1013,55 @@ reference with the same 0.95 threshold and once-only optional action. Run
 `20261015T000830.431354Z` then skipped once and reached inspected PLAY at
 40.484 seconds. Subsequent normal-route runs also skipped once. These are
 specific receipts, not universal reliability proof for all caption phases.
+
+
+## SPU extended float correction (2026-10-15, issue 116)
+
+[Issue 116](https://github.com/robbe1912/motorstorm-mv-recomp/issues/116) follows
+the current-body/SPU-local-store producer evidence in issues 113-115. The generic
+value defect has an independent game-free reproducer: FRSQEST(0) returns an
+extended finite estimate, which the former IEEE-based FI treated as NaN.
+The old zero -> FRSQEST -> FI -> FM sequence produced `7FF50000`; the corrected
+sequence produces positive zero. This is a helper regression, not proof of the
+first failing guest instruction or ownership of staged SPU code.
+
+IBM SPU ISA v1.2 section 9 specifies finite exponent-255 values, denormal-input
+flushing, positive zero results, truncation toward zero, signed saturation and
+an exact product retained until the fused addition. The authored own-fork
+implementation uses integer significands and packed FI interpolation. An
+independent Python Fraction oracle checks 36,816 lanes through actual helpers
+and actual fork instruction dispatch. The old helpers and old interpreter fail;
+the correction passes. Existing helper tests pass 63/63. The selective curated
+adoption has an additional 80-lane regression (40 old failures, zero new).
+Provenance and qualifications are in [VENDOR](../VENDOR.md#spu-extended-single-precision-values-issue-116).
+
+Supported checked/O1 build `20261015T112940.352654Z` produced native EXE
+`10a6492697219c657f8d33931ef725d812d868b577e9d36fc98981f9dffa103e`, using the
+named US ELF `3e68c72f8fbd6a30ef30d4535462cf70f1cc86d111f56574adb7dd2c255e0706`.
+The configured `reused-target` is a junction to `integration-live`; Ninja
+resolves the new runtime headers in this active worktree. Shared original and
+generated inputs were not edited.
+
+Private native run `20261015T113535.460102Z` followed six ordinary observed menu
+actions, one observed Sony skip and one acknowledged UP4. Independent raw-byte
+checks find all 499 resolved body/rigid transforms, parked matrices and linear/
+angular velocity samples finite, including 439 ready parked samples. The same
+checker rejects the prior witness. Reads are sequential, approximately 0.2s
+apart; this does not prove every intervening value finite.
+
+All 64 consecutive captures, indices 19-82/counters 2162-2225, contain 145 draws
+from the selected FP subset. Native frames 45 and 82 visibly retain the original
+bike and seated rider; frame 91 shows the subsequent uphill preview/camera view.
+The pale-blue one-frame bike disappearance is no longer the observed behavior.
+The read-only draw trace reached its explicit 16,384-event cap: its truncated
+stage totals cannot support a full-run decode/submission equality claim.
+Complete capture manifests independently establish the stated persistence.
+
+A further screen-gated CROSS4 selected the displayed bike and reached the
+original track loading screen. The 241.25s duration guard stopped the run before
+race entry (child return 1, launcher 0). No playable race is claimed. Sixteen
+fragment-program incomplete-decode warnings remain visible in `native.err`.
+Platform/material shading and stippling remain wrong; comparison with the
+private RPCS3 references does not establish full original-menu acceptance.
+FPSCR, instruction families outside the seven corrected operations, driving,
+opponents, sound, save data and sustained 30 FPS remain unverified.

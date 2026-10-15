@@ -303,3 +303,28 @@ only the surrounding backend integration differs. No RPCS3 implementation or
 game payload was copied. The fork CTest target and curated portable checker
 exercise the actual helpers; native event-trigger evidence remains separate.
 No external PR is authorized or opened by this work.
+
+
+## SPU extended single-precision values (issue 116)
+
+Selectively adopted own-fork [`eccae411`](https://github.com/robbe1912/ps3recomp/commit/eccae41123bb76ad0f39017035c559bdb6925495):
+new `runtime/spu/spu_float.h` and the FI/FA/FS/FM/FMA/FMS/FNMS bodies in
+`spu_helpers.h`. The seven prior bodies matched the fork baseline exactly;
+the rest of the curated header was preserved. Fork `79ac64c` fixes the POSIX
+regression runner's math-library link order. No external PR was opened.
+
+The implementation was authored from IBM's SPU ISA v1.2, section 9, using
+integer significands and the documented packed FI equation. No RPCS3 source
+was copied. Independent Python rational expectations pass 36,816 actual-helper
+lanes and the same lanes through the fork's actual instruction interpreter.
+Windows and Linux CI pass at `79ac64c`; the first Linux run exposed, and retained,
+the runner linkage failure. The curated native helper header passes the same
+value cases. Its separate standalone interpreter fixture lacks curated runtime
+hooks and does not link; the production native build and run exercise that path.
+
+`scripts/check_spu_float.py` adds an 80-lane authored ISA/zero-normalization
+regression to both MotorStorm CI platforms: old helpers fail 40 lanes, adopted
+helpers fail none. [Native evidence](research/GRAPHICS_AUDIO.md#spu-extended-float-correction-2026-10-15-issue-116)
+records finite preview state and persistent original bike/rider draws.
+FPSCR exception accumulation, estimate-table hardware identity, comparisons,
+conversions, full visual acceptance, racing and performance remain separate.
