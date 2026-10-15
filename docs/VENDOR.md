@@ -292,3 +292,14 @@ pixel-readback fixture is authored and contains no captured game payload.
 [Native limitations](research/GRAPHICS_AUDIO.md#preserve-homogeneous-clip-w-issue-24)
 include the remaining bike-loading emblem and stippled ground. No external PR
 was opened.
+
+### Event-triggered capture burst (issue 110)
+
+The generic capture selector and atomic PAD_FILE event latch were authored
+first on own-fork `codex/rsx-capture-burst` at `272bdd1`, based on
+depth-contract `18061de`.
+The curated copy preserves the same helper/event sources and authored fixture;
+only the surrounding backend integration differs. No RPCS3 implementation or
+game payload was copied. The fork CTest target and curated portable checker
+exercise the actual helpers; native event-trigger evidence remains separate.
+No external PR is authorized or opened by this work.
