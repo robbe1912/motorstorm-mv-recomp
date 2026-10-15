@@ -77,6 +77,14 @@ def similarity(left, right, mode='text'):
 
 
 def latest_frame(run):
+    def presented(frame):
+        manifest = frame.parent / 'manifest.txt'
+        if not manifest.is_file():
+            return False
+        status = [word for word in manifest.read_text().split()
+                  if word.startswith('presenting=')]
+        return status == ['presenting=1']
+
     def completed_bitmap(frame):
         # The producer writes the manifest before exporting the backbuffer.
         # Header/payload length must therefore be complete as well.
@@ -95,7 +103,7 @@ def latest_frame(run):
         return size >= offset + pitch * abs(h)
 
     frames = (Path(run) / 'rsx').glob('frame_*/backbuffer.bmp')
-    complete = [f for f in frames if (f.parent / 'manifest.txt').is_file()
+    complete = [f for f in frames if presented(f)
                 and completed_bitmap(f)]
     return max(complete, key=lambda f: int(f.parent.name[6:]), default=None)
 

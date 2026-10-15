@@ -40,8 +40,31 @@ class PadSendTests(unittest.TestCase):
         frame = root / 'rsx/frame_00/backbuffer.bmp'
         frame.parent.mkdir(parents=True)
         synthetic_bmp(frame, 10)
-        (frame.parent / 'manifest.txt').write_text('authored fixture')
+        (frame.parent / 'manifest.txt').write_text('capture_index=1 capture_reason=1 presenting=1')
         return frame
+
+    def test_offscreen_capture_cannot_replace_presented_screen(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            for number, presenting in ((24, 1), (25, 0)):
+                frame = root / 'rsx' / f'frame_{number}' / 'backbuffer.bmp'
+                frame.parent.mkdir(parents=True)
+                synthetic_bmp(frame, 25)
+                (frame.parent / 'manifest.txt').write_text(f'capture_index={number} presenting={presenting}')
+            self.assertEqual(latest_frame(root).parent.name, 'frame_24')
+            (root / 'rsx/frame_24/manifest.txt').write_text('presenting=0')
+            self.assertIsNone(latest_frame(root))
+
+    def test_unknown_or_ambiguous_presentation_is_not_a_screen(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            frame = root / 'rsx/frame_1/backbuffer.bmp'
+            frame.parent.mkdir(parents=True)
+            synthetic_bmp(frame, 25)
+            for manifest in ('', 'legacy without status', 'presenting=', 'presenting=2', 'presenting=1 presenting=0', 'presenting=1 presenting=1'):
+                with self.subTest(manifest=manifest):
+                    (frame.parent / 'manifest.txt').write_text(manifest)
+                    self.assertIsNone(latest_frame(root))
 
     def test_actual_send_retries_sharing_but_stops_on_revoked_ownership(self):
         for case in ('transient', 'permanent', 'revoked'):
@@ -157,9 +180,9 @@ class MenuReplayTests(unittest.TestCase):
                 directory.mkdir(parents=True)
                 synthetic_bmp(directory / 'backbuffer.bmp', 25)
                 if number != 200:
-                    (directory / 'manifest.txt').write_text('authored fixture')
+                    (directory / 'manifest.txt').write_text('capture_index=1 capture_reason=1 presenting=1')
             self.assertEqual(latest_frame(root).parent.name, 'frame_101')
-            (root / 'rsx/frame_200/manifest.txt').write_text('authored fixture')
+            (root / 'rsx/frame_200/manifest.txt').write_text('capture_index=1 capture_reason=1 presenting=1')
             self.assertEqual(latest_frame(root).parent.name, 'frame_200')
 
     def test_manifest_does_not_make_a_partially_written_bitmap_complete(self):
@@ -169,7 +192,7 @@ class MenuReplayTests(unittest.TestCase):
                 directory = root / 'rsx' / f'frame_{number}'
                 directory.mkdir(parents=True)
                 synthetic_bmp(directory / 'backbuffer.bmp', 25)
-                (directory / 'manifest.txt').write_text('authored fixture')
+                (directory / 'manifest.txt').write_text('capture_index=1 capture_reason=1 presenting=1')
             bitmap = root / 'rsx/frame_100/backbuffer.bmp'
             complete = bitmap.read_bytes()
             for partial in (b'', b'BM', complete[:54], complete[:-1]):
