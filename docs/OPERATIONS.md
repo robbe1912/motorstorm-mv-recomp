@@ -83,6 +83,14 @@ intro skipping and the menu checkpoint, not ticket/3D correctness or race entry.
 The optional-skip regression fails against main `b921cad` because it omits
 the expected skip input; retained red/green logs and frames remain private.
 
+Screen/input selection requires a complete internal BMP and exactly one
+`presenting=1` manifest field. Offscreen (`presenting=0`), missing, partial or
+ambiguous presentation status cannot authorize input. Offscreen captures remain
+available for renderer analysis. Issue125's production-selector regression rejects
+frame25 of run `20261015T163536.232616Z` and selects presented frame24; neither
+selection nor a nonblack image proves a playable race. Authored selector cases
+run with `python scripts/check_menu_replay.py`.
+
 Replay validates the target identity before launching, checks PID/create-time/executable/PAD_FILE ownership before writes, waits for fresh internal frames and input receipts, refuses unknown screens, and stops on timeout/error. An observed target is not a graphics or gameplay verdict. Do not request repeated manual navigation for an established checkpoint or jump directly into a guest scene. `scripts/native_pad.py --help` describes the one-step gated interface; `python scripts/check_menu_replay.py` tests the rejected blind recipe, wrong screens, ownership and observed-state progression without game bytes.
 
 Completed backbuffers are selected by numeric frame sequence, including the
