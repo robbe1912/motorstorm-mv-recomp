@@ -1527,6 +1527,24 @@ static int vp_upload_retire(void* context)
         s_d3d.fence->lpVtbl->GetCompletedValue(s_d3d.fence) >=
         s_d3d.fence_values[s_d3d.frame_index];
 }
+#include "rsx_gpu_references.h"
+static rsx_gpu_references s_gpu_pso_refs;
+static void gpu_pso_add(void *context,void *object) {
+ (void)context;ID3D12PipelineState *p=object;p->lpVtbl->AddRef(p);
+}
+static void gpu_pso_release(void *context,void *object) {
+ (void)context;ID3D12PipelineState *p=object;p->lpVtbl->Release(p);
+}
+static const rsx_gpu_reference_ops s_gpu_pso_ops={NULL,gpu_pso_add,gpu_pso_release,vp_upload_retire};
+static void gpu_pso_hold(ID3D12PipelineState *pso) {
+ if(!rsx_gpu_reference_hold(&s_gpu_pso_refs,pso,&s_gpu_pso_ops)) {
+  fprintf(stderr,"[RSXPSO] Recorded pipeline reference capacity exceeded or invalid pipeline\n");abort();
+ }
+}
+static int gpu_pso_retire(void) {
+ return rsx_gpu_reference_retire(&s_gpu_pso_refs,&s_gpu_pso_ops);
+}
+
 static void vp_upload_dispose(void* context, rsx_upload_buffer* b)
 {
     (void)context;
@@ -4884,6 +4902,11 @@ static void render_frame(void)
      * polygons). These workloads are a few draws/frame, so full serialisation
      * costs little. */
     wait_for_gpu();
+    /* The previous batch is retired: release the pipelines it borrowed. */
+    if (!gpu_pso_retire()) {
+        fprintf(stderr, "[RSXPSO] GPU retirement failed; recorded PSO references retained\n");
+        abort();
+    }
     if (phase_on()) s_phase.drain = perf_now() - ph0;
     phase_gpu_collect();
 
@@ -5549,6 +5572,7 @@ static void render_frame(void)
                 s_d3d.cmd_list->lpVtbl->IASetPrimitiveTopology(s_d3d.cmd_list, topo_to_d3d(dr->topology));
                 last_topo = dr->topology;
             }
+            gpu_pso_hold(target_pso);
             u32 start_vert = dr->vb_byte_offset / VERTEX_STRIDE;
             s_d3d.cmd_list->lpVtbl->DrawInstanced(
                 s_d3d.cmd_list, dr->vertex_count, 1, start_vert, 0);
@@ -5984,6 +6008,7 @@ static void render_frame(void)
                 if (phase_on()) { s_phase.draws++; s_phase.small_draws += is_small; }
                 phase_gpu_draw(is_small, 0);
                 cpu_surface_written(cur_rt,cur_m);
+                gpu_pso_hold(dpso ? dpso : vpso);
                 s_d3d.cmd_list->lpVtbl->DrawInstanced(s_d3d.cmd_list,
                     dr->vertex_count, 1, dr->vb_byte_offset / 256, 0);
                 if (dr->rt_off == 0) rsx_record_batch_display_write(&s_record_batch);
@@ -8271,7 +8296,7 @@ void rsx_d3d12_backend_shutdown(void)
     if (!s_d3d.initialized) return;
     cpu_surface_shutdown();
 
-    wait_for_gpu();
+    gpu_pso_retire();   /* waits; on failure the references stay retained */
     for(int i=0;i<s_d3d.vp_vs_n;i++){
         shader_forget_vs_source(s_d3d.vp_vs[i].disk_source);s_d3d.vp_vs[i].disk_source=NULL;
     }
