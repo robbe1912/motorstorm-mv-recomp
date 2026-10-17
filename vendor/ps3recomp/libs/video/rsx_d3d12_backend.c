@@ -211,7 +211,7 @@ typedef struct {
 
 /* Per-frame VP texture slot: a guest texture uploaded for this frame's VP
  * draws (re-uploaded every frame -- gcm/cube's plasma animates in guest
- * memory). SRV lives at heap index 1+slot. */
+ * memory). Per-draw descriptors retain the selected resource. */
 typedef struct {
     ID3D12Resource* res;
     ID3D12Resource* up;
@@ -230,7 +230,7 @@ typedef struct {
  * so every draw past the fourth got slot -1 from vp_upload_tex_slot ("out of
  * slots") and drew UNTEXTURED. That reads as a correctly-lit but solid black
  * object, which is indistinguishable from a missing texture upload. */
-#define VP_TEX_SLOTS 96
+#define INITIAL_VP_TEX_SLOTS 96
 
 /* Decompiled-VS cache: one entry per distinct vertex-program ucode seen at
  * draw time (hashed). Apps switch VPs between draws (gcm/cube: its MVP cube VP
@@ -395,7 +395,8 @@ typedef struct {
     ID3DBlob*             vp_vs_blob;           /* kept for guest-FP PSO builds  */
     u32                   vp_gen;               /* bumped per VP recompile       */
     int                   vp_uses_c03;          /* VS references vp_c[0..3]      */
-    VPTexSlot             vp_tex[VP_TEX_SLOTS]; /* per-frame VP texture slots    */
+    VPTexSlot*            vp_tex;
+    unsigned              vp_tex_capacity; /* per-frame VP texture slots    */
     VPVSEntry             vp_vs[VP_VS_CACHE];   /* per-draw decompiled VS cache  */
     int                   vp_vs_n;
     VPFPEntry             vp_fp[VP_FP_CACHE];   /* guest-FP PSO cache            */
@@ -1528,6 +1529,7 @@ static int vp_upload_retire(void* context)
         s_d3d.fence_values[s_d3d.frame_index];
 }
 #include "rsx_gpu_references.h"
+#include "rsx_slot_pool.h"
 static rsx_gpu_references s_gpu_pso_refs;
 static void gpu_pso_add(void *context,void *object) {
  (void)context;ID3D12PipelineState *p=object;p->lpVtbl->AddRef(p);
@@ -3096,7 +3098,7 @@ static ID3D12PipelineState* vp_get_fp_pso(int vs_idx, u32 fp_addr, u32 blend, in
 
 /* Upload the guest texture for a VP draw into a per-frame texture slot
  * (re-uploaded every frame: gcm/cube's plasma animates in guest memory).
- * Returns the slot index (SRV at heap 1+slot) or -1. Must run while the
+ * Returns the resource-cache index or -1 on upload failure. Must run while the
  * command list is open, before the draw passes. */
 /* NV4097 TEXTURE_CONTROL1 component remap -> D3D12 Shader4ComponentMapping.
  * The crossbar decode itself is RSX semantics and lives in
@@ -3207,7 +3209,7 @@ static void texture_profile_log(void)
             (unsigned long long)p->examined, (unsigned long long)p->checksum_calls,
             (unsigned long long)p->sampled_words, p->setup*1000.0, p->lookup*1000.0,
             p->checksum*1000.0, p->remainder*1000.0, p->total*1000.0,
-            (unsigned long long)p->clock_errors, VP_TEX_SLOTS);
+            (unsigned long long)p->clock_errors, s_d3d.vp_tex_capacity);
     memset(&s_texture_profile, 0, sizeof(s_texture_profile));
 }
 
@@ -3236,7 +3238,6 @@ static int vp_upload_tex_slot_impl(u32 off, u32 w, u32 h, u32 fmt, int cube, u32
      * re-deriving any of it. Only the DXGI mapping below is ours. */
     rsx_tex_layout tl;
     rsx_texture_layout(fmt, w, h, &tl);
-    u32 basef = fmt & 0x9F;              /* still needed for the SRV remap */
     int argb = (tl.fmt == RSX_TEXFMT_R8G8B8A8);
     int dxt  = tl.compressed;
     /* Compressed rows are counted in blocks, so keep bpp at 1 for the byte
@@ -3269,7 +3270,7 @@ static int vp_upload_tex_slot_impl(u32 off, u32 w, u32 h, u32 fmt, int cube, u32
     #define TEX_CSUM(base, nbytes) texture_profile_csum(profile, (base), (nbytes))
     int slot = -1, freeslot = -1;
     rsx_texture_profile_lookup_begin(profile);
-    for (int i = 0; i < VP_TEX_SLOTS; i++) {
+    for (unsigned i = 0; i < s_d3d.vp_tex_capacity; i++) {
         VPTexSlot* c = &s_d3d.vp_tex[i];
         if (c->res && c->key == key_off && c->w == w && c->h == h && c->fmt == fmt
             && c->cube == cube) {
@@ -3290,7 +3291,7 @@ static int vp_upload_tex_slot_impl(u32 off, u32 w, u32 h, u32 fmt, int cube, u32
         }
         if (!c->used && freeslot < 0) freeslot = i;
     }
-    rsx_texture_profile_lookup_end(profile, VP_TEX_SLOTS, RSX_TEX_MISS);
+    rsx_texture_profile_lookup_end(profile, s_d3d.vp_tex_capacity, RSX_TEX_MISS);
     /* TEX_OFF_BIAS=1: sample the image one whole level-0 BELOW the bound offset.
      * Measured on the Rubber Ducky demo: at the bind offset every texture reads
      * as all-zero, while [off - w*h*bpp, off) holds the image (3800-4160 of 4298
@@ -3344,7 +3345,19 @@ static int vp_upload_tex_slot_impl(u32 off, u32 w, u32 h, u32 fmt, int cube, u32
     /* A stale cache entry (slot >= 0) re-uses its own slot; otherwise take a
      * free one. Without this the stale path fell through to freeslot and either
      * duplicated the texture into a second slot or bailed when none was free. */
-    if (slot < 0 && freeslot < 0) return -1;      /* out of slots this frame */
+    if (slot < 0 && freeslot < 0) {
+        unsigned before=s_d3d.vp_tex_capacity,after=before;
+        unsigned units=(unsigned)(sizeof(s_d3d.draws[0].tex)/sizeof(s_d3d.draws[0].tex[0]));
+        void* grown=rsx_slot_pool_grow(s_d3d.vp_tex,before,before+1,
+            INITIAL_VP_TEX_SLOTS,MAX_DRAWS*units,sizeof(VPTexSlot),&after);
+        if(!grown) {
+            fprintf(stderr,"[RSXTEXTURE] pinned pool cannot grow count=%u limit=%u off=%08X %ux%u fmt=%02X\n",before,MAX_DRAWS*units,off,w,h,fmt);
+            abort();
+        }
+        s_d3d.vp_tex=(VPTexSlot*)grown;s_d3d.vp_tex_capacity=after;
+        freeslot=(int)before;
+        fprintf(stderr,"[RSXTEXTURE] pinned pool grew %u->%u off=%08X\n",before,after,off);
+    }
     /* TEX_SRCDBG=<N>: is the guest memory this slot uploads FROM actually
      * populated? An empty source and a broken sampler both render flat. */
     { static int cap = -1, n = 0;
@@ -3783,26 +3796,8 @@ static int vp_upload_tex_slot_impl(u32 off, u32 w, u32 h, u32 fmt, int cube, u32
         b.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
         s_d3d.cmd_list->lpVtbl->ResourceBarrier(s_d3d.cmd_list, 1, &b);
     }
-    /* SRV at heap slot 1+slot */
-    D3D12_SHADER_RESOURCE_VIEW_DESC sv = {0};
-    sv.Format = dxfmt;
-    sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-    /* RSX B8 replicates the byte into all four channels (dbgfont's FP reads
-     * coverage from .w); DXGI R8 defaults to (r,0,0,1), so swizzle (R,R,R,R)
-     * = encoded 0x1000 (component 0 in all lanes + always-set bit). ARGB8
-     * keeps the identity mapping. */
-    sv.Shader4ComponentMapping = (basef == 0x81) ? 0x1000 : D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    sv.Texture2D.MipLevels = 1;
-    D3D12_CPU_DESCRIPTOR_HANDLE sh;
-    s_d3d.srv_heap->lpVtbl->GetCPUDescriptorHandleForHeapStart(s_d3d.srv_heap, &sh);
-    sh.ptr += (u64)(1 + slot) * s_d3d.srv_inc;
-    if (cube) {
-        sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
-        sv.TextureCube.MipLevels = 1;
-        sv.TextureCube.MostDetailedMip = 0;
-        sv.TextureCube.ResourceMinLODClamp = 0.0f;
-    }
-    s_d3d.device->lpVtbl->CreateShaderResourceView(s_d3d.device, t->res, &sv, sh);
+    /* Only immutable per-draw SRV windows are bound. A legacy cache SRV at
+     * 1+slot aliases those windows once the cache exceeds31 entries. */
 
     t->off = off; t->key = key_off; t->w = w; t->h = h; t->fmt = fmt;
     t->dxgi = (u32)dxfmt;   /* the decoded image's format, from the layout */
@@ -5223,7 +5218,7 @@ static void render_frame(void)
      * tables can share descriptors, but each draw retains its constants and
      * resource transitions. PSO lookup normally occurs once during replay. */
     double _pre0 = perf_on() ? perf_now() : 0.0;
-    for (int _i = 0; _i < VP_TEX_SLOTS; _i++) s_d3d.vp_tex[_i].used = 0;
+    for (unsigned _i = 0; _i < s_d3d.vp_tex_capacity; _i++) s_d3d.vp_tex[_i].used = 0;
     memset(s_srv_table_hash, 0, sizeof s_srv_table_hash);
     s_srv_created = s_srv_tables_reused = s_pso_binds = s_srv_binds = 0;
     int shader_prefetch_pass=shader_pool_on();
@@ -5393,6 +5388,8 @@ static void render_frame(void)
                                      _cube);
                         continue;
                     }
+                    fprintf(stderr,"[RSXTEXTURE] supported texture upload failed unit=%u off=%08X %ux%u fmt=%02X\n",_u,dr->tex[_u].off,dr->tex[_u].w,dr->tex[_u].h,dr->tex[_u].fmt);
+                    abort();
                 }
             }
             /* TEX_BINDDBG=<N>: a unit that ends up with a NULL SRV. The draw is
@@ -8297,6 +8294,12 @@ void rsx_d3d12_backend_shutdown(void)
     cpu_surface_shutdown();
 
     gpu_pso_retire();   /* waits; on failure the references stay retained */
+    for(unsigned i=0;i<s_d3d.vp_tex_capacity;i++) {
+        VPTexSlot* t=&s_d3d.vp_tex[i];
+        if(t->res)t->res->lpVtbl->Release(t->res);
+        if(t->up)t->up->lpVtbl->Release(t->up);
+    }
+    free(s_d3d.vp_tex);s_d3d.vp_tex=NULL;s_d3d.vp_tex_capacity=0;
     for(int i=0;i<s_d3d.vp_vs_n;i++){
         shader_forget_vs_source(s_d3d.vp_vs[i].disk_source);s_d3d.vp_vs[i].disk_source=NULL;
     }
