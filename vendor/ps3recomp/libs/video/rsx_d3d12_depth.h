@@ -3,6 +3,7 @@
 #define PS3RECOMP_RSX_D3D12_DEPTH_H
 
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <windows.h>
 #include <d3d12.h>
@@ -19,6 +20,16 @@ typedef struct rsx_d3d12_depth_cache {
     rsx_d3d12_depth_surface surfaces[RSX_D3D12_DEPTH_CAPACITY];
     uint32_t count;
 } rsx_d3d12_depth_cache;
+
+/* A color-only operation must not allocate or initialize a zeta attachment.
+ * Draws need it for either test, even if writes are masked off. Clears use
+ * their explicit Z/S bits independently of the current test enables. */
+static int rsx_d3d12_depth_required(int is_clear, uint32_t clear_flags,
+    uint32_t depth_stencil_key)
+{
+    return is_clear ? (clear_flags & 3u) != 0 :
+        (depth_stencil_key & ((1u << 0) | (1u << 5))) != 0;
+}
 
 /* Slot zero belongs to the legacy attachment. Guest surfaces use slots 1..128. */
 static D3D12_CPU_DESCRIPTOR_HANDLE rsx_d3d12_depth_handle(
@@ -49,7 +60,11 @@ static HRESULT rsx_d3d12_depth_prepare(rsx_d3d12_depth_cache* cache,
     if (!width || !height) return E_INVALIDARG;
     for (index = 0; index < cache->count; ++index)
         if (cache->surfaces[index].offset == offset) break;
-    if (index == RSX_D3D12_DEPTH_CAPACITY) return E_OUTOFMEMORY;
+    if (index == RSX_D3D12_DEPTH_CAPACITY) {
+        fprintf(stderr, "[D3D12DEPTH] cache capacity offset=%08X size=%ux%u count=%u capacity=%u\n",
+            offset, width, height, cache->count, RSX_D3D12_DEPTH_CAPACITY);
+        return E_OUTOFMEMORY;
+    }
     surface = &cache->surfaces[index];
     *out_slot = index + 1;
     if (surface->resource && surface->width >= width && surface->height >= height)
@@ -70,7 +85,11 @@ static HRESULT rsx_d3d12_depth_prepare(rsx_d3d12_depth_cache* cache,
     result = device->lpVtbl->CreateCommittedResource(device, &properties,
         D3D12_HEAP_FLAG_NONE, &description, D3D12_RESOURCE_STATE_DEPTH_WRITE,
         &clear, &IID_ID3D12Resource, (void**)&resource);
-    if (FAILED(result)) return result;
+    if (FAILED(result)) {
+        fprintf(stderr, "[D3D12DEPTH] CreateCommittedResource offset=%08X size=%ux%u count=%u slot=%u HRESULT=%08X\n",
+            offset, width, height, cache->count, *out_slot, (unsigned)result);
+        return result;
+    }
     view.Format = description.Format;
     view.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
     handle = rsx_d3d12_depth_handle(heap, step, *out_slot);
