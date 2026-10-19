@@ -23,6 +23,15 @@ class WindowReadinessTests(unittest.TestCase):
         state['rect'] = [0, 0, 1000, 800]; state['class_name'] = 'Default IME'
         self.assertFalse(is_ready_window(state, 1, (0, 0, 2560, 1440)))
 
+    def test_selected_vulkan_window_keeps_ownership_and_visibility_checks(self):
+        state = dict(pid=1, class_name='SDL_app', rect=[0,0,1280,720],visible=True,minimized=False)
+        desktop=(0,0,2560,1440)
+        self.assertFalse(is_ready_window(state,1,desktop))
+        self.assertTrue(is_ready_window(state,1,desktop,'SDL_app'))
+        self.assertFalse(is_ready_window(state,2,desktop,'SDL_app'))
+        state['visible']=False
+        self.assertFalse(is_ready_window(state,1,desktop,'SDL_app'))
+
 
 if __name__ == '__main__':
     unittest.main()

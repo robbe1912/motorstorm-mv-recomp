@@ -100,6 +100,19 @@ message(STATUS "Lifted sources:  ${RECOMP_SOURCE_COUNT} file(s)")
 # ---------------------------------------------------------------------------
 # ps3recomp runtime library
 # ---------------------------------------------------------------------------
+set(PORT_RSX_BACKEND "platform" CACHE STRING "RSX backend: platform or vulkan")
+set_property(CACHE PORT_RSX_BACKEND PROPERTY STRINGS platform vulkan)
+if(PORT_RSX_BACKEND STREQUAL "vulkan")
+    set(PS3RECOMP_RSX_VULKAN ON CACHE BOOL "Build Vulkan RSX backend" FORCE)
+    find_package(glslang CONFIG REQUIRED)
+    if(WIN32)
+        find_package(SDL2 CONFIG REQUIRED)
+    endif()
+elseif(PORT_RSX_BACKEND STREQUAL "platform")
+    set(PS3RECOMP_RSX_VULKAN OFF CACHE BOOL "Build Vulkan RSX backend" FORCE)
+else()
+    message(FATAL_ERROR "Unknown PORT_RSX_BACKEND: ${PORT_RSX_BACKEND}")
+endif()
 # Built from source as a subdirectory rather than imported as a prebuilt
 # archive. A static library carries none of its own link requirements, so an
 # imported one arrives without SDL2, pthreads, the Metal frameworks or the
@@ -124,7 +137,7 @@ else()
     file(GLOB_RECURSE HLE_LIBRARY_SOURCES CONFIGURE_DEPENDS "${PS3RECOMP_DIR}/libs/*.c")
     add_custom_command(
         OUTPUT "${HLE_NID_TABLE}"
-        COMMAND "${Python3_EXECUTABLE}"
+        COMMAND ${CMAKE_COMMAND} -E env "PS3RECOMP_SOURCE_DIR=${PS3RECOMP_DIR}" "${Python3_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_hle_nids.py"
                 --out "${HLE_NID_TABLE}" --all
         DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_hle_nids.py"
@@ -198,6 +211,17 @@ add_executable(${PROJECT_NAME}
     ${RECOMP_SOURCES}
     ${SPU_SOURCES}
 )
+if(PORT_RSX_BACKEND STREQUAL "vulkan")
+    if(NOT TARGET glslang::glslang OR NOT TARGET glslang::SPIRV)
+        message(FATAL_ERROR "Native Vulkan requires glslang HLSL to SPIR-V translation")
+    endif()
+    target_compile_definitions(${PROJECT_NAME} PRIVATE PORT_RSX_VULKAN=1)
+    if(WIN32)
+        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:SDL2::SDL2>" "$<TARGET_FILE_DIR:${PROJECT_NAME}>")
+    endif()
+endif()
 
 # The lifted SPU sources use bare #include "spu_context.h". Scope that include
 # directory (and their flags) to those TUs alone: adding it to the whole target

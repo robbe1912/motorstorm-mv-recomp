@@ -4,12 +4,16 @@ from pathlib import Path
 import psutil
 from project import ROOT, config
 from native_window import visible_native_window
+from runtime_profile import execution_environment, runtime_capabilities
 
 class Memory(ctypes.Structure):
     _fields_=[('length',ctypes.c_ulong),('load',ctypes.c_ulong)]+[(x,ctypes.c_ulonglong) for x in ('total_phys','available_phys','total_commit','available_commit','total_virtual','available_virtual','available_extended')]
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__); ap.add_argument('--seconds',type=int,default=600)
+    ap.add_argument('--executable',type=Path,help='Native executable from a separate local build')
+    ap.add_argument('--renderer',choices=['d3d12','vulkan'],default='d3d12',help='Expected owned renderer window')
+    ap.add_argument('--execution-profile',choices=['baseline-interpreter','toolkit-default'],default='baseline-interpreter',help='Explicit runtime policy; toolkit-default starts a fresh baseline')
     capture=ap.add_mutually_exclusive_group()
     capture.add_argument('--capture-havok',action='store_true',help='Existing Havok plus graphics/audio diagnostic profile')
     capture.add_argument('--capture-havok-only',action='store_true',help='Enable only the existing Havok observer, without graphics/audio probes')
@@ -35,17 +39,28 @@ def main():
     if not 0<=args.trace_task_lifecycle<=4096: raise SystemExit('Task lifecycle trace must be 0..4096 events')
     if args.trace_task_image is not None and (args.trace_task_image<0 or not args.trace_task_lifecycle): raise SystemExit('Task image filter requires an enabled trace and nonnegative image ID')
     if any(p.info['name']=='ms1_recomp.exe' for p in psutil.process_iter(['name'])): raise SystemExit('A native instance already exists; close it first')
-    c=config(); exe=ROOT/'build/native/ms1_recomp.exe'
+    c=config(); exe=(args.executable or ROOT/'build/native/ms1_recomp.exe').resolve()
     if args.menu_replay and hashlib.sha256(c['elf'].read_bytes()).hexdigest()!=replay_profile['elf_sha256']:
         raise SystemExit('Menu replay target differs from configured ELF; no process launched')
     if not exe.is_file(): raise SystemExit('Build first: python scripts/project.py build')
+    build_identity_path=exe.parent/'build_identity.json'
+    build_identity=json.loads(build_identity_path.read_text()) if build_identity_path.is_file() else None
+    if args.renderer=='vulkan' and (not build_identity or build_identity.get('renderer')!='vulkan' or build_identity.get('sha256')!=hashlib.sha256(exe.read_bytes()).hexdigest()):
+        raise SystemExit('Selected Vulkan executable requires a matching Vulkan build identity')
+    capabilities=(build_identity or {}).get('runtime_capabilities')
+    if capabilities is None:
+        if args.renderer=='vulkan':raise SystemExit('Rebuild Vulkan executable to record runtime execution capabilities')
+        capabilities=runtime_capabilities(ROOT/'vendor/ps3recomp')
+    try:profile_env=execution_environment(args.execution_profile,capabilities)
+    except ValueError as error:raise SystemExit(str(error))
     out=ROOT/'temp/runs'/datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ'); out.mkdir(parents=True)
     env=dict(os.environ)
     # Clear inherited diagnostics before applying the documented booting configuration.
     for key in list(env):
-        if key.startswith(('SPU_','FLOW_','RSX_','GCM_','PAD_','FPS_','PM_','CAP_HAVOK','CAP_BIKE','LOADTIME_','AUDIO_','TEX_')) or key in ('FP_PICK','SCREEN_AS_TEX','RD_WWSJOB_SHIM','VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG'):env.pop(key)
-    env.update(PATH=str(c['ffmpeg']/'bin')+os.pathsep+env.get('PATH',''),PS3_VFS_ROOT=str(c['disc']),PS3_HDD0_ROOT=str(c['userdata']),PS3_SAVEDATA_ROOT=str(c['userdata']/'home/00000001/savedata'),AUDIO_MUTE='1',SPU_PM_INTERP='1',SPU_PROBE_INTERP='0',SCREEN_AS_TEX='0',PAD_FILE=str(out/'pad.txt'),FPS_STATS='1',FPS_STATS_CSV=str(out/'frames.csv'),RECOMP_TITLE='MotorStorm MV native')
-    for key in ('SPU_WP','SPU_PM_GATE_TRACE','SPU_PM_RETIRE_GUARD','SPU_PM_PC_RESUME','SPU_PM_FLOW_RESUME','SPU_PM_YIELD_RESUME'):env[key]='0'
+        if key.startswith(('PS3RECOMP_VK_','SPU_','FLOW_','RSX_','GCM_','PAD_','FPS_','PM_','CAP_HAVOK','CAP_BIKE','LOADTIME_','AUDIO_','TEX_')) or key in ('FP_PICK','SCREEN_AS_TEX','RD_WWSJOB_SHIM','VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG'):env.pop(key)
+    env.update(PATH=str(c['ffmpeg']/'bin')+os.pathsep+env.get('PATH',''),PS3_VFS_ROOT=str(c['disc']),PS3_HDD0_ROOT=str(c['userdata']),PS3_SAVEDATA_ROOT=str(c['userdata']/'home/00000001/savedata'),AUDIO_MUTE='1',SCREEN_AS_TEX='0',PAD_FILE=str(out/'pad.txt'),FPS_STATS='1',FPS_STATS_CSV=str(out/'frames.csv'),RECOMP_TITLE='MotorStorm MV native')
+    env.update(profile_env)
+    if args.renderer=='vulkan':env['PS3RECOMP_RSX_ENGINE']='dispatch'
     env['PS3_KEYS_FILE']=str(c.get('keys',ROOT/'game/private_keys')/'keys.json')
     if args.trace_task_lifecycle:
         env['SPU_TASK_LIFECYCLE_TRACE']=str(args.trace_task_lifecycle)
@@ -68,6 +83,7 @@ def main():
     if args.capture_menu or args.menu_replay:
         (out/'rsx').mkdir()
         env.update(RSX_CAP='1:100:120',RSX_CAP_DIR=str(out/'rsx'))
+        if args.renderer=='vulkan': env['RSX_CAP']='1:120:1'
     if args.capture_burst_frames:
         env.update(RSX_CAP_ARM_FILE=str(out/'capture-burst.arm'),RSX_CAP_BURST=str(args.capture_burst_frames))
     if args.capture_on_pad:
@@ -80,6 +96,8 @@ def main():
     p=subprocess.Popen([str(exe),str(c['elf'])],cwd=ROOT,env=env,stdout=log,stderr=err,creationflags=subprocess.CREATE_NO_WINDOW,startupinfo=startup)
     proc=psutil.Process(p.pid); start=time.monotonic(); reason='guard tooling failure'; terminated=False
     record={'pid':p.pid,'create_time':proc.create_time(),'exe':str(exe),'exe_sha256':hashlib.sha256(exe.read_bytes()).hexdigest(),'elf_sha256':hashlib.sha256(c['elf'].read_bytes()).hexdigest(),'output':str(out),'muted':True,'capture_menu':bool(args.capture_menu or args.menu_replay),'menu_replay':str(args.menu_replay.resolve()) if args.menu_replay else None,'capture_textures':args.capture_textures,'trace_video':args.trace_video,'capture_havok':args.capture_havok or args.capture_havok_only,'capture_bike':args.capture_bike,'loadtime_trace':args.loadtime_trace,'capture_profile':'broad' if args.capture_havok else 'havok-only' if args.capture_havok_only else 'none','environment':{k:v for k,v in env.items() if k in ('PS3_VFS_ROOT','PS3_HDD0_ROOT','PS3_SAVEDATA_ROOT','AUDIO_MUTE','PAD_FILE','CAP_HAVOK_DIR','CAP_BIKE_DIR','CAP_BIKE_ARM_FILE','LOADTIME_TRACE','LOADTIME_TRACE_FILE','SPU_PM_INTERP') or k.startswith(('SPU_PM_','TEX_','RSX_')) or k in ('VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG') or k=='SPU_WP'}}
+    record.update(renderer=args.renderer,build_identity=build_identity,execution_profile=args.execution_profile,runtime_capabilities=capabilities)
+    record['environment'].update({k:v for k,v in env.items() if k.startswith(('PS3RECOMP_','VK_'))})
     record['capture_burst_frames']=args.capture_burst_frames
     record['capture_on_pad']=args.capture_on_pad
     record['environment'].update({k:env[k] for k in ('SPU_TASK_LIFECYCLE_TRACE','SPU_TASK_LIFECYCLE_IMAGE') if k in env})
@@ -94,7 +112,7 @@ def main():
         while p.poll() is None:
             elapsed=time.monotonic()-start; m=Memory();m.length=ctypes.sizeof(m)
             if not window_ready:
-                window=visible_native_window(p.pid)
+                window=visible_native_window(p.pid,'SDL_app' if args.renderer=='vulkan' else 'ps3recomp_d3d12')
                 if window:
                     window_ready=True
                     (out/'window.json').write_text(json.dumps(dict(window,elapsed=elapsed,create_time=record['create_time']),indent=2))

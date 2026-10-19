@@ -1,18 +1,18 @@
-"""Read-only Win32 readiness check for the owned D3D12 game window."""
+"""Read-only Win32 readiness check for the owned renderer window."""
 import ctypes
 from ctypes import wintypes
 
 
-def is_ready_window(state, pid, desktop):
+def is_ready_window(state, pid, desktop, class_name='ps3recomp_d3d12'):
     left, top, right, bottom = state['rect']
     x, y, width, height = desktop
-    return (state['pid'] == pid and state['class_name'] == 'ps3recomp_d3d12'
+    return (state['pid'] == pid and state['class_name'] == class_name
             and state['visible'] and not state['minimized']
             and min(right, x + width) - max(left, x) > 0
             and min(bottom, y + height) - max(top, y) > 0)
 
 
-def visible_native_window(pid):
+def visible_native_window(pid, class_name='ps3recomp_d3d12'):
     user = ctypes.WinDLL('user32', use_last_error=True)
     callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
     user.EnumWindows.argtypes = [callback_type, wintypes.LPARAM]
@@ -37,7 +37,7 @@ def visible_native_window(pid):
         state = dict(hwnd=int(hwnd), pid=owner.value, class_name=name.value,
                      rect=[rect.left, rect.top, rect.right, rect.bottom],
                      visible=bool(user.IsWindowVisible(hwnd)), minimized=bool(user.IsIconic(hwnd)))
-        if is_ready_window(state, pid, desktop):
+        if is_ready_window(state, pid, desktop, class_name):
             found.append(state)
         return True
 

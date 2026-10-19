@@ -44,6 +44,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
+#include <sys/stat.h>
+#include <errno.h>
+#endif
 
 #ifdef _WIN32
 /* timeBeginPeriod: <windows.h> arrives with WIN32_LEAN_AND_MEAN set, which
@@ -110,7 +114,16 @@ void*    cellGcm_fifo_kick_event(void);
  * path anywhere else -- the same selection runtime/host/host_posix.c and the
  * toolkit's boot harness make. All three expose the same three entry points,
  * so the frame clock below is backend-agnostic. */
-#if defined(_WIN32)
+#if defined(PORT_RSX_VULKAN)
+extern "C" int  rsx_vulkan_backend_init(uint32_t w, uint32_t h, const char* title);
+extern "C" void rsx_vulkan_backend_present(void);
+extern "C" int  rsx_vulkan_backend_pump_messages(void);
+extern "C" int  rsx_vulkan_backend_capture_bmp(const char* path);
+#  define rsx_backend_init    rsx_vulkan_backend_init
+#  define rsx_backend_present rsx_vulkan_backend_present
+#  define rsx_backend_pump    rsx_vulkan_backend_pump_messages
+#  define RSX_BACKEND_NAME    "Vulkan"
+#elif defined(_WIN32)
 extern "C" int  rsx_d3d12_backend_init(uint32_t w, uint32_t h, const char* title);
 extern "C" void rsx_d3d12_backend_present(void);
 extern "C" int  rsx_d3d12_backend_pump_messages(void);
@@ -178,7 +191,74 @@ static void present_guest_frame(void)
     rsx_backend_present();
     /* This thread increments and guest threads read, so interlocked rather
      * than a volatile ++, which on arm64 is neither atomic nor a fence. */
-    InterlockedIncrement(&g_frames_presented);
+    LONG frame = InterlockedIncrement(&g_frames_presented);
+#ifdef PORT_RSX_VULKAN
+    /* The current upstream PPU loader has no curated FPS observer. Record
+     * completed guest flips here; pre-boot refreshes never enter this path. */
+    static bool stats_configured = false;
+    static FILE* stats;
+    static LARGE_INTEGER stats_start, stats_previous, stats_frequency;
+    LARGE_INTEGER now;
+    QueryPerformanceCounter(&now);
+    if (!stats_configured) {
+        stats_configured = true;
+        stats_start = stats_previous = now;
+        QueryPerformanceFrequency(&stats_frequency);
+        const char* csv = getenv("FPS_STATS_CSV");
+        if (csv && *csv) {
+            stats = fopen(csv,"wb");
+            if (!stats || fprintf(stats,"frame,t_ms,dt_ms,flips_since_prev_present\n")<0) {
+                fprintf(stderr,"[fps] cannot initialize completed-flip CSV %s\n",csv); exit(EXIT_FAILURE);
+            }
+        }
+    }
+    if (stats) {
+        double ms = 1000.0 / (double)stats_frequency.QuadPart;
+        int failed = fprintf(stats,"%ld,%.6f,%.6f,1\n",(long)frame,
+            (now.QuadPart-stats_start.QuadPart)*ms,(now.QuadPart-stats_previous.QuadPart)*ms)<0;
+        if (fflush(stats)) failed=1;
+        if (failed) { fprintf(stderr,"[fps] completed-flip CSV write failed\n"); exit(EXIT_FAILURE); }
+    }
+    stats_previous = now;
+    /* Capture only completed guest flips, never the pre-boot window refresh.
+     * The manifest is published after the complete readback file. */
+    static bool configured = false;
+    static unsigned first = 0, count = 0, stride = 0, index = 0;
+    static uint64_t next_capture = 0;
+    static const char* directory;
+    if (!configured) {
+        configured = true;
+        const char* spec = getenv("RSX_CAP");
+        directory = getenv("RSX_CAP_DIR");
+        if (spec && (!directory || sscanf(spec, "%u:%u:%u", &first, &count, &stride) != 3 ||
+                     !first || !count || count > 120 || !stride)) {
+            fprintf(stderr, "[rsxcap] invalid Vulkan capture configuration\n"); exit(EXIT_FAILURE);
+        }
+    }
+    if (count && index < count && (unsigned)frame >= first && ((unsigned)frame-first)%stride == 0 && GetTickCount64() >= next_capture) {
+        char dir[1024], path[1100];
+        snprintf(dir, sizeof dir, "%s/frame_%06u", directory, index);
+#ifdef _WIN32
+        if (!CreateDirectoryA(dir, NULL) && GetLastError()!=ERROR_ALREADY_EXISTS) {
+#else
+        if (mkdir(dir,0755) && errno!=EEXIST) {
+#endif
+            fprintf(stderr,"[rsxcap] cannot create capture directory %s\n",dir); exit(EXIT_FAILURE);
+        }
+        snprintf(path, sizeof path, "%s/backbuffer.bmp", dir);
+        if (rsx_vulkan_backend_capture_bmp(path)) exit(EXIT_FAILURE);
+        snprintf(path, sizeof path, "%s/manifest.txt", dir);
+        FILE* manifest = fopen(path, "wb");
+        if (!manifest) { fprintf(stderr,"[rsxcap] cannot open %s\n",path); exit(EXIT_FAILURE); }
+        int failed = fprintf(manifest,"capture_index=%u guest_frame=%ld presenting=1 backend=Vulkan\n",index,(long)frame)<0;
+        if (fclose(manifest)) failed=1;
+        if (failed) { fprintf(stderr,"[rsxcap] cannot finish %s\n",path); exit(EXIT_FAILURE); }
+        index++;
+        next_capture = GetTickCount64() + 4000;
+    }
+#else
+    (void)frame;
+#endif
 }
 
 /* One fast-cadence iteration of the frame loop: pump window messages, drain
@@ -214,10 +294,19 @@ static DWORD WINAPI frame_clock(LPVOID)
     const char* title = getenv("PS3_TITLE");
     if (!title || !*title) title = "ps3recomp";
 
+#ifdef PORT_RSX_VULKAN
+#ifdef _WIN32
+    _putenv("PS3RECOMP_VK_GUEST_PROGRAMS=1");
+    _putenv("PS3RECOMP_VK_REQUIRE_WINDOW=1");
+#else
+    setenv("PS3RECOMP_VK_GUEST_PROGRAMS", "1", 1);
+    setenv("PS3RECOMP_VK_REQUIRE_WINDOW", "1", 1);
+#endif
+#endif
     int rsx_ok = (rsx_backend_init(WINDOW_WIDTH, WINDOW_HEIGHT, title) == 0);
     fprintf(stderr, "[rsx] %s backend init %s\n", RSX_BACKEND_NAME,
             rsx_ok ? "OK -- window open" : "FAILED");
-
+    if (!rsx_ok) exit(EXIT_FAILURE);
 
 #ifdef _WIN32
     /* Vblank beats at the true PS3 rate (59.94 Hz NTSC), accumulated on QPC.
@@ -416,7 +505,7 @@ int main(int argc, char** argv)
     /* Install the guest-callback hook, then start the frame clock. It no-ops
      * until the title registers its vblank and flip handlers during init. */
     g_ps3_guest_caller = harness_guest_caller;
-    { HANDLE _fc = CreateThread(NULL, 4u * 1024 * 1024, frame_clock, NULL, 0, NULL);
+    { HANDLE _fc = CreateThread(NULL, 256u * 1024 * 1024, frame_clock, NULL, 0, NULL);
       ps3_thread_setname((uintptr_t)_fc, "frame_clock"); }
 
     printf("\n[boot] dispatching entry OPD 0x%08X (stack top 0x%08X)\n\n",

@@ -13,7 +13,7 @@ import hashlib
 import struct
 from pathlib import Path
 
-ROOT = str(Path(__file__).resolve().parents[1] / 'vendor/ps3recomp')
+ROOT = os.environ.get('PS3RECOMP_SOURCE_DIR', str(Path(__file__).resolve().parents[1] / 'vendor/ps3recomp'))
 header = (Path(ROOT) / 'include/ps3emu/nid.h').read_text(encoding='utf-8')
 macro = re.search(r'^#define PS3_NID_SUFFIX\s+"([^"\n]+)"', header, re.M)
 if not macro:
