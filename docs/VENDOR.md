@@ -303,3 +303,10 @@ only the surrounding backend integration differs. No RPCS3 implementation or
 game payload was copied. The fork CTest target and curated portable checker
 exercise the actual helpers; native event-trigger evidence remains separate.
 No external PR is authorized or opened by this work.
+
+
+### B8 CPU readback checkpoint (issue 153)
+
+The generic B8 readback fix comes from fork branch `codex/cpu-surface-b8-readback` through `558b56294233dd3f7c293f8a39519e3d33a4089f`, integrated in `combined` at `a90b39674e7e468dba50f8098a1e356758f519f1`. Guest B8 stores blue from the existing RGBA8 host storage. Guest row bounds and aligned host footprints are checked separately; other formats and explicit failures remain intact. The host-pitch helper is compared against D3D12 GetCopyableFootprints in a debug-layer WARP fixture. Modular and combined Linux, Windows, macOS and Vulkan CI passed.
+
+The original-target checked Debug/O1 native build `f1d72246dc9cfc30134785274a8bb3fe7275425c6c51c590ede2860cd2bdedbb` reached normal PLAY and the race HUD under owned scripted navigation. Run `20261019T202344.869587Z` acknowledged one normal R2 probe from a freshly inspected HUD frame and recorded 119 successful B8 surface synchronizations, including the previously failing 2048-square terrain surface; no CPU-surface failure or deadline error was logged before guarded shutdown. This validates the native path for [issue 153](https://github.com/robbe1912/motorstorm-mv-recomp/issues/153). That build also contains retained runtime changes from its existing worktree; it is not a clean-main build of this port alone. Stable 30 FPS and full graphics correctness remain unverified.

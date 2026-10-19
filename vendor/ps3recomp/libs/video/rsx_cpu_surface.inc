@@ -37,10 +37,10 @@ static void cpu_surface_copy(OffRT *r) {
     if(!bpp || r->cpu_pitch%bpp)cpu_surface_fail("unsupported guest surface layout",E_INVALIDARG);
     u32 width=r->w;
     if(width>r->cpu_pitch/bpp)width=r->cpu_pitch/bpp;
-    u32 pitch=(r->w*bpp+255)&~255u;
+    u32 pitch=rsx_surface_readback_host_pitch(r->w,r->cpu_format,D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
     u64 bytes=(u64)pitch*r->h;
     u64 guest_bytes=(u64)r->cpu_pitch*r->h;
-    if(!width || !r->h || bytes>256u*1024u*1024u || (u64)r->cpu_address+guest_bytes>0x100000000ull)
+    if(!width || !r->h || !pitch || bytes>256u*1024u*1024u || (u64)r->cpu_address+guest_bytes>0x100000000ull)
         cpu_surface_fail("surface copy bounds",E_INVALIDARG);
     if(!r->cpu_readback) {
         D3D12_HEAP_PROPERTIES hp={0};hp.Type=D3D12_HEAP_TYPE_READBACK;
