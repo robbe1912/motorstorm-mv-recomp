@@ -10,7 +10,6 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-TOOLS = ROOT / 'vendor/ps3recomp/tools'
 
 def config():
     p = ROOT / 'config/local.json'
@@ -58,9 +57,18 @@ def main():
     s.add_argument('--keys-dir', default='game/private_keys', help='Private headers and optional keys.json')
     b=sub.add_parser('build'); b.add_argument('--jobs',type=int,default=8); b.add_argument('--configure-only',action='store_true')
     b.add_argument('--optimize',action='store_true',help='Enable native O1 optimization with symbols and assertions retained')
+    b.add_argument('--renderer',choices=['platform','vulkan'],default='platform')
+    b.add_argument('--build-dir',type=Path,help='Separate local build output (default build/native)')
+    b.add_argument('--dependency-prefix',type=Path,help='Configuration-matched glslang/SPIRV install prefix')
+    b.add_argument('--vulkan-include',type=Path,help='Directory containing vulkan/vulkan.h')
+    b.add_argument('--sdl2-dir',type=Path,help='Directory containing SDL2Config.cmake')
     g=sub.add_parser('generate'); g.add_argument('--stage',choices=['ppu','spu'],required=True); g.add_argument('--jobs',type=int,default=8)
+    for parser in (b,g):
+        parser.add_argument('--ps3recomp-dir',type=Path,help='Fork checkout used for both tools and runtime source')
     sub.add_parser('check')
     args=ap.parse_args()
+    source_root=(getattr(args,'ps3recomp_dir',None) or ROOT/'vendor/ps3recomp').resolve()
+    tools=source_root/'tools'
     if args.cmd=='setup':
         c={'elf':str(Path(args.elf).resolve()),'disc':str(Path(args.disc).resolve()),'ffmpeg':str(Path(args.ffmpeg).resolve()),'keys':str(Path(args.keys_dir).resolve()),'userdata':'game/userdata','generated':'build/generated/named'}
         for key in ('elf','disc','ffmpeg'):
@@ -81,32 +89,43 @@ def main():
             out=c['generated']/'ppu'
             if out.exists() and any(out.iterdir()): raise SystemExit('Existing lift preserved. Move it to temp/ before regeneration.')
             meta=ROOT/'build/metadata'; meta.mkdir(parents=True,exist_ok=True)
-            run([sys.executable,TOOLS/'ppu_loader.py',c['elf'],'--output',meta])
+            run([sys.executable,tools/'ppu_loader.py',c['elf'],'--output',meta])
             functions=meta/'named.functions.json'
             run([sys.executable,ROOT/'scripts/analysis/debug_elf_functions.py',c['elf'],'--out',functions])
-            run([sys.executable,TOOLS/'ppu_lifter.py',c['elf'],'--functions',functions,'--hle-stubs',meta/(c['elf'].stem+'.imports.json'),'--cpp-nonlocal-jumps','--output',out,'--jobs',args.jobs])
+            run([sys.executable,tools/'ppu_lifter.py',c['elf'],'--functions',functions,'--hle-stubs',meta/(c['elf'].stem+'.imports.json'),'--cpp-nonlocal-jumps','--source-name','ppu_recomp.cpp','--output',out,'--jobs',args.jobs])
         else:
             images=ROOT/'build/extracted/spu'; out=c['generated']/'spu'
             if out.exists() and any(out.iterdir()): raise SystemExit('Existing SPU tree preserved. Move it to temp/ before regeneration.')
-            run([sys.executable,TOOLS/'extract_spu_images.py',c['elf'],'--output',images])
-            run([sys.executable,TOOLS/'build_spu_workloads.py','--images',images,'--lifted',out,'--out',out/'spu_workloads.c','--title','MotorStorm MV','--constructor'])
+            run([sys.executable,tools/'extract_spu_images.py',c['elf'],'--output',images])
+            run([sys.executable,tools/'build_spu_workloads.py','--images',images,'--lifted',out,'--out',out/'spu_workloads.c','--title','MotorStorm MV','--constructor'])
         print('Generated output is private and ignored. See docs/BUILDING.md for additional module requirements.'); return
     if args.cmd=='build':
         if not 1<=args.jobs<=8: raise SystemExit('Use 1..8 jobs to bound compiler memory')
         if os.name=='nt':
             # Required discipline before relinking. No matching process is harmless.
             subprocess.run(['taskkill','/F','/IM','ms1_recomp.exe'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        env=build_environment(); binary=ROOT/'build/native'
+        env=build_environment(); binary=(args.build_dir or ROOT/'build/native').resolve()
         command=['cmake','-S',ROOT,'-B',binary,'-G','Ninja','-DCMAKE_BUILD_TYPE=Debug','-DPORT_CPP_NONLOCAL_JUMPS=ON',f'-DRECOMP_DIR={c["generated"]/"ppu"}',f'-DSPU_DIR={c["generated"]/"spu"}',f'-DPS3RECOMP_FFMPEG_ROOT={c["ffmpeg"]}',f'-DPORT_PRIVATE_KEYS_DIR={c.get("keys",ROOT/"game/private_keys")}']
         if 'MV_CLANG' in env: command.extend([f'-DCMAKE_C_COMPILER={env["MV_CLANG"]}',f'-DCMAKE_CXX_COMPILER={env["MV_CLANG"]}'])
+        command.append(f'-DPS3RECOMP_DIR={source_root}')
         command.append(f'-DPORT_OPTIMIZE_NATIVE={"ON" if args.optimize else "OFF"}')
+        command.append(f'-DPORT_RSX_BACKEND={args.renderer}')
+        for key, value in [('CMAKE_PREFIX_PATH',args.dependency_prefix),
+                           ('PS3RECOMP_VULKAN_INCLUDE_DIR',args.vulkan_include),
+                           ('SDL2_DIR',args.sdl2_dir)]:
+            if value: command.append(f'-D{key}={value.resolve()}')
         logs=ROOT/'temp/builds'/datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
         logged_run(command,logs/'configure.log',env=env)
         if args.configure_only: return
         logged_run(['cmake','--build',binary,'--parallel',args.jobs],logs/'build.log',env=env)
         exe=binary/('ms1_recomp.exe' if os.name=='nt' else 'ms1_recomp')
         identity={'path':str(exe),'sha256':hashlib.sha256(exe.read_bytes()).hexdigest(),'bytes':exe.stat().st_size,'elf_sha256':hashlib.sha256(c['elf'].read_bytes()).hexdigest(),'ppu_tree':str(c['generated']/'ppu'),'spu_tree':str(c['generated']/'spu'),'logs':str(logs)}
-        identity.update(build_type='Debug',optimized_checked=args.optimize)
+        identity.update(build_type='Debug',optimized_checked=args.optimize,ps3recomp_dir=str(source_root),renderer=args.renderer)
+        from runtime_profile import runtime_capabilities
+        identity['runtime_capabilities']=runtime_capabilities(source_root)
+        if (source_root/'.git').exists():
+            identity['ps3recomp_commit']=subprocess.check_output(['git','-C',str(source_root),'rev-parse','HEAD'],text=True).strip()
+            identity['ps3recomp_dirty']=bool(subprocess.check_output(['git','-C',str(source_root),'status','--porcelain'],text=True).strip())
         (binary/'build_identity.json').write_text(json.dumps(identity,indent=2)); print('Build identity:',identity['sha256'])
 
 if __name__=='__main__': main()

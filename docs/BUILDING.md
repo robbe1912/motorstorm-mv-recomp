@@ -14,6 +14,39 @@ Windows x64; Visual Studio 2022 Build Tools Desktop C++/Windows SDK; LLVM/clang-
 
 RPCS3 and Ghidra are optional research/reference dependencies, not the native runner. The asset-name audit requires an explicitly supplied RA/LZH reader; it is not bundled.
 
+Native Vulkan integration is tracked in [#146](https://github.com/robbe1912/motorstorm-mv-recomp/issues/146).
+The build wrapper accepts `--ps3recomp-dir FORK` for both generation and native
+runtime selection. Select a fresh ignored generated tree before generating PPU
+output; standard nonlocal returns require the fork's C++ lowering. Preserve the
+selected original SPU tree and input identities for renderer comparisons.
+
+Use `build --renderer vulkan --build-dir build/native-vulkan` with
+`--dependency-prefix PREFIX` (configuration-matched glslang/SPIRV install),
+`--vulkan-include HEADERS` (containing vulkan/vulkan.h) and `--sdl2-dir CONFIG`
+(containing SDL2Config.cmake). Vulkan uses the system loader. The host requires
+guest-shader translation and an actual SDL Vulkan window; unavailable shaders
+or required window initialization fail explicitly. This path retains the
+checked Debug/O1 option and records the selected toolkit source and renderer.
+Keep the existing D3D12 build in its separate directory for comparison.
+
+The owned launcher accepts `--renderer vulkan --executable
+build/native-vulkan/ms1_recomp.exe` and checks the matching build identity and
+owned visible SDL window. `--capture-menu` samples completed guest-flip
+readbacks at most once every four seconds (up to 120 BMPs), publishing the
+manifest after each complete image. The ordinary replay still admits only
+recent completed internal frames. Capture and build checks alone establish
+neither original menu/race acceptance nor a sustained frame rate.
+
+The launcher defaults to the curated `baseline-interpreter` execution profile.
+The current fork does not implement that policy-interpreter switch: unsupported
+baseline requests are rejected before launch. Use the explicit
+`--execution-profile toolkit-default` only for a fresh current-fork trial;
+its normal dispatcher selects compiled code and any runtime fallback itself.
+This omits unsupported curated probes and records the choice/capabilities in
+the run identity. It cannot establish an API speedup against the old curated
+D3D12 profile. Match the current-fork PPU/SPU/input and execution profile on
+both renderers for that comparison. See [#149](https://github.com/robbe1912/motorstorm-mv-recomp/issues/149).
+
 ## Private inputs
 
 Supply your own decrypted executable, matching PS3_GAME, firmware and keys where applicable. No acquisition service/payload is included. External paths work; originals need not be copied.
