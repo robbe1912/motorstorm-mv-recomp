@@ -302,12 +302,11 @@ typedef struct {
                              * instead of re-decompiling ~30 ms every draw);
                              * generation bumps and normal eviction retry it. */
 } VPFPEntry;
-/* Guest-FP PSO cache. 16 entries thrashed badly: this title needs far more
- * distinct (fp, vs, blend, rt, cmask, ucode-hash) combinations than that in a
- * single frame, so the FIFO evicted entries that were needed again immediately
- * and ~17 shaders were recompiled EVERY frame -- about half the frame's CPU
- * time. Entries are small (a PSO pointer plus key fields). */
-#define VP_FP_CACHE 256
+/* Pipeline identity remains unchanged. Grow the working set up to a hard
+ * metadata bound; capped FIFO replacement must not shift other entries. */
+#define VP_FP_CACHE_INITIAL 256
+#define VP_FP_CACHE_LIMIT 4096
+#include "rsx_pipeline_cache.h"
 
 /* ---------------------------------------------------------------------------
  * Internal state
@@ -399,8 +398,8 @@ typedef struct {
     unsigned              vp_tex_capacity; /* per-frame VP texture slots    */
     VPVSEntry             vp_vs[VP_VS_CACHE];   /* per-draw decompiled VS cache  */
     int                   vp_vs_n;
-    VPFPEntry             vp_fp[VP_FP_CACHE];   /* guest-FP PSO cache            */
-    int                   vp_fp_n;
+    VPFPEntry*            vp_fp;   /* guest-FP PSO cache            */
+    rsx_pipeline_cache    vp_fp_store;
     u32                   srv_inc;              /* CBV_SRV_UAV descriptor size   */
     /* VP path: latest texture bound per unit (t0-t15). */
     struct { u32 off, raw, w, h, fmt, ctrl1, mips; int cube; int set; } cur_texs[16];
@@ -2506,14 +2505,22 @@ static int vp_fp_entry_matches(const VPFPEntry* q, u32 fp_addr, u32 vs_hash,
            q->cube_mask == cube_mask && q->ds_key == ds_key;
 }
 
+static VPFPEntry* vp_fp_cache_acquire(void)
+{
+    int replaced;
+    VPFPEntry* entry = (VPFPEntry*)rsx_pipeline_cache_acquire(&s_d3d.vp_fp_store,
+        sizeof(VPFPEntry), VP_FP_CACHE_INITIAL, VP_FP_CACHE_LIMIT, &replaced);
+    if (!entry) {
+        fprintf(stderr, "[RSXPSO] Pipeline cache allocation/state failure\n");
+        abort();
+    }
+    s_d3d.vp_fp = (VPFPEntry*)s_d3d.vp_fp_store.data;
+    if (replaced && entry->pso) entry->pso->lpVtbl->Release(entry->pso);
+    return entry;
+}
 static void vp_fp_cache_put(const VPFPEntry* e)
 {
-    if (s_d3d.vp_fp_n >= VP_FP_CACHE) {
-        if (s_d3d.vp_fp[0].pso) s_d3d.vp_fp[0].pso->lpVtbl->Release(s_d3d.vp_fp[0].pso);
-        memmove(&s_d3d.vp_fp[0], &s_d3d.vp_fp[1], sizeof(VPFPEntry) * (VP_FP_CACHE - 1));
-        s_d3d.vp_fp_n = VP_FP_CACHE - 1;
-    }
-    s_d3d.vp_fp[s_d3d.vp_fp_n++] = *e;
+    *vp_fp_cache_acquire() = *e;
 }
 
 
@@ -2671,7 +2678,7 @@ static ID3D12PipelineState* vp_get_fp_pso(int vs_idx, u32 fp_addr, u32 blend, in
 
     s_perf_pso_calls++;
     if (phase_on()) s_phase.pso_calls++;
-    for (int i = 0; i < s_d3d.vp_fp_n; i++)
+    for (int i = 0; i < (int)s_d3d.vp_fp_store.count; i++)
         if (s_d3d.vp_fp[i].fp_addr != fp_addr) continue;   /* cheap reject first */
         else if (vp_fp_entry_matches(&s_d3d.vp_fp[i], fp_addr, vs_hash, blend, nrt,
                                      (u32)rtfmt, exp32, uhash, cmask, cull,
@@ -2708,7 +2715,7 @@ static ID3D12PipelineState* vp_get_fp_pso(int vs_idx, u32 fp_addr, u32 blend, in
     { static int md = -1;
       if (md < 0) { const char* e = getenv("PSOMISSDBG"); md = e ? atoi(e) : 0; }
       if (md) { static int n = 0;
-        for (int i = 0; i < s_d3d.vp_fp_n && n < 12; i++) {
+        for (int i = 0; i < (int)s_d3d.vp_fp_store.count && n < 12; i++) {
             VPFPEntry* q = &s_d3d.vp_fp[i];
             if (q->fp_addr != fp_addr) continue;
             n++;
@@ -3074,7 +3081,7 @@ static ID3D12PipelineState* vp_get_fp_pso(int vs_idx, u32 fp_addr, u32 blend, in
      * visible from the log. */
     {
         u32 distinct = 1;
-        for (int i = 0; i < s_d3d.vp_fp_n; i++)
+        for (int i = 0; i < (int)s_d3d.vp_fp_store.count; i++)
             if (s_d3d.vp_fp[i].fp_addr == fp_addr
                 && s_d3d.vp_fp[i].ucode_hash != key.ucode_hash) distinct++;
         if (distinct > 1) {
@@ -8293,7 +8300,7 @@ void rsx_d3d12_backend_shutdown(void)
     if (!s_d3d.initialized) return;
     cpu_surface_shutdown();
 
-    gpu_pso_retire();   /* waits; on failure the references stay retained */
+    int pso_retired = gpu_pso_retire();   /* waits; on failure references stay retained */
     for(unsigned i=0;i<s_d3d.vp_tex_capacity;i++) {
         VPTexSlot* t=&s_d3d.vp_tex[i];
         if(t->res)t->res->lpVtbl->Release(t->res);
@@ -8305,6 +8312,15 @@ void rsx_d3d12_backend_shutdown(void)
     }
     shader_pool_finish();
     rsx_shader_cache_clear(&s_fp_bytecode,&s_fp_blob_ops);
+    if (!pso_retired) {
+        fprintf(stderr, "[RSXPSO] Pipeline shutdown retirement failed\n");
+        abort();
+    }
+    for (unsigned i = 0; i < s_d3d.vp_fp_store.count; ++i)
+        if (s_d3d.vp_fp[i].pso) s_d3d.vp_fp[i].pso->lpVtbl->Release(s_d3d.vp_fp[i].pso);
+    free(s_d3d.vp_fp_store.data);
+    memset(&s_d3d.vp_fp_store, 0, sizeof(s_d3d.vp_fp_store));
+    s_d3d.vp_fp = NULL;
     /* Per-draw decompiled VS cache had no teardown of its own. */
     for (int i = 0; i < s_d3d.vp_vs_n; i++)
         if (s_d3d.vp_vs[i].vs) s_d3d.vp_vs[i].vs->lpVtbl->Release(s_d3d.vp_vs[i].vs);
