@@ -7301,6 +7301,14 @@ static u32 upload_strip_vp_indexed(const rsx_state* state, u32 first, u32 count,
     VPSlot* out = (VPSlot*)((u8*)s_d3d.vp_vb_mapped
         + (u64)s_d3d.vp_parity * MAX_VERTICES * VP_VERT_STRIDE + s_d3d.vp_vb_offset);
     u32 o = 0;
+    /* Strip/fan triangles share vertices. Reuse their exact decoded bytes
+     * only within this callback: all attribute/base/frequency state is fixed,
+     * and nothing survives a later draw or guest-memory update. Three LRU
+     * entries retain both shared vertices for strips and the center for fans. */
+    const int use_cache = count > 3 || count + cursor.held > 3;
+    VPSlot cached_vertices[3][16];
+    u32 cached_indices[3] = {0};
+    u64 cached_age[3] = {0}, cache_clock = 0;
     for (u32 k = 0; k < count; k++) {
         u32 triangle[3];
         if (!rsx_index_strip_push(&cursor, read_guest_index(state, first + k), fan,
@@ -7310,8 +7318,26 @@ static u32 upload_strip_vp_indexed(const rsx_state* state, u32 first, u32 count,
             fprintf(stderr, "[D3D12] indexed strip/fan vertex buffer exhausted\n");
             break;
         }
+        /* A fresh single triangle has no shared work to amortize a cache. */
+        if (!use_cache) {
+            for (u32 v = 0; v < 3; ++v)
+                read_vp_vertex(state, triangle[v], &out[(o++)*16]);
+            continue;
+        }
         for (u32 v = 0; v < 3; v++) {
-            read_vp_vertex(state, triangle[v], &out[o*16]); o++;
+            int slot = -1;
+            for (int c = 0; c < 3; ++c)
+                if (cached_age[c] && cached_indices[c] == triangle[v]) { slot = c; break; }
+            if (slot < 0) {
+                slot = 0;
+                for (int c = 1; c < 3; ++c)
+                    if (cached_age[c] < cached_age[slot]) slot = c;
+                read_vp_vertex(state, triangle[v], cached_vertices[slot]);
+                cached_indices[slot] = triangle[v];
+            }
+            cached_age[slot] = ++cache_clock;
+            memcpy(&out[o*16], cached_vertices[slot], sizeof cached_vertices[slot]);
+            ++o;
         }
     }
     s_d3d.vp_vb_offset += o * VP_VERT_STRIDE;
