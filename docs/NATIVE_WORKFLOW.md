@@ -196,3 +196,21 @@ rebase the whole stack indiscriminately.
   Candidate131633/frame37: solid but flat hill, stipple/no bike. Run132520 retains
   terrain shader/material reads and detailed BC maps;133222 captures sampler
   registers. These remain private and prove only the stated scope.
+
+## Resumed depth and clear work (2026-10-14 evening)
+
+The user resumed issue 94 after the pause. The restored main executable and
+its backup stay unchanged; PR98 stays unaccepted. Candidate work moved to
+the convolution-capture worktree branch `codex/rsx-depth-surfaces` (PR101):
+an address-keyed depth-surface cache plus the corrected D24S8 packed clear
+decode. The game-free red/green contract lives on fork branch
+`codex/depth-clear-contract`. Owned muted replays `20261014T191239`,
+`20261014T191720` and `20261014T200115` record the text-only stop, the
+retained-sky regression and the restored skybox. Canonical evidence and
+limits are in `docs/research/GRAPHICS_AUDIO.md` on PR101 and on issue 94.
+Open symptoms there: white background props, blurry backdrop, grey platform,
+missing preview vehicle.
+
+This is a historical checkpoint. The stack was subsequently incorporated by
+PR124; its depth and workload acceptance gaps remain open. Current work follows
+[NEXT_STEPS](NEXT_STEPS.md), with DX12 performance first and Vulkan parked.
