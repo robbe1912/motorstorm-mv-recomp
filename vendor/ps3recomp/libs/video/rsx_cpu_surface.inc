@@ -5,6 +5,7 @@
 typedef struct CpuSurfaceRequest {
     struct CpuSurfaceRequest *next;
     u32 address, bytes;
+    u32 client_thread;
     HANDLE done;
     int status;
     u64 queued_ms;
@@ -37,8 +38,10 @@ static void cpu_surface_profile_emit(CpuSurfaceRequest *request) {
     RsxCpuSurfaceProfile *p=&request->profile;
     if(!rsx_cpu_surface_profile_valid(p))cpu_surface_fail("profile accounting",E_FAIL);
     u64 stages=p->allocation+p->prior_fence+p->commands+p->copy_fence+p->packing;
-    fprintf(stderr,"[CPUSURFACE_PROFILE] address=%08X bytes=%u frequency=%llu queue=%llu service=%llu return=%llu total=%llu allocation=%llu prior_fence=%llu commands=%llu copy_fence=%llu packing=%llu other=%llu matched=%llu hits=%llu copies=%llu host_bytes=%llu guest_bytes=%llu\n",
-        request->address,request->bytes,(unsigned long long)s_cpu_surface_profile_frequency,
+    fprintf(stderr,"[CPUSURFACE_PROFILE] address=%08X bytes=%u client=%lu renderer=%lu queued_at=%llu started_at=%llu finished_at=%llu returned_at=%llu frequency=%llu queue=%llu service=%llu return=%llu total=%llu allocation=%llu prior_fence=%llu commands=%llu copy_fence=%llu packing=%llu other=%llu matched=%llu hits=%llu copies=%llu host_bytes=%llu guest_bytes=%llu\n",
+        request->address,request->bytes,(unsigned long)request->client_thread,(unsigned long)s_cpu_surface_thread,
+        (unsigned long long)p->queued,(unsigned long long)p->started,(unsigned long long)p->finished,(unsigned long long)p->returned,
+        (unsigned long long)s_cpu_surface_profile_frequency,
         (unsigned long long)(p->started-p->queued),(unsigned long long)(p->finished-p->started),
         (unsigned long long)(p->returned-p->finished),(unsigned long long)(p->returned-p->queued),
         (unsigned long long)p->allocation,(unsigned long long)p->prior_fence,(unsigned long long)p->commands,
@@ -155,17 +158,22 @@ static void cpu_surface_service(void) {
         request=next;
     }
 }
+static void cpu_surface_frame_complete(void) {
+    if(s_cpu_surface_recording)cpu_surface_fail("CPU service before command submission",E_FAIL);
+    cpu_surface_service();
+}
 static void cpu_surface_request(u32 address,u32 bytes,void *opaque) {
     (void)opaque;
-    if((LONG)GetCurrentThreadId()==InterlockedCompareExchange(&s_cpu_surface_thread,0,0)){
-        CpuSurfaceRequest direct={0};direct.address=address;direct.bytes=bytes;
+    u32 client_thread=(u32)GetCurrentThreadId();
+    if((LONG)client_thread==InterlockedCompareExchange(&s_cpu_surface_thread,0,0)){
+        CpuSurfaceRequest direct={0};direct.address=address;direct.bytes=bytes;direct.client_thread=client_thread;
         direct.profile.queued=direct.profile.started=cpu_surface_tick();
         RsxCpuSurfaceProfile *previous=s_cpu_surface_profile_active;
         s_cpu_surface_profile_active=s_cpu_surface_profile?&direct.profile:NULL;
         cpu_surface_read(address,bytes);s_cpu_surface_profile_active=previous;
         direct.profile.finished=direct.profile.returned=cpu_surface_tick();cpu_surface_profile_emit(&direct);return;
     }
-    CpuSurfaceRequest request={0};request.address=address;request.bytes=bytes;request.status=-1;request.queued_ms=GetTickCount64();request.profile.queued=cpu_surface_tick();
+    CpuSurfaceRequest request={0};request.address=address;request.bytes=bytes;request.client_thread=client_thread;request.status=-1;request.queued_ms=GetTickCount64();request.profile.queued=cpu_surface_tick();
     request.done=CreateEventA(NULL,FALSE,FALSE,NULL);
     if(!request.done)cpu_surface_fail("CPU read event creation",E_FAIL);
     AcquireSRWLockExclusive(&s_cpu_surface_lock);

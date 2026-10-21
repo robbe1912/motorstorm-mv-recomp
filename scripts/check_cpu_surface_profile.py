@@ -19,7 +19,7 @@ def main():
     declarations=source[source.index('typedef struct CpuSurfaceRequest'):source.index('static ID3D12CommandAllocator')]
     declarations+='\nstatic int s_cpu_surface_live;\n'
     helper=source[source.index('static int s_cpu_surface_profile;'):source.index('static void cpu_surface_fence_wait')]
-    for marker,value in [('DECLARATIONS',declarations),('HELPERS',helper),('SERVICE',function(source,'cpu_surface_service')),('REQUEST',function(source,'cpu_surface_request'))]:
+    for marker,value in [('DECLARATIONS',declarations),('HELPERS',helper),('SERVICE',function(source,'cpu_surface_service')),('COMPLETION',function(source,'cpu_surface_frame_complete')),('REQUEST',function(source,'cpu_surface_request'))]:
         fixture=fixture.replace('/* PRODUCTION_'+marker+' */',value)
     c=out/'check.c';c.write_text(fixture);exe=out/('check.exe' if os.name=='nt' else 'check')
     compiler=os.environ.get('MV_CLANG') or os.environ.get('CC') or ('clang-cl' if os.name=='nt' else 'cc')
@@ -34,11 +34,16 @@ def main():
     for p in records:
         n={k:int(v,16) if k=='address' else int(v) for k,v in p.items()}
         assert n['total']==n['queue']+n['service']+n['return']
+        assert n['queued_at']<=n['started_at']<=n['finished_at']<=n['returned_at']
+        assert n['client'] in [1,2] and n['renderer']==2
         assert n['service']==sum(n[k] for k in ['allocation','prior_fence','commands','copy_fence','packing','other'])
         assert [n[k] for k in ['matched','hits','copies','host_bytes','guest_bytes']]==[2,1,1,256,8]
     failed=subprocess.run([str(exe),'clock-failure'],capture_output=True,text=True)
     (out/'clock-failure.log').write_text(failed.stdout+failed.stderr)
     assert failed.returncode==2 and 'profile clock' in failed.stderr
+    ordering=subprocess.run([str(exe),'unsubmitted'],capture_output=True,text=True)
+    (out/'unsubmitted.log').write_text(ordering.stdout+ordering.stderr)
+    assert ordering.returncode==2 and 'CPU service before command submission' in ordering.stderr
     mutant=out/'mutant';mutant.mkdir(exist_ok=True)
     header=(ROOT/'vendor/ps3recomp/libs/video/rsx_cpu_surface_profile.h').read_text()
     assert header.count('if(stages[i]>remaining)return 0;')==1
@@ -54,5 +59,16 @@ def main():
     bad=subprocess.run([str(mutant/('check.exe' if os.name=='nt' else 'check'))],capture_output=True,text=True)
     (mutant/'run.log').write_text(bad.stdout+bad.stderr)
     assert bad.returncode==1 and 'overlapping/over-accounted stages rejected' in bad.stderr
-    print('PASS: independent emitted-phase sums and visible clock-failure control');return 0
+    completion=function(source,'cpu_surface_frame_complete')
+    assert completion.count('cpu_surface_service();')==1
+    absent=out/'missing-service.c';absent.write_text(fixture.replace(completion,completion.replace('cpu_surface_service();','(void)&cpu_surface_service; /* deliberate missing completion */')))
+    missing=out/('missing-service.exe' if os.name=='nt' else 'missing-service')
+    changed=[str(absent) if x==str(c) else x for x in cmd]
+    if os.name=='nt':changed=[('/Fe'+str(missing)) if x.startswith('/Fe') else x for x in changed]
+    else:changed[-1]=str(missing)
+    build=subprocess.run(changed,capture_output=True,text=True);(out/'missing-service-build.log').write_text(build.stdout+build.stderr)
+    assert build.returncode==0,build.stdout+build.stderr
+    bad=subprocess.run([str(missing)],capture_output=True,text=True);(out/'missing-service-run.log').write_text(bad.stdout+bad.stderr)
+    assert bad.returncode==2 and 'queued request not released at completed batch' in bad.stderr
+    print('PASS: submitted pixel/waiter completion, premature-order/missing-service and clock/accounting controls');return 0
 if __name__=='__main__':sys.exit(main())
