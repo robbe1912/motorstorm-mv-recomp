@@ -23,3 +23,5 @@ Each subject has one canonical owner. Begin with [setup and target](BUILDING.md)
 | All migrated notes and private evidence locations | [Source coverage](SOURCE_COVERAGE.md) |
 
 Canonical pages qualify historical successes against newer evidence. Public research records findings/identifiers, not original guest instruction or asset payloads.
+
+[Native game operations](NATIVE_GAME.md) documents the handwritten world-transform kernel, its verification and remaining game integration.
