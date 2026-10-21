@@ -42,11 +42,12 @@ Original binaries, assets, firmware, generated guest code, keys, dumps and captu
 
 Historical closed reference findings and scoped exclusions remain in [Havok/reference](research/HAVOK_REFERENCE.md) and [parked mstream](research/PARKED_MSTREAM.md). The closed top-right flashing defect is reopened only on a reproduced regression. Required PM interpretation remains a development dependency until compiled semantic parity or a validated native workload replacement removes that dependency; never blindly disable it. [Setup](BUILDING.md) owns target/architecture facts; research pages own evidence.
 
-## Recovery checkpoint (resumed 2026-10-15)
+## Recovery checkpoint (2026-10-15)
 
-The user resumed the audit and intro-skip work on 2026-10-15 after storage
-cleanup. [Issue 104](https://github.com/robbe1912/motorstorm-mv-recomp/issues/104)
-tracks the single skip across observed caption fades. See [native workflow](NATIVE_WORKFLOW.md) for the
-restored boot-capable EXE, saved draft stack, evidence/tooling limits and complete
-resume order. Sampler97/PR98 is explicitly unaccepted and stays off combined;
-restoring the earlier baseline is not a claim that race/graphics DoD is achieved.
+The 2026-10-15 resume after storage cleanup is complete.
+[Issue 104](https://github.com/robbe1912/motorstorm-mv-recomp/issues/104)
+closed the single observed intro skip. The restored usable build, draft-stack
+disposition and private tooling limits are recorded in
+[native workflow](NATIVE_WORKFLOW.md). Sampler97/PR98 is explicitly
+unaccepted and stays off combined; restoring the earlier baseline was never
+a claim that race/graphics DoD is achieved.]

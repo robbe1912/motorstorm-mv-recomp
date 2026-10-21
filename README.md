@@ -1,6 +1,6 @@
 # MotorStorm Monument Valley native recompilation tooling
 
-Work in progress: Windows runner, translation tools and modified [ps3recomp](https://github.com/sp00nznet/ps3recomp) runtime for MotorStorm 1. A playable native race has **not** been demonstrated. This repository distributes source glue and documentation; game binaries, assets, firmware, generated guest code, keys, saves and captures stay local.
+Work in progress: Windows runner, translation tools, a modified [ps3recomp](https://github.com/sp00nznet/ps3recomp) runtime and growing handwritten native x86 game operations for MotorStorm 1. A playable native race has **not** been demonstrated. This repository distributes source glue and documentation; game binaries, assets, firmware, generated guest code, keys, saves and captures stay local.
 
 **You must supply your own legally obtained game files.** The source license covers this tooling, not the game. Setup and generation run locally; this repository provides no game downloads.
 
