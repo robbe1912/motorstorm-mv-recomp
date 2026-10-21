@@ -85,7 +85,7 @@ python scripts/project.py build
 
 The wrapper kills ms1_recomp.exe before relinking, configures root CMake into build/native, uses clang-cl and at most eight jobs. Full warnings/errors go to unique temp/builds/TIMESTAMP/configure.log and build.log. Failure prints a bounded tail and full log path; no warning suppression added. Success records EXE/ELF hashes/tree paths/log directory in build_identity.json.
 
-The selected debug-US build binds native hierarchy work by default. Its original ELF and reference function must match the verified contract; the build copies generated inputs locally and changes only the copied binding TU. See [native binding and reference mode](NATIVE_GAME.md#build-and-scene-bridge), including `--no-native-world-transforms` for an unbound reference build. Other targets require their own verified binding.
+The selected debug-US build binds native hierarchy work and cooperative job waits by default. Its original ELF and reference functions must match the verified contracts; the build copies generated inputs locally and changes only the copied binding TUs. See [native binding and reference mode](NATIVE_GAME.md#build-and-scene-bridge). Use both `--no-native-world-transforms --no-native-job-wait` for an unbound reference build. Other targets require their own verified bindings.
 
 Public vendor tests exclude unreviewed guest fixtures. PS3RECOMP_BUILD_TESTS=ON fails clearly; review upstream synthetic tests separately. Build success establishes compilation, not native gameplay. Use [operations](OPERATIONS.md) for live work.
 

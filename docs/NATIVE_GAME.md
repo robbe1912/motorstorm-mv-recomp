@@ -12,7 +12,7 @@ Run `python scripts/check_native_world_transforms.py` on an x86-64 AVX2/FMA host
 
 ## Build and scene bridge
 
-`python scripts/project.py build --optimize --jobs 1` enables native hierarchy binding by default for the verified original debug-US ELF. `--no-native-world-transforms` retains the unbound reference build. Direct CMake configuration uses `PORT_NATIVE_WORLD_TRANSFORMS=ON` and `PORT_TARGET_ELF` pointing to the selected original ELF. This does not change the required PM interpretation for unreplaced work.
+`python scripts/project.py build --optimize --jobs 1` enables native hierarchy and job-wait bindings by default for the verified original debug-US ELF. Both `--no-native-world-transforms --no-native-job-wait` retain the unbound reference build. Direct CMake configuration uses `PORT_NATIVE_WORLD_TRANSFORMS=ON`, `PORT_NATIVE_JOB_WAIT=ON` and `PORT_TARGET_ELF` pointing to the selected original ELF. This does not change the required PM interpretation for unreplaced work.
 
 [`native_game_binding.py`](../scripts/native_game_binding.py) verifies the original ELF and recovered reference-body identities, copies the selected generated tree into the build directory, and renames only the copied reference definition. A generated forwarding entry preserves direct callers and the registration table; registry-only replacement would miss direct calls. Other translation units retain their source paths and commands. Changed identities, stale copies and reparse points fail preparation. Original inputs remain read-only. The accepted identities are deliberately narrow; another target or changed generated reference needs verification before its binding is added.
 
@@ -21,6 +21,16 @@ Run `python scripts/check_native_world_transforms.py` on an x86-64 AVX2/FMA host
 [`native_cpu.cpp`](../src/motorstorm/native_cpu.cpp) is compiled without AVX flags and checks AVX2/FMA, XSAVE/OSXSAVE and enabled XMM/YMM OS state before entering the separately compiled kernel. Unsupported hosts retain original execution. `MS_NATIVE_HIERARCHY=0` selects that reference path in a bound build; `1` enables native work, which is the bound default. Native-operation counters and visible fallback records describe coverage; they are not FPS measurements.
 
 Run `python scripts/check_native_game_binding.py` and `python scripts/check_native_scene.py` for authored binding/transaction tests. They verify unchanged originals and direct/table callers, stable repeated preparation, wrong identities and junction rejection, native commits, whole-list fallback without partial writes, CPU/OS capability requirements, context/FP preservation and reference mode. A bad-commit mutant must fail the independently expected world result.
+
+## Cooperative job dependencies
+
+[Issue 183](https://github.com/robbe1912/motorstorm-mv-recomp/issues/183) owns the native job-marker wait. [`job_wait.h`](../src/motorstorm/job_wait.h) describes a progress source with a claimed-job count and six active lanes. The operation resolves ownership on every poll, reads the claimed count before a full barrier, scans every lane, and returns only when their unsigned minimum reaches the marker. This ordering follows the original instructions; the old decompiler pseudocode placed the barrier differently.
+
+[`job_wait_adapter.cpp`](../src/motorstorm/job_wait_adapter.cpp) reads real producer counters and preserves the actual AOT return register/condition state. It performs no guest writes before completion. Short waits poll briefly; blocked work then uses a per-thread high-resolution Windows timer or a host sleep on other platforms. Unsupported inputs or timer failures visibly execute the retained original operation. There is no fabricated completion or synthetic timeout. `MS_NATIVE_JOB_WAIT=0` selects the original operation in the bound binary; it does not disable native hierarchy work.
+
+Run `python scripts/check_native_job_wait.py` for authored seven-counter/order/ownership/ABI/reference/error tests. Independent premature-completion, barrier-order and missing-cooperation mutants must fail. The binder regression also compiles independent native/reference callers for two TUs and verifies feature changes restore only known transformed copies, leaving originals and unrelated copy timestamps unchanged.
+
+Private verification checked all 21 original instructions against the selected ELF and compared full contexts with the actual AOT routine across 512 authored progress streams and 65,096 polls. In five alternating trials per side with the same 30 ms producer schedule, median waiter cycles were 115,690,120 for the AOT routine and 953,490 for the native waiter. Wall completion medians were 31.3174 ms and 30.9497 ms respectively; ranges were 30.6627–36.0117 ms and 30.8096–31.3532 ms. This measures waiting-thread cost with shipping timer code, not producer acceleration or game FPS. Windows thread-time measurements were too coarse to resolve the native waiter CPU cost. Native-game validation remains pending.
 
 ## Runtime evidence and remaining coverage
 

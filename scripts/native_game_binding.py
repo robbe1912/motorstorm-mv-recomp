@@ -23,6 +23,9 @@ class Contract:
 PRODUCTION = Contract(
     '3e68c72f8fbd6a30ef30d4535462cf70f1cc86d111f56574adb7dd2c255e0706',
     '7b23ca3b8caa320386fb2eb0bca6bcacafce4c1941aaecb706f4f55439bf9939')
+JOB_WAIT = Contract(PRODUCTION.elf_sha256,
+    'ab53a9f3f0d538a07d6333eb2b45d78a2dd40e2a3dcbe317e08109f96fad5fca',
+    'func_00C5C424', 'game_original_job_marker_wait', 'motorstorm_job_marker_wait')
 
 
 def digest(path):
@@ -80,12 +83,19 @@ def transform(source, contract):
     return renamed + wrapper
 
 
-def prepare(generated, output, elf, manifest, contract=PRODUCTION):
+def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=None, known_contracts=None):
     generated, output, elf, manifest = map(lambda p: Path(p).resolve(), (generated, output, elf, manifest))
     if output.is_relative_to(generated) or generated.is_relative_to(output) or manifest.is_relative_to(generated):
         raise ValueError('Binding outputs must be separate from original inputs')
-    if digest(elf) != contract.elf_sha256:
+    selected = tuple(contracts) if contracts is not None else (contract,)
+    if not selected or len({c.symbol for c in selected}) != len(selected):
+        raise ValueError('Expected nonempty unique native bindings')
+    elf_sha = digest(elf)
+    if any(elf_sha != c.elf_sha256 for c in selected):
         raise ValueError('Unsupported original ELF identity for native game binding')
+    known = tuple(known_contracts) if known_contracts is not None else (
+        (PRODUCTION, JOB_WAIT) if elf_sha == PRODUCTION.elf_sha256 else selected)
+    known = tuple(dict.fromkeys((*known, *selected)))
     files = {}
     for path in sorted(generated.rglob('*')):
         if IGNORED_CACHES.intersection(path.relative_to(generated).parts):
@@ -96,21 +106,36 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION):
             files[path.relative_to(generated)] = digest(path)
     if not files or not (generated/'ppu/ppu_recomp.h').is_file():
         raise ValueError('Expected the selected generated tree with ppu/ppu_recomp.h')
-    candidates = []
+    definitions = {}
     for relative in files:
         if relative.parent == Path('ppu') and relative.suffix in {'.c', '.cpp'}:
             source = (generated/relative).read_bytes()
-            if re.search(rb'\bvoid\s+' + contract.symbol.encode() + rb'\s*\(', source):
-                candidates.append((relative, source))
-    # Declarations in a TU are legal; only the unique full definition binds.
-    definitions = []
-    for relative, source in candidates:
-        if re.search(rb'\bvoid\s+' + contract.symbol.encode() + rb'\s*\(\s*ppu_context\s*\*\s*ctx\s*\)\s*\{', source):
-            definitions.append((relative, source))
-    if len(definitions) != 1:
-        raise ValueError('Expected exactly one defining generated translation unit')
-    relative, source = definitions[0]
-    changed = transform(source, contract)
+            for entry in known:
+                if re.search(rb'\bvoid\s+' + entry.symbol.encode() + rb'\s*\(\s*ppu_context\s*\*\s*ctx\s*\)\s*\{', source):
+                    definitions.setdefault(entry, []).append((relative, source))
+    changes, allowed, bindings = {}, {}, []
+    for entry in known:
+        candidates = definitions.get(entry, [])
+        if len(candidates) != 1:
+            if entry in selected:
+                raise ValueError('Expected exactly one defining generated translation unit')
+            continue
+        relative, source = candidates[0]
+        try:
+            changed = transform(source, entry)
+        except ValueError:
+            if entry in selected:
+                raise
+            continue
+        sha = hashlib.sha256(changed).hexdigest()
+        allowed.setdefault(relative, set()).add(sha)
+        if entry in selected:
+            if relative in changes:
+                raise ValueError('Multiple bindings in one TU require a combined verified transform')
+            changes[relative] = changed
+            bindings.append(dict(symbol=entry.symbol, original_tu=(generated/relative).as_posix(),
+                copied_tu=(output/relative).as_posix(), reference_body_sha256=entry.body_sha256,
+                copied_tu_sha256=sha))
     if not output.exists():
         shutil.copytree(generated, output, ignore=shutil.ignore_patterns(*IGNORED_CACHES))
     for path in output.rglob('*'):
@@ -118,18 +143,23 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION):
             raise ValueError('Prepared input copy contains a reparse point')
     for entry, sha in files.items():
         destination = output/entry
-        expected = hashlib.sha256(changed).hexdigest() if entry == relative else sha
+        expected = hashlib.sha256(changes[entry]).hexdigest() if entry in changes else sha
         actual = digest(destination)
-        if actual != expected and not (entry == relative and actual == sha):
+        if actual not in {expected, sha, *allowed.get(entry, ())}:
             raise ValueError(f'Prepared input copy changed or stale: {entry}')
-    destination = output/relative
-    if destination.read_bytes() != changed:
-        destination.write_bytes(changed)
+    # Feature changes may restore only a known, identity-verified transform.
+    # Unknown edits still fail before any copy is written.
+    for entry in allowed:
+        destination = output/entry
+        expected = changes.get(entry)
+        if expected is None:
+            expected = (generated/entry).read_bytes()
+        if destination.read_bytes() != expected:
+            destination.write_bytes(expected)
     if any(digest(generated/entry) != sha for entry, sha in files.items()):
         raise ValueError('Original inputs changed during preparation')
-    result = dict(original_tu=(generated/relative).as_posix(), copied_tu=destination.as_posix(),
-                  elf_sha256=contract.elf_sha256, reference_body_sha256=contract.body_sha256,
-                  copied_tu_sha256=digest(destination), input_files={str(p): sha for p, sha in files.items()})
+    result = dict(bindings[0], elf_sha256=elf_sha, bindings=bindings,
+                  input_files={str(p): sha for p, sha in files.items()})
     encoded = json.dumps(result, indent=2)+'\n'
     manifest.parent.mkdir(parents=True, exist_ok=True)
     if not manifest.exists() or manifest.read_text() != encoded:
@@ -141,9 +171,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('generated', 'output', 'elf', 'manifest'):
         parser.add_argument('--'+name, type=Path, required=True)
+    parser.add_argument('--without-world-transforms', action='store_true')
+    parser.add_argument('--job-wait', action='store_true')
     args = parser.parse_args()
-    result = prepare(args.generated, args.output, args.elf, args.manifest)
-    print('Verified native hierarchy binding:', result['copied_tu_sha256'])
+    selected = ([] if args.without_world_transforms else [PRODUCTION]) + ([JOB_WAIT] if args.job_wait else [])
+    result = prepare(args.generated, args.output, args.elf, args.manifest, contracts=selected)
+    print('Verified native game bindings:', ', '.join(b['symbol'] for b in result['bindings']))
 
 
 if __name__ == '__main__':
