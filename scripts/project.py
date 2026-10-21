@@ -58,6 +58,8 @@ def main():
     s.add_argument('--keys-dir', default='game/private_keys', help='Private headers and optional keys.json')
     b=sub.add_parser('build'); b.add_argument('--jobs',type=int,default=8); b.add_argument('--configure-only',action='store_true')
     b.add_argument('--optimize',action='store_true',help='Enable native O1 optimization with symbols and assertions retained')
+    b.add_argument('--native-world-transforms',action=argparse.BooleanOptionalAction,default=True,
+                   help='Bind verified native hierarchy work (default on; selected debug-US ELF only)')
     g=sub.add_parser('generate'); g.add_argument('--stage',choices=['ppu','spu'],required=True); g.add_argument('--jobs',type=int,default=8)
     sub.add_parser('check')
     args=ap.parse_args()
@@ -100,13 +102,19 @@ def main():
         command=['cmake','-S',ROOT,'-B',binary,'-G','Ninja','-DCMAKE_BUILD_TYPE=Debug','-DPORT_CPP_NONLOCAL_JUMPS=ON',f'-DRECOMP_DIR={c["generated"]/"ppu"}',f'-DSPU_DIR={c["generated"]/"spu"}',f'-DPS3RECOMP_FFMPEG_ROOT={c["ffmpeg"]}',f'-DPORT_PRIVATE_KEYS_DIR={c.get("keys",ROOT/"game/private_keys")}']
         if 'MV_CLANG' in env: command.extend([f'-DCMAKE_C_COMPILER={env["MV_CLANG"]}',f'-DCMAKE_CXX_COMPILER={env["MV_CLANG"]}'])
         command.append(f'-DPORT_OPTIMIZE_NATIVE={"ON" if args.optimize else "OFF"}')
+        command.extend([f'-DPORT_NATIVE_WORLD_TRANSFORMS={"ON" if args.native_world_transforms else "OFF"}',
+                        f'-DPORT_TARGET_ELF={c["elf"]}'])
         logs=ROOT/'temp/builds'/datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
         logged_run(command,logs/'configure.log',env=env)
         if args.configure_only: return
         logged_run(['cmake','--build',binary,'--parallel',args.jobs],logs/'build.log',env=env)
         exe=binary/('ms1_recomp.exe' if os.name=='nt' else 'ms1_recomp')
         identity={'path':str(exe),'sha256':hashlib.sha256(exe.read_bytes()).hexdigest(),'bytes':exe.stat().st_size,'elf_sha256':hashlib.sha256(c['elf'].read_bytes()).hexdigest(),'ppu_tree':str(c['generated']/'ppu'),'spu_tree':str(c['generated']/'spu'),'logs':str(logs)}
-        identity.update(build_type='Debug',optimized_checked=args.optimize)
+        identity.update(build_type='Debug',optimized_checked=args.optimize,native_world_transforms=args.native_world_transforms)
+        if args.native_world_transforms:
+            identity['native_world_binding']=json.loads((binary/'native-world-binding.json').read_text())
+            identity['native_world_sources_sha256']={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
+                for p in sorted((ROOT/'src/motorstorm').glob('*')) if p.is_file()}
         (binary/'build_identity.json').write_text(json.dumps(identity,indent=2)); print('Build identity:',identity['sha256'])
 
 if __name__=='__main__': main()

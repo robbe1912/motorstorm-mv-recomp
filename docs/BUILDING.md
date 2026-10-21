@@ -6,7 +6,7 @@ Developer tooling, not a ready-to-play distribution. The initial embedded SPU st
 
 The current diagnostic target is named-US debug `EBOOT_MSMVdbgUS.ELF` with authentic launch-US BCUS98137 PS3_GAME data (VERSION 01.00/FW 1.80). ELF SHA256: `3e68c72f8fbd6a30ef30d4535462cf70f1cc86d111f56574adb7dd2c255e0706`. BCES00006 Complete APP_VER 03.10 is a separate revision; do not mix generated trees or assume address/data compatibility. External original inputs remain at their configured paths and need not be duplicated.
 
-The native architecture is statically translated guest code plus compatible host services, including real host media decoding. No original game-code patches, title-specific runtime bypasses, fabricated assets or suppressed errors establish acceptance. The current fatal/resource evidence belongs to [Havok/reference](research/HAVOK_REFERENCE.md); pending work belongs in [GitHub issues](https://github.com/robbe1912/motorstorm-mv-recomp/issues).
+The port is moving toward native x86 game operations, with translated code and interpretation retained for unreplaced work. [Native game operations](NATIVE_GAME.md) documents the hierarchy rewrite and its verified binding. Compatible host services include real host media decoding. Original binary patches, title-specific toolkit bypasses, fabricated assets or suppressed errors do not establish acceptance. The current fatal/resource evidence belongs to [Havok/reference](research/HAVOK_REFERENCE.md); pending work belongs in [GitHub issues](https://github.com/robbe1912/motorstorm-mv-recomp/issues).
 
 ## Dependencies
 
@@ -84,6 +84,8 @@ python scripts/project.py build
 ```
 
 The wrapper kills ms1_recomp.exe before relinking, configures root CMake into build/native, uses clang-cl and at most eight jobs. Full warnings/errors go to unique temp/builds/TIMESTAMP/configure.log and build.log. Failure prints a bounded tail and full log path; no warning suppression added. Success records EXE/ELF hashes/tree paths/log directory in build_identity.json.
+
+The selected debug-US build binds native hierarchy work by default. Its original ELF and reference function must match the verified contract; the build copies generated inputs locally and changes only the copied binding TU. See [native binding and reference mode](NATIVE_GAME.md#build-and-scene-bridge), including `--no-native-world-transforms` for an unbound reference build. Other targets require their own verified binding.
 
 Public vendor tests exclude unreviewed guest fixtures. PS3RECOMP_BUILD_TESTS=ON fails clearly; review upstream synthetic tests separately. Build success establishes compilation, not native gameplay. Use [operations](OPERATIONS.md) for live work.
 

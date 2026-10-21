@@ -94,6 +94,8 @@ if(NOT RECOMP_SOURCES)
         "lifted functions and the function table live in those; without them "
         "there is nothing to run.")
 endif()
+include("${CMAKE_CURRENT_SOURCE_DIR}/src/motorstorm/native_world.cmake")
+motorstorm_bind_world_transforms()
 list(LENGTH RECOMP_SOURCES RECOMP_SOURCE_COUNT)
 message(STATUS "Lifted sources:  ${RECOMP_SOURCE_COUNT} file(s)")
 
@@ -198,6 +200,8 @@ add_executable(${PROJECT_NAME}
     ${RECOMP_SOURCES}
     ${SPU_SOURCES}
 )
+
+motorstorm_configure_world_transforms(${PROJECT_NAME})
 
 # The lifted SPU sources use bare #include "spu_context.h". Scope that include
 # directory (and their flags) to those TUs alone: adding it to the whole target
