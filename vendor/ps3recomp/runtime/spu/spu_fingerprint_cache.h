@@ -127,7 +127,6 @@ static inline spu_fp_cache* spu_fp_thread_get(void) {
 static inline int spu_fp_thread_set(spu_fp_cache* c) {
     return spu_fp_key != FLS_OUT_OF_INDEXES && FlsSetValue(spu_fp_key, c);
 }
-#define SPU_FP_THREAD_LOCAL __declspec(thread)
 #else
 #include <pthread.h>
 static pthread_key_t spu_fp_key;
@@ -146,7 +145,11 @@ static inline spu_fp_cache* spu_fp_thread_get(void) {
 static inline int spu_fp_thread_set(spu_fp_cache* c) {
     return spu_fp_key_valid && pthread_setspecific(spu_fp_key, c) == 0;
 }
-#define SPU_FP_THREAD_LOCAL _Thread_local
+#endif
+#if defined(_MSC_VER)
+#define SPU_FP_THREAD_LOCAL __declspec(thread)
+#else
+#define SPU_FP_THREAD_LOCAL __thread
 #endif
 static inline void spu_fp_thread_release(void) {
     spu_fp_cache* c = spu_fp_thread_get();

@@ -21,7 +21,7 @@ SOURCE=r'''
 #include <assert.h>
 #include <string.h>
 #include <stddef.h>
-#ifdef _WIN32
+#ifdef _MSC_VER
 #define TEST_TLS __declspec(thread)
 #else
 #define TEST_TLS _Thread_local
