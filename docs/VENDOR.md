@@ -452,6 +452,24 @@ divergence, native gameplay, a speedup or stable 30 FPS. Private source-bound
 results remain under own-fork `temp/issue9-dispatch-ownership`; follow-up is
 tracked in [issue 174](https://github.com/robbe1912/motorstorm-mv-recomp/issues/174).
 
+Checked O2/Ob2 DX12 candidate `77652f3c...85ac981` completed the existing
+screen-gated normal PLAY route in muted run `20261021T111022.658573Z`.
+Original main-menu frame 11 and live race frame 76 were visually inspected;
+race rendering defects remain. The owned controller stopped explicitly at
+303.281 s after its 60.5 s gameplay observation window. No fatal/assertion or
+device-removal diagnostic was found. In the 44.548 s CPU sample, process use
+had a 5.450 logical-CPU median and GPU 3D activity a 16.002% median/18.616%
+maximum. The corresponding 42.109 s resource interval recorded 262144 bytes
+of process read transfers, about 1.804 GB private memory and at least 17.835 GB
+available physical RAM. Read transfers include cached/non-disk reads; these
+counters do not measure I/O latency or VRAM budget. Eleven complete PERF
+windows recorded 0--2 pipeline misses and rounded pipeline time of 0.00 s.
+Their batch rates are not displayed/simulation FPS. This is one diagnostic
+run with PM interpretation retained, not a controlled speedup or stable-30
+result. Raw logs, identities, counters and selected original captures are
+hash-preserved outside the five-run retention directory under private
+`temp/issue174-resident-lookup/native-evidence`.
+
 ## Interpreter report ownership (issue 163)
 
 Per-thread interpreter PC and instruction-count reporting comes from own-fork `codex/spu-interpreter-thread-stats` commit `0b03c7f`, integrated into `combined` as `326c28d`. The selective port updates the two definitions, public declarations and existing owning-thread consumers. Host budgets, guest instructions, errors and required PM interpretation remain intact. The payload-free real-interpreter test runs 401 authored IL/STOP programs across four workers, checking register values, program bytes, stop state and report isolation; source-audit CI runs the curated test on Windows and Linux. Native timing and the remaining performance limit are tracked in [issue 163](https://github.com/robbe1912/motorstorm-mv-recomp/issues/163); this change does not establish a speedup or stable 30 FPS. No external PR was opened.
