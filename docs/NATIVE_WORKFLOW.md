@@ -35,9 +35,10 @@ Work resumed on 2026-10-15; issue 104 closed the single observed intro skip.
 The saved draft stack (PRs 92/93/95/96) and the 2026-10-14 evening
 depth/clear checkpoint (the PR101 branch work) were subsequently
 incorporated through PR124; their depth and workload acceptance gaps remain
-open. Draft PR98 (native boot failed with the candidate samplers) stays
-rejected, and the fork sampler candidate `codex/rsx-sampler-evidence`
-(`052c17ceda40be8a62cd077466a091faabbdf62f`) remains unaccepted. Do not
+open. Draft PR98 (native boot failed with the candidate samplers) remains
+an open, unaccepted draft. The fork sampler candidate
+`codex/rsx-sampler-evidence`
+(`052c17ceda40be8a62cd077466a091faabbdf62f`) is also unaccepted. Do not
 merge, promote or resume either from this record; capture fresh evidence
 under an open issue first. Sampler and graphics evidence lives in
 [graphics/audio](research/GRAPHICS_AUDIO.md) on issue 94.

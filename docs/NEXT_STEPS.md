@@ -50,4 +50,4 @@ closed the single observed intro skip. The restored usable build, draft-stack
 disposition and private tooling limits are recorded in
 [native workflow](NATIVE_WORKFLOW.md). Sampler97/PR98 is explicitly
 unaccepted and stays off combined; restoring the earlier baseline was never
-a claim that race/graphics DoD is achieved.]
+a claim that race/graphics DoD is achieved.
