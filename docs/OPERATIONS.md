@@ -144,7 +144,7 @@ demonstrates why this matters and records the private helper correction.
 
 Historical tools of the parked retail lane stay archived with that lane in [parked mstream](research/PARKED_MSTREAM.md); they may hardcode old paths, so inspect and rebase them into a fresh ignored experiment directory before use. Current run.py is the supported launcher. Match guest vm_base/ELF before memory dumping.
 
-Close with actual observations, hashes/identities, limitations and cleanup. Stop only owned processes, preserve artifacts, remove deliberate temporary hooks with matching installer/source assertions, kill native before needed relink and record new identity. Five capture hooks remain unless a deliberate clean-build unit removes/verifies them. [Source coverage](SOURCE_COVERAGE.md) records overwritten-log caveats.
+Close with actual observations, hashes/identities, limitations and cleanup. Stop only owned processes, preserve artifacts, remove deliberate temporary hooks with matching installer/source assertions, kill native before needed relink and record new identity. Five capture hooks remain unless a deliberate clean-build unit removes/verifies them. [Source coverage](SOURCE_COVERAGE.md) records overwritten-log caveats. Do not infer process death from a timeout or an old lock file.
 
 
 Bike observer groundwork (#24): `python scripts/run.py --capture-bike` creates
