@@ -2032,6 +2032,17 @@ int spu_have_function(uint32_t addr)
  * spu_fn_registry.c before the registry was consolidated into this TU. */
 spu_lifted_fn spu_lifted_lookup(const spu_context* ctx, uint32_t lsa)
 {
+    /* Streamed code owns its LS span even when the primary image also has a
+     * function at that address. Match indirect dispatch's first-owner rule;
+     * an owner miss must not rejoin the primary image's overwritten code. */
+    if (ctx) {
+        for (unsigned slot = 0; slot < 4; ++slot) {
+            if (ctx->resident_code[slot].image_id &&
+                lsa >= ctx->resident_code[slot].lsa &&
+                lsa - ctx->resident_code[slot].lsa < ctx->resident_code[slot].size)
+                return (spu_lifted_fn)spu_lookup(lsa - ctx->resident_code[slot].rel, ctx->resident_code[slot].image_id);
+        }
+    }
     spu_lifted_fn fn = (spu_lifted_fn)spu_lookup(lsa, ctx ? ctx->image_id : 0);
     /* Policy-module images load at a nonzero LS base (SPURS: LS 0xA00) while
      * their lift labels are image-relative. Guest-visible ABSOLUTE targets --

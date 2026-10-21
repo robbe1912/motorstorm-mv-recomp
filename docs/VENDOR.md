@@ -424,6 +424,34 @@ frames are preserved outside disposable runs. The later MinGW qualifier correcti
 leaves the MSVC branch used by this native candidate unchanged. Remaining limits
 are tracked in [issue 172](https://github.com/robbe1912/motorstorm-mv-recomp/issues/172).
 
+## Resident compiled lookup ownership (issue 174)
+
+Own-fork modular `codex/spu-resident-lookup` commit `b7b125f`, merged into
+`combined` as `ddf8f45`, makes `spu_lifted_lookup` honor the first containing
+resident code span before the primary image. A missing resident entry returns
+no function instead of falling through to overwritten primary code. The
+curated port retains its existing relocation subtraction and primary-policy
+base fallback outside resident spans; interpreter force/span/kernel guards
+are unchanged. No external PR was opened.
+
+The historical production lookup fails authored overlapping-image check 4.
+The corrected fork passes 16 checks; the curated and native source variants
+pass 18, including relocation, owner misses, boundaries, independent contexts,
+ownership replacement and clearing, and unchanged null-context/wildcard
+behavior. Function tokens abort if executed; these tests check selection,
+not guest instruction execution. Existing wildcard diagnostics remain visible.
+
+A separate lookup-only replay uses five preserved native contexts and original
+registry address metadata: primary image 3, resident image 210 at LS `0x4000`,
+size 75328, source EA `0x100e6f80`, relocation 0. At queried native entries
+`0x16334` and `0x1635c`, the corrected lookup agrees with resident dispatch;
+the old primary lookup misses. Captured post-read PC `0x16338` remains a miss
+because it is not an original registered entry. Required PM interpretation
+continues to block rejoin. These query results do not prove a first instruction
+divergence, native gameplay, a speedup or stable 30 FPS. Private source-bound
+results remain under own-fork `temp/issue9-dispatch-ownership`; follow-up is
+tracked in [issue 174](https://github.com/robbe1912/motorstorm-mv-recomp/issues/174).
+
 ## Interpreter report ownership (issue 163)
 
 Per-thread interpreter PC and instruction-count reporting comes from own-fork `codex/spu-interpreter-thread-stats` commit `0b03c7f`, integrated into `combined` as `326c28d`. The selective port updates the two definitions, public declarations and existing owning-thread consumers. Host budgets, guest instructions, errors and required PM interpretation remain intact. The payload-free real-interpreter test runs 401 authored IL/STOP programs across four workers, checking register values, program bytes, stop state and report isolation; source-audit CI runs the curated test on Windows and Linux. Native timing and the remaining performance limit are tracked in [issue 163](https://github.com/robbe1912/motorstorm-mv-recomp/issues/163); this change does not establish a speedup or stable 30 FPS. No external PR was opened.
