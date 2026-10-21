@@ -381,8 +381,9 @@ marker. This checks the timer correction, without a 30 FPS or speedup claim.
 ## Exact SPU fingerprint cache (issue 172)
 
 Own-fork modular commit `cc1fd7e` adds an opt-in, thread-owned cache for the
-existing workload fingerprint; combined `1a18d1a` also carries the portable
-fixture corrections in `30bbbd4` and `3d42376`. Every hit compares the entire
+existing workload fingerprint; combined `9ddb580` also carries the portable
+fixture corrections in `30bbbd4` and `3d42376`, overlapping-view checks in
+`563e409`, and MinGW TLS isolation in `04b4a71`. Every hit compares the entire
 buffer against an owned snapshot. Pointer reuse alone never establishes a hit.
 Misses hash that snapshot with the unchanged legacy FNV basis and multiplier;
 allocation failure visibly falls back to the original calculation. Buffers must
@@ -399,8 +400,29 @@ thread-exit cleanup. Historical uncached code fails the raw-call reduction check
 Five alternating helper trials over 20,000 stable 124,150-byte calls measured
 median 2.1560 seconds uncached and 0.07182 seconds cached, with identical results.
 This synthetic repeated-buffer test does not establish native FPS or a speedup
-for the game. Native ordinary-PLAY validation and remaining limits are tracked in
-[issue 172](https://github.com/robbe1912/motorstorm-mv-recomp/issues/172).
+for the game.
+
+Checked Debug/O2 candidate `ccdf1246c37fba3b2b5a0d458d0da15c2bf139ac23db90695dfc3404a9563a58`
+completed muted DX12 ordinary PLAY, bike selection and a 60-second observed
+gameplay window in run `20261021T030112.269572Z`, with PM interpretation enabled.
+Original menu frame 11 and live race frame 104 were visually inspected; rendering
+defects remain. Owned shutdown occurred after 353.484 seconds. An earlier attempt
+stopped safely at an unmatched intro caption; a genuine observed caption variant
+passed positive and negative checks before the successful replay, without changing
+the ROI, threshold, input or once-only skip rule.
+
+One observed cumulative cache state had 524,288 calls, 296,731 exact-byte hits,
+6,300 misses and 221,257 size bypasses, with zero allocation failures. These sparse
+cumulative samples are not exact gameplay-window totals. During 44.735 seconds of
+CPU sampling, the busy `spu_async` worker still consumed 0.876 logical CPU, and
+process CPU median was 5.195 logical CPUs. Thirty GPU 3D samples had median
+16.778% activity. The last complete 30 seconds of API Present records had median
+514.011 ms; the incomplete CSV tail is retained separately. These diagnostics
+establish neither displayed/simulation FPS nor a controlled native speedup or
+stable 30 FPS. Bounded identities, counters, CPU/GPU records and original observed
+frames are preserved outside disposable runs. The later MinGW qualifier correction
+leaves the MSVC branch used by this native candidate unchanged. Remaining limits
+are tracked in [issue 172](https://github.com/robbe1912/motorstorm-mv-recomp/issues/172).
 
 ## Interpreter report ownership (issue 163)
 
