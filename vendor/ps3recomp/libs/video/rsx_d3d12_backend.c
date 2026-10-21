@@ -3066,7 +3066,43 @@ static u32 tex_csum(const u8* base, u32 nbytes)
     return h;
 }
 
-static int vp_upload_tex_slot(u32 off, u32 w, u32 h, u32 fmt, int cube, u32 mips)
+#include "rsx_texture_profile.h"
+static rsx_texture_profile s_texture_profile;
+static int texture_profile_on(void)
+{
+    static int enabled = -1;
+    if (enabled < 0) { const char* e = getenv("RSX_TEXTURE_PROFILE"); enabled = e && atoi(e) != 0; }
+    return enabled && perf_on();
+}
+static double texture_profile_clock(void* user) { (void)user; return perf_now(); }
+static u32 texture_profile_csum(rsx_texture_profile_call* profile, const u8* base, u32 bytes)
+{
+    if (!profile) return tex_csum(base, bytes);
+    rsx_texture_profile_checksum_begin(profile, bytes);
+    u32 value = tex_csum(base, bytes);
+    rsx_texture_profile_checksum_end(profile);
+    return value;
+}
+static void texture_profile_log(void)
+{
+    if (!texture_profile_on()) return;
+    const rsx_texture_profile* p = &s_texture_profile;
+    fprintf(stderr, "[TEXPROFILE] calls=%llu fail=%llu invalid=%llu frame_hit=%llu validated_hit=%llu stale=%llu miss=%llu forced=%llu probes=%llu checksum_calls=%llu sampled_words=%llu setup_ms=%.3f lookup_ms=%.3f checksum_ms=%.3f remainder_ms=%.3f total_ms=%.3f clock_errors=%llu capacity=%u\n",
+            (unsigned long long)p->calls, (unsigned long long)p->failures,
+            (unsigned long long)p->outcomes[RSX_TEX_INVALID],
+            (unsigned long long)p->outcomes[RSX_TEX_FRAME_HIT],
+            (unsigned long long)p->outcomes[RSX_TEX_VALIDATED_HIT],
+            (unsigned long long)p->outcomes[RSX_TEX_STALE],
+            (unsigned long long)p->outcomes[RSX_TEX_MISS],
+            (unsigned long long)p->outcomes[RSX_TEX_FORCED],
+            (unsigned long long)p->examined, (unsigned long long)p->checksum_calls,
+            (unsigned long long)p->sampled_words, p->setup*1000.0, p->lookup*1000.0,
+            p->checksum*1000.0, p->remainder*1000.0, p->total*1000.0,
+            (unsigned long long)p->clock_errors, VP_TEX_SLOTS);
+    memset(&s_texture_profile, 0, sizeof(s_texture_profile));
+}
+
+static int vp_upload_tex_slot_impl(u32 off, u32 w, u32 h, u32 fmt, int cube, u32 mips, rsx_texture_profile_call* profile)
 {
     /* TEX_BUDGET=<n>: cap texture uploads per frame. Off by default -- it was
      * tried against the TDR and does not help, because PERF shows the upload
@@ -3121,27 +3157,31 @@ static int vp_upload_tex_slot(u32 off, u32 w, u32 h, u32 fmt, int cube, u32 mips
      * animated surface changing, cheap enough to run on every bind. */
     /* (portable helper tex_csum() -- see above; a statement-expression macro
      * here was a GCC/Clang extension MSVC rejects.) */
-    #define TEX_CSUM(base, nbytes) tex_csum((base), (nbytes))
+    #define TEX_CSUM(base, nbytes) texture_profile_csum(profile, (base), (nbytes))
     int slot = -1, freeslot = -1;
+    rsx_texture_profile_lookup_begin(profile);
     for (int i = 0; i < VP_TEX_SLOTS; i++) {
         VPTexSlot* c = &s_d3d.vp_tex[i];
         if (c->res && c->key == key_off && c->w == w && c->h == h && c->fmt == fmt
             && c->cube == cube) {
-            if (c->used) return i;                /* already bound this frame */
+            if (c->used) { rsx_texture_profile_lookup_end(profile, i + 1, RSX_TEX_FRAME_HIT); return i; }                /* already bound this frame */
             { static int nocache = -1;            /* TEX_NOCACHE=1: always re-upload */
               if (nocache < 0) { const char* e = getenv("TEX_NOCACHE");
                                  nocache = e ? atoi(e) : 0; }
-              if (nocache) { slot = i; break; } }
+              if (nocache) { rsx_texture_profile_lookup_end(profile, i + 1, RSX_TEX_FORCED); slot = i; break; } }
             /* Held from an earlier frame: re-upload only if the guest bytes
              * changed. Most of this scene's textures are static, and converting
              * every one of them every frame was ~70% of the frame's CPU time. */
             u32 nb = dxt ? (blkrow * blkrows) : (w * h * bpp);
+            rsx_texture_profile_lookup_end(profile, i + 1, RSX_TEX_VALIDATED_HIT);
             u32 cs = TEX_CSUM(vm_base + c->off, nb);
             if (cs == c->csum) { c->used = 1; return i; }
+            if (profile) profile->outcome = RSX_TEX_STALE;
             slot = i; break;                      /* stale: fall through and redo */
         }
         if (!c->used && freeslot < 0) freeslot = i;
     }
+    rsx_texture_profile_lookup_end(profile, VP_TEX_SLOTS, RSX_TEX_MISS);
     /* TEX_OFF_BIAS=1: sample the image one whole level-0 BELOW the bound offset.
      * Measured on the Rubber Ducky demo: at the bind offset every texture reads
      * as all-zero, while [off - w*h*bpp, off) holds the image (3800-4160 of 4298
@@ -3662,6 +3702,16 @@ static int vp_upload_tex_slot(u32 off, u32 w, u32 h, u32 fmt, int cube, u32 mips
       t->csum = TEX_CSUM(vm_base + off, nb); }
     #undef TEX_CSUM
     return slot;
+}
+
+static int vp_upload_tex_slot(u32 off, u32 w, u32 h, u32 fmt, int cube, u32 mips)
+{
+    if (!texture_profile_on()) return vp_upload_tex_slot_impl(off,w,h,fmt,cube,mips,NULL);
+    rsx_texture_profile_call call;
+    rsx_texture_profile_begin(&call,&s_texture_profile,texture_profile_clock,NULL);
+    int result = vp_upload_tex_slot_impl(off,w,h,fmt,cube,mips,&call);
+    rsx_texture_profile_finish(&call,result);
+    return result;
 }
 
 /* ---------------------------------------------------------------------------
@@ -5898,6 +5948,7 @@ static void render_frame(void)
         if (s_t_prev > 0.0) s_perf_frame += now - s_t_prev;
         s_t_prev = now;
         if (++s_n % 20 == 0) {
+            texture_profile_log();
             double fr = s_perf_frame > 0 ? s_perf_frame : 1;
             fprintf(stderr, "[PERF] %.2f fps | tex %.2fs (%.0f%%, %d calls) | vtx %.2fs"
                             " (%.0f%%, %.0fk verts) | render_frame %.2fs (%.0f%%)"

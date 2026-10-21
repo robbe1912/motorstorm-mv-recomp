@@ -1,5 +1,18 @@
 # Vendor provenance and upstream
 
+Issue [170](https://github.com/robbe1912/motorstorm-mv-recomp/issues/170)
+adds opt-in DX12 texture-slot phase attribution from own-fork modular commit
+`f896596`, integrated into fork `combined` at `412278d`. Set both
+`PERF=1` and `RSX_TEXTURE_PROFILE=1` to emit one aggregate record every
+20 render batches. Default-off calls do not sample a profiling clock.
+The counters distinguish current-frame hits, prior-frame validation, stale
+entries, misses and failures; setup, lookup, checksum and remainder wall
+times are disjoint. Remainder includes decode/upload and other call work,
+not GPU execution time. Clock failures are reported explicitly. This changes
+diagnostics only: cache identity, invalidation, upload and error behavior
+remain as before. Authored fixtures compile the production lookup/checksum
+bodies and profiling helpers on Windows/Linux; native attribution is pending.
+
 Source: [sp00nznet/ps3recomp](https://github.com/sp00nznet/ps3recomp), snapshot base `268336af3a9f736835181ec09a7d88f695795e06` plus preserved local dirty runtime/lifter fixes. This is not a claim that local changes were accepted upstream. The full old checkout/history and migration hashes remain private.
 
 Retain vendor/LICENSE and per-component notices. Root MIT preserves Ned Heller/sp00nznet credit. Standalone ATRAC source in third_party/at3_standalone remains LGPL2.1 with COPYING.LGPLv2.1; stb_truetype has its own MIT/public-domain notice; shared FFmpeg is external and its license obligations apply. Algorithmic AES/SHA/CRC/JPEG/ATRAC tables are implementation data, not game textures or firmware images. Behavioral RPCS3 reference does not authorize copying GPL implementation.
