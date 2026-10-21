@@ -11,7 +11,24 @@ times are disjoint. Remainder includes decode/upload and other call work,
 not GPU execution time. Clock failures are reported explicitly. This changes
 diagnostics only: cache identity, invalidation, upload and error behavior
 remain as before. Authored fixtures compile the production lookup/checksum
-bodies and profiling helpers on Windows/Linux; native attribution is pending.
+bodies and profiling helpers on Windows/Linux. Checked diagnostic EXE
+`ffe878f6...ebba0f` completed muted DX12 run `20261021T020352.573739Z`
+through the existing gated PLAY route. Original menu frame 11 and live race
+frame 77 were visually inspected; rendering defects remain. The owned stop
+was explicit after 295.563 s. In the 44.566 s sampled gameplay window,
+12 texture records had zero failures/clock errors: 99.073% current-frame
+hits, 70.186 mean examined slots, and wall-phase shares 1.569% setup,
+3.755% lookup, 1.308% checksum, 93.367% remainder. The remainder includes
+conversion/upload and other work; these counters do not isolate allocation.
+Thirty valid GPU 3D samples had 9.713% median/24.700% maximum activity;
+process CPU had 5.412 median logical-CPU equivalents. Startup-log identities
+and stable CPU counters identify busy SPU/SPURS and frame-clock workers;
+the latter also drains/renders RSX work. This favors CPU-side investigation
+over a GPU-load explanation, without proving the limiting dependency.
+The private name-query consumer discarded positive-success HRESULT names;
+startup logs, not that consumer, supply the reported labels. Raw samples,
+identities and selected original captures are preserved outside run retention.
+No controlled speedup or stable-30/displayed-FPS acceptance is claimed.
 
 Source: [sp00nznet/ps3recomp](https://github.com/sp00nznet/ps3recomp), snapshot base `268336af3a9f736835181ec09a7d88f695795e06` plus preserved local dirty runtime/lifter fixes. This is not a claim that local changes were accepted upstream. The full old checkout/history and migration hashes remain private.
 
