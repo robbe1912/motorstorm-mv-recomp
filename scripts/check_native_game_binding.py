@@ -126,7 +126,7 @@ def main():
             'int main(){ppu_context c{};func_006BEAE0(&c);if(c.value!=20)return 1;'
             'func_00111110(&c);if(c.value!=40)return 2;original_second(&c);'
             'game_original_scene_list_evaluate(&c);return c.value==43?0:3;}\n')
-        multi_exe=base/('multi.exe' if os.name=='nt' else 'multi')
+        multi_exe=base/('multi-fixture.exe' if os.name=='nt' else 'multi-fixture')
         command=[compiler,str(multi/'ppu/authored.cpp'),str(multi/'ppu/second.cpp'),str(caller)]
         command += ['/nologo','/std:c++17','/O2','/UNDEBUG','/I'+str(multi/'ppu'),'/Fo'+str(base)+os.sep,'/Fe'+str(multi_exe)] if os.name=='nt' else ['-std=c++17','-O2','-UNDEBUG','-I'+str(multi/'ppu'),'-o',str(multi_exe)]
         built=subprocess.run(command,cwd=base,capture_output=True,text=True)
