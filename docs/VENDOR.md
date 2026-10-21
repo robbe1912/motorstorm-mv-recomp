@@ -473,3 +473,33 @@ hash-preserved outside the five-run retention directory under private
 ## Interpreter report ownership (issue 163)
 
 Per-thread interpreter PC and instruction-count reporting comes from own-fork `codex/spu-interpreter-thread-stats` commit `0b03c7f`, integrated into `combined` as `326c28d`. The selective port updates the two definitions, public declarations and existing owning-thread consumers. Host budgets, guest instructions, errors and required PM interpretation remain intact. The payload-free real-interpreter test runs 401 authored IL/STOP programs across four workers, checking register values, program bytes, stop state and report isolation; source-audit CI runs the curated test on Windows and Linux. Native timing and the remaining performance limit are tracked in [issue 163](https://github.com/robbe1912/motorstorm-mv-recomp/issues/163); this change does not establish a speedup or stable 30 FPS. No external PR was opened.
+
+## CPU surface request latency (issue 179)
+
+Default-off `RSX_CPU_SURFACE_PROFILE=1` comes from own-fork
+`codex/d3d12-cpu-surface-profile` production commit `3a7f7a3` and authored-fixture
+clarification `c62fc8c`, merged into `combined` through `c81566f`. The selective
+port retains curated device-error handling and adds request latency accounting;
+it preserves synchronization, copies, GPU validation, errors and the 30-second
+deadline. No external PR was opened.
+
+`CPUSURFACE_PROFILE` fields are QPC ticks at the reported `frequency`.
+`total = queue + service + return`; allocation, prior-fence, commands,
+copy-fence, packing and other sum to service. Queue includes event creation
+and scheduling before renderer service. Fence stages include host signal/wait
+and status checks; they are not exclusive GPU execution. Packing includes Map,
+CPU conversion and Unmap. Matched/hit/copy counters and full host/guest byte
+counts distinguish unchanged generations from full-surface copies caused by
+scalar reads. Direct requests have zero queue/return; shutdown completions
+have zero service. Concurrent requests can overlap; totals are request wall
+time, not exclusive frame or CPU costs.
+
+`python scripts/check_cpu_surface_profile.py` compiles actual production
+request/service code against an authored clock/queue model, checks emitted
+phase sums and default-off clock behavior, and rejects clock-failure and
+over-accounting controls. The copy stages in this fixture are modeled;
+existing CPU-surface packing tests and identity-bound native observations
+cover different requirements. Linux and Windows CI run both regressions.
+Performance attribution and native evidence remain in
+[issue 179](https://github.com/robbe1912/motorstorm-mv-recomp/issues/179),
+with broader producer and sustained-30 acceptance in issues 155 and 27.

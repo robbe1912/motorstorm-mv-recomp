@@ -46,6 +46,8 @@ jobs:
         run: python scripts/check_rsx_fp_source.py
       - name: Typed guest surface readback regression
         run: python scripts/check_rsx_cpu_surface.py
+      - name: CPU surface latency accounting regression
+        run: python scripts/check_cpu_surface_profile.py
       - name: Actual AA surface layout regression
         run: python scripts/check_rsx_surface_layout.py
       - name: Memory capacity contract
@@ -97,6 +99,8 @@ jobs:
         run: python scripts/check_rsx_fp_source.py
       - name: Typed guest surface readback regression
         run: python scripts/check_rsx_cpu_surface.py
+      - name: CPU surface latency accounting regression
+        run: python scripts/check_cpu_surface_profile.py
       - name: Actual AA surface layout regression
         run: python scripts/check_rsx_surface_layout.py
       - name: Load-time observer/report regression

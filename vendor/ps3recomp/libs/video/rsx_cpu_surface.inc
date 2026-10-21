@@ -1,11 +1,14 @@
 /* Render-thread service for CPU loads from host-rendered guest surfaces. */
 #include "ps3emu/guest_read_sync.h"
 #include "rsx_surface_readback.h"
+#include "rsx_cpu_surface_profile.h"
 typedef struct CpuSurfaceRequest {
     struct CpuSurfaceRequest *next;
     u32 address, bytes;
     HANDLE done;
     int status;
+    u64 queued_ms;
+    RsxCpuSurfaceProfile profile;
 } CpuSurfaceRequest;
 static SRWLOCK s_cpu_surface_lock = SRWLOCK_INIT;
 static CpuSurfaceRequest *s_cpu_surface_head, *s_cpu_surface_tail;
@@ -21,6 +24,29 @@ static void cpu_surface_fail(const char *operation, HRESULT result) {
     fprintf(stderr,"[CPUSURFACE] %s failed: 0x%08lX\n",operation,(unsigned long)result);abort();
 }
 #define CPU_SURFACE_HR(call) do { HRESULT _result=(call); if(FAILED(_result))cpu_surface_fail(#call,_result); } while(0)
+static int s_cpu_surface_profile;
+static u64 s_cpu_surface_profile_frequency;
+static RsxCpuSurfaceProfile *s_cpu_surface_profile_active;
+static u64 cpu_surface_tick(void) {
+    if(!s_cpu_surface_profile)return 0;
+    LARGE_INTEGER t;if(!QueryPerformanceCounter(&t) || t.QuadPart<0)cpu_surface_fail("profile clock",E_FAIL);
+    return (u64)t.QuadPart;
+}
+static void cpu_surface_profile_emit(CpuSurfaceRequest *request) {
+    if(!s_cpu_surface_profile)return;
+    RsxCpuSurfaceProfile *p=&request->profile;
+    if(!rsx_cpu_surface_profile_valid(p))cpu_surface_fail("profile accounting",E_FAIL);
+    u64 stages=p->allocation+p->prior_fence+p->commands+p->copy_fence+p->packing;
+    fprintf(stderr,"[CPUSURFACE_PROFILE] address=%08X bytes=%u frequency=%llu queue=%llu service=%llu return=%llu total=%llu allocation=%llu prior_fence=%llu commands=%llu copy_fence=%llu packing=%llu other=%llu matched=%llu hits=%llu copies=%llu host_bytes=%llu guest_bytes=%llu\n",
+        request->address,request->bytes,(unsigned long long)s_cpu_surface_profile_frequency,
+        (unsigned long long)(p->started-p->queued),(unsigned long long)(p->finished-p->started),
+        (unsigned long long)(p->returned-p->finished),(unsigned long long)(p->returned-p->queued),
+        (unsigned long long)p->allocation,(unsigned long long)p->prior_fence,(unsigned long long)p->commands,
+        (unsigned long long)p->copy_fence,(unsigned long long)p->packing,
+        (unsigned long long)(p->finished-p->started-stages),(unsigned long long)p->matched,
+        (unsigned long long)p->hits,(unsigned long long)p->copies,
+        (unsigned long long)p->host_bytes,(unsigned long long)p->guest_bytes);
+}
 static void cpu_surface_fence_wait(void) {
     u64 value=++s_cpu_surface_fence_value;
     CPU_SURFACE_HR(s_d3d.cmd_queue->lpVtbl->Signal(s_d3d.cmd_queue,s_cpu_surface_fence,value));
@@ -32,7 +58,7 @@ static void cpu_surface_fence_wait(void) {
 }
 static void cpu_surface_copy(OffRT *r) {
     extern uint8_t *vm_base;
-    if(!r->res || !r->cpu_address || !r->cpu_pitch || !r->gpu_generation || r->cpu_generation==r->gpu_generation)return;
+    if(!r->res || !r->cpu_address || !r->cpu_pitch || !r->gpu_generation || r->cpu_generation==r->gpu_generation){if(s_cpu_surface_profile_active)s_cpu_surface_profile_active->hits++;return;}
     unsigned bpp=rsx_surface_readback_bpp(r->cpu_format);
     if(!bpp || r->cpu_pitch%bpp)cpu_surface_fail("unsupported guest surface layout",E_INVALIDARG);
     u32 width=r->w;
@@ -42,6 +68,7 @@ static void cpu_surface_copy(OffRT *r) {
     u64 guest_bytes=(u64)r->cpu_pitch*r->h;
     if(!width || !r->h || !pitch || bytes>256u*1024u*1024u || (u64)r->cpu_address+guest_bytes>0x100000000ull)
         cpu_surface_fail("surface copy bounds",E_INVALIDARG);
+    u64 profile_begin=cpu_surface_tick();
     if(!r->cpu_readback) {
         D3D12_HEAP_PROPERTIES hp={0};hp.Type=D3D12_HEAP_TYPE_READBACK;
         D3D12_RESOURCE_DESC desc={0};desc.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;
@@ -50,7 +77,11 @@ static void cpu_surface_copy(OffRT *r) {
         CPU_SURFACE_HR(s_d3d.device->lpVtbl->CreateCommittedResource(s_d3d.device,&hp,D3D12_HEAP_FLAG_NONE,&desc,
             D3D12_RESOURCE_STATE_COPY_DEST,NULL,&IID_ID3D12Resource,(void **)&r->cpu_readback));
     }
+    if(s_cpu_surface_profile_active)s_cpu_surface_profile_active->allocation+=cpu_surface_tick()-profile_begin;
+    profile_begin=cpu_surface_tick();
     cpu_surface_fence_wait();
+    if(s_cpu_surface_profile_active)s_cpu_surface_profile_active->prior_fence+=cpu_surface_tick()-profile_begin;
+    profile_begin=cpu_surface_tick();
     CPU_SURFACE_HR(s_cpu_surface_alloc->lpVtbl->Reset(s_cpu_surface_alloc));
     CPU_SURFACE_HR(s_cpu_surface_list->lpVtbl->Reset(s_cpu_surface_list,s_cpu_surface_alloc,NULL));
     D3D12_RESOURCE_BARRIER barrier={0};barrier.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -70,13 +101,23 @@ static void cpu_surface_copy(OffRT *r) {
     CPU_SURFACE_HR(s_cpu_surface_list->lpVtbl->Close(s_cpu_surface_list));
     ID3D12CommandList *lists[]={(ID3D12CommandList *)s_cpu_surface_list};
     s_d3d.cmd_queue->lpVtbl->ExecuteCommandLists(s_d3d.cmd_queue,1,lists);
+    if(s_cpu_surface_profile_active)s_cpu_surface_profile_active->commands+=cpu_surface_tick()-profile_begin;
+    profile_begin=cpu_surface_tick();
     cpu_surface_fence_wait();
+    if(s_cpu_surface_profile_active)s_cpu_surface_profile_active->copy_fence+=cpu_surface_tick()-profile_begin;
+    profile_begin=cpu_surface_tick();
     D3D12_RANGE range={0,(SIZE_T)bytes};void *mapped=NULL;
     CPU_SURFACE_HR(r->cpu_readback->lpVtbl->Map(r->cpu_readback,0,&range,&mapped));
     if(!mapped || rsx_surface_readback_rows(vm_base+r->cpu_address,(size_t)guest_bytes,r->cpu_pitch,
         mapped,(size_t)bytes,pitch,width,r->h,r->cpu_format))cpu_surface_fail("guest surface packing",E_INVALIDARG);
     D3D12_RANGE empty={0,0};r->cpu_readback->lpVtbl->Unmap(r->cpu_readback,0,&empty);
     r->cpu_generation=r->gpu_generation;
+    if(s_cpu_surface_profile_active) {
+        s_cpu_surface_profile_active->packing+=cpu_surface_tick()-profile_begin;
+        s_cpu_surface_profile_active->copies++;
+        s_cpu_surface_profile_active->host_bytes+=bytes;
+        s_cpu_surface_profile_active->guest_bytes+=guest_bytes;
+    }
     static unsigned logged;const char *log=getenv("RSX_CPU_SURFACE_LOG");
     if(log && logged++<(unsigned)strtoul(log,NULL,10))fprintf(stderr,"[CPUSURFACE] synchronized ea=%08X offset=%08X pitch=%u size=%ux%u format=%u generation=%llu\n",
         r->cpu_address,r->off,r->cpu_pitch,width,r->h,r->cpu_format&31u,(unsigned long long)r->gpu_generation);
@@ -88,6 +129,7 @@ static void cpu_surface_read(u32 address,u32 bytes) {
         u64 end=(u64)r->cpu_address+(u64)r->cpu_pitch*r->h;
         if((u64)address<end && (u64)address+bytes>r->cpu_address){
             if(s_cpu_surface_recording && r->gpu_generation && r->cpu_generation!=r->gpu_generation)cpu_surface_fail("CPU load requires pending recorded surface writes",E_FAIL);
+            if(s_cpu_surface_profile_active)s_cpu_surface_profile_active->matched++;
             cpu_surface_copy(r);
         }
     }
@@ -101,15 +143,29 @@ static void cpu_surface_service(void) {
     ReleaseSRWLockExclusive(&s_cpu_surface_lock);
     while(request) {
         CpuSurfaceRequest *next=request->next;
+        request->profile.started=cpu_surface_tick();
+        s_cpu_surface_profile_active=s_cpu_surface_profile?&request->profile:NULL;
         cpu_surface_read(request->address,request->bytes);request->status=0;
+        s_cpu_surface_profile_active=NULL;
+        request->profile.finished=cpu_surface_tick();
+        u64 elapsed=GetTickCount64()-request->queued_ms;
+        if(elapsed>=1000)fprintf(stderr,"[CPUSURFACE] complete address=%08X bytes=%u elapsed_ms=%llu renderer=%lu\n",
+            request->address,request->bytes,(unsigned long long)elapsed,(unsigned long)GetCurrentThreadId());
         if(!SetEvent(request->done))cpu_surface_fail("CPU completion event",E_FAIL);
         request=next;
     }
 }
 static void cpu_surface_request(u32 address,u32 bytes,void *opaque) {
     (void)opaque;
-    if((LONG)GetCurrentThreadId()==InterlockedCompareExchange(&s_cpu_surface_thread,0,0)){cpu_surface_read(address,bytes);return;}
-    CpuSurfaceRequest request={0};request.address=address;request.bytes=bytes;request.status=-1;
+    if((LONG)GetCurrentThreadId()==InterlockedCompareExchange(&s_cpu_surface_thread,0,0)){
+        CpuSurfaceRequest direct={0};direct.address=address;direct.bytes=bytes;
+        direct.profile.queued=direct.profile.started=cpu_surface_tick();
+        RsxCpuSurfaceProfile *previous=s_cpu_surface_profile_active;
+        s_cpu_surface_profile_active=s_cpu_surface_profile?&direct.profile:NULL;
+        cpu_surface_read(address,bytes);s_cpu_surface_profile_active=previous;
+        direct.profile.finished=direct.profile.returned=cpu_surface_tick();cpu_surface_profile_emit(&direct);return;
+    }
+    CpuSurfaceRequest request={0};request.address=address;request.bytes=bytes;request.status=-1;request.queued_ms=GetTickCount64();request.profile.queued=cpu_surface_tick();
     request.done=CreateEventA(NULL,FALSE,FALSE,NULL);
     if(!request.done)cpu_surface_fail("CPU read event creation",E_FAIL);
     AcquireSRWLockExclusive(&s_cpu_surface_lock);
@@ -118,11 +174,27 @@ static void cpu_surface_request(u32 address,u32 bytes,void *opaque) {
     s_cpu_surface_tail=&request;ReleaseSRWLockExclusive(&s_cpu_surface_lock);
     extern void *cellGcm_fifo_kick_event(void);
     HANDLE kick=(HANDLE)cellGcm_fifo_kick_event();if(kick&&!SetEvent(kick))cpu_surface_fail("renderer kick",E_FAIL);
-    if(WaitForSingleObject(request.done,30000)!=WAIT_OBJECT_0 || request.status)cpu_surface_fail("CPU read synchronization",E_FAIL);
+    DWORD wait=WaitForSingleObject(request.done,30000);
+    DWORD wait_error=wait==WAIT_FAILED?GetLastError():0;
+    if(wait!=WAIT_OBJECT_0 || request.status) {
+        fprintf(stderr,"[CPUSURFACE] request address=%08X bytes=%u wait=%08lX error=%lu status=%d elapsed_ms=%llu requester=%lu renderer=%ld\n",
+            address,bytes,(unsigned long)wait,(unsigned long)wait_error,request.status,
+            (unsigned long long)(GetTickCount64()-request.queued_ms),
+            (unsigned long)GetCurrentThreadId(),s_cpu_surface_thread);
+        cpu_surface_fail("CPU read synchronization",E_FAIL);
+    }
+    request.profile.returned=cpu_surface_tick();
+    cpu_surface_profile_emit(&request);
     CloseHandle(request.done);
 }
 static void cpu_surface_init(void) {
     s_cpu_surface_thread=0;
+    const char *profile=getenv("RSX_CPU_SURFACE_PROFILE");
+    s_cpu_surface_profile=profile&&profile[0]=='1'&&!profile[1];
+    if(s_cpu_surface_profile) {
+        LARGE_INTEGER f;if(!QueryPerformanceFrequency(&f)||f.QuadPart<=0)cpu_surface_fail("profile frequency",E_FAIL);
+        s_cpu_surface_profile_frequency=(u64)f.QuadPart;
+    }
     CPU_SURFACE_HR(s_d3d.device->lpVtbl->CreateCommandAllocator(s_d3d.device,D3D12_COMMAND_LIST_TYPE_DIRECT,
         &IID_ID3D12CommandAllocator,(void **)&s_cpu_surface_alloc));
     CPU_SURFACE_HR(s_d3d.device->lpVtbl->CreateCommandList(s_d3d.device,0,D3D12_COMMAND_LIST_TYPE_DIRECT,
@@ -144,7 +216,7 @@ static void cpu_surface_shutdown(void) {
     s_cpu_surface_live=0;
     CpuSurfaceRequest *request=s_cpu_surface_head;s_cpu_surface_head=s_cpu_surface_tail=NULL;
     ReleaseSRWLockExclusive(&s_cpu_surface_lock);
-    while(request){CpuSurfaceRequest *next=request->next;request->status=0;if(!SetEvent(request->done))cpu_surface_fail("shutdown CPU completion",E_FAIL);request=next;}
+    while(request){CpuSurfaceRequest *next=request->next;request->status=0;request->profile.started=request->profile.finished=cpu_surface_tick();if(!SetEvent(request->done))cpu_surface_fail("shutdown CPU completion",E_FAIL);request=next;}
     if(s_cpu_surface_list)s_cpu_surface_list->lpVtbl->Release(s_cpu_surface_list);
     if(s_cpu_surface_alloc)s_cpu_surface_alloc->lpVtbl->Release(s_cpu_surface_alloc);
     if(s_cpu_surface_fence)s_cpu_surface_fence->lpVtbl->Release(s_cpu_surface_fence);
