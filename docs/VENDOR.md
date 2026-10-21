@@ -335,7 +335,18 @@ arithmetic interval and fall outside the exact timer interval. Private raw conte
 and original instruction bytes remain excluded. Both compiled and interpreted
 execution use this shared helper, so this finding does not establish the first
 PM divergence in issue 9 or a native performance improvement. Native validation
-of the corrected candidate beyond the old overflow boundary is still required.
+of the corrected candidate beyond the old overflow boundary is recorded below.
+
+Checked Debug/O2 native candidate `1c9704422fa27409da7ec224ded539ffffcc6b4717e891bb3073ed6015f54090`
+in owned muted DX12 run `20261021T013053.174639Z` reached ordinary PLAY, the
+original bike preview and live race HUD. Original menu frame 11 and race frame 68
+were visually inspected; race rendering defects remain. Five complete context/LS
+pairs at roughly 263 seconds all fit the independent exact-integer timer interval
+bracketed by the pre/post QPC observations, beyond the former overflow boundary.
+The five retained old native pairs fail that same oracle. Full LS is unchanged
+across each new pair, only the destination GPR changes, and selected timer/event
+fields remain unchanged. The controller closed through its explicit owned stop
+marker. This checks the timer correction, without a 30 FPS or speedup claim.
 
 ## Interpreter report ownership (issue 163)
 
