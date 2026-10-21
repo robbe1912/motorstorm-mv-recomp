@@ -378,6 +378,30 @@ across each new pair, only the destination GPR changes, and selected timer/event
 fields remain unchanged. The controller closed through its explicit owned stop
 marker. This checks the timer correction, without a 30 FPS or speedup claim.
 
+## Exact SPU fingerprint cache (issue 172)
+
+Own-fork modular commit `cc1fd7e` adds an opt-in, thread-owned cache for the
+existing workload fingerprint; combined `1a18d1a` also carries the portable
+fixture corrections in `30bbbd4` and `3d42376`. Every hit compares the entire
+buffer against an owned snapshot. Pointer reuse alone never establishes a hit.
+Misses hash that snapshot with the unchanged legacy FNV basis and multiplier;
+allocation failure visibly falls back to the original calculation. Buffers must
+remain stable during the call, as before; this does not make concurrent writes
+atomic. Eligible sizes are 4–256 KiB, with 32 entries and at most 4 MiB retained
+per thread. Windows FLS and POSIX key destructors release the snapshots.
+
+`SPU_FINGERPRINT_CACHE=1` enables the cache; the default makes no snapshot
+allocations or byte comparisons. Optional `SPU_FINGERPRINT_STATS=1` emits bounded
+cumulative per-thread counters. Authored production-path checks compare hashes
+with an independent Python oracle, mutate interior and boundary bytes, exercise
+eviction and visible allocation failures, and verify independent workers and
+thread-exit cleanup. Historical uncached code fails the raw-call reduction check.
+Five alternating helper trials over 20,000 stable 124,150-byte calls measured
+median 2.1560 seconds uncached and 0.07182 seconds cached, with identical results.
+This synthetic repeated-buffer test does not establish native FPS or a speedup
+for the game. Native ordinary-PLAY validation and remaining limits are tracked in
+[issue 172](https://github.com/robbe1912/motorstorm-mv-recomp/issues/172).
+
 ## Interpreter report ownership (issue 163)
 
 Per-thread interpreter PC and instruction-count reporting comes from own-fork `codex/spu-interpreter-thread-stats` commit `0b03c7f`, integrated into `combined` as `326c28d`. The selective port updates the two definitions, public declarations and existing owning-thread consumers. Host budgets, guest instructions, errors and required PM interpretation remain intact. The payload-free real-interpreter test runs 401 authored IL/STOP programs across four workers, checking register values, program bytes, stop state and report isolation; source-audit CI runs the curated test on Windows and Linux. Native timing and the remaining performance limit are tracked in [issue 163](https://github.com/robbe1912/motorstorm-mv-recomp/issues/163); this change does not establish a speedup or stable 30 FPS. No external PR was opened.

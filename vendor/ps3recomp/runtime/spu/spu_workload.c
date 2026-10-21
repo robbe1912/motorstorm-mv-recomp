@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "spu_fingerprint_cache.h"
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -28,7 +29,7 @@ int g_cri_video_dma = 0;
 
 /* ---- fingerprint ------------------------------------------------------- */
 
-uint64_t spu_workload_fingerprint(const void* data, size_t n)
+static uint64_t spu_workload_fingerprint_raw(const void* data, size_t n)
 {
     const uint8_t* p = (const uint8_t*)data;
     uint64_t h = 1469598103934665603ULL;          /* FNV offset basis */
@@ -37,6 +38,11 @@ uint64_t spu_workload_fingerprint(const void* data, size_t n)
         h *= 1099511628211ULL;                     /* FNV prime */
     }
     return h;
+}
+
+uint64_t spu_workload_fingerprint(const void* data, size_t n)
+{
+    return spu_fp_cached(data, n, spu_workload_fingerprint_raw);
 }
 
 /* ---- registry ---------------------------------------------------------- */

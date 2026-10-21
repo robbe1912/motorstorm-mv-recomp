@@ -26,6 +26,8 @@ jobs:
         run: python scripts/check_spu_decrementer.py
       - name: Actual texture lookup and phase accounting
         run: python scripts/check_rsx_texture_profile.py
+      - name: Exact SPU fingerprint cache and worker cleanup
+        run: python scripts/check_spu_fingerprint_cache.py
       - name: Actual indexed strip restart regression
         run: python scripts/check_rsx_restart.py
       - name: Actual indexed vertex reuse regression
@@ -97,6 +99,8 @@ jobs:
         run: python scripts/check_spu_decrementer.py
       - name: Actual texture lookup and phase accounting
         run: python scripts/check_rsx_texture_profile.py
+      - name: Exact SPU fingerprint cache and worker cleanup
+        run: python scripts/check_spu_fingerprint_cache.py
       - name: Texture snapshot regression
         run: python scripts/check_texture_capture.py
       - name: Memory capacity contract
