@@ -2,6 +2,7 @@
 #include "native_job_wait_api.h"
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 #include <stdexcept>
 #include <immintrin.h>
 
@@ -38,7 +39,22 @@ void cooperate(void* raw) {
 Model bridge;
 unsigned original_calls=0;
 bool fail_scheduler=false;
+unsigned clock_calls=0;
 }
+
+bool native_job_wait_fixture_clock(std::uint64_t& tick,std::uint64_t& frequency) noexcept {
+    ++clock_calls;
+    const char* mode=std::getenv("MS_JOB_WAIT_FIXTURE_CLOCK");
+    if(mode && ((!std::strcmp(mode,"start-fail") && clock_calls%2==1) ||
+                (!std::strcmp(mode,"end-fail") && clock_calls%2==0))) return false;
+    tick=1234000000000ULL+clock_calls*70;
+    frequency=1000000;
+    if(mode && !std::strcmp(mode,"backward")) tick=clock_calls%2 ? 200 : 100;
+    if(mode && !std::strcmp(mode,"frequency")) frequency+=clock_calls;
+    if(mode && !std::strcmp(mode,"zero-frequency")) frequency=0;
+    return true;
+}
+std::uint64_t native_job_wait_fixture_thread() noexcept { return 0x334455; }
 
 std::uint32_t vm_read32(std::uint64_t address) {
     check(address==0x1004,"List-pointer read");
@@ -83,8 +99,10 @@ int main(int argc,char** argv) {
 
         ppu_context ctx; std::memset(&ctx,0xa5,sizeof(ctx));
         ctx.gpr[3]=0x1000; ctx.gpr[4]=0xfeed000000000003ULL;
+        ctx.lr=0x123456789abcdefULL;
         auto expected=ctx;
-        if(argc>1 && std::strcmp(argv[1],"reference")==0) {
+        const bool reference=argc>1 && std::strcmp(argv[1],"reference")==0;
+        if(reference) {
             motorstorm_job_marker_wait(&ctx);
             check(original_calls==1 && bridge.polls==0 && !std::memcmp(&ctx,&expected,sizeof(ctx)),"Reference mode");
         } else {
@@ -106,6 +124,9 @@ int main(int argc,char** argv) {
             check(original_calls==2 && !std::memcmp(&ctx,&expected,sizeof(ctx)),"Timer failure fallback without writes");
         }
         check(_mm_getcsr()==caller_fp,"Caller FP environment");
+        const char* profiling=std::getenv("MS_NATIVE_JOB_WAIT_PROFILE");
+        const bool profiled=profiling && !std::strcmp(profiling,"1");
+        check(clock_calls==((profiled && !reference)?6u:0u),"Disabled/reference profiling must not read clocks");
         _mm_setcsr(saved_fp);
         std::puts("PASS native job wait: ordering, seven counters, ownership, cooperation, ABI and visible fallback");
         return 0;
