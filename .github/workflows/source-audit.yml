@@ -22,6 +22,8 @@ jobs:
         run: python scripts/check_rsx_capture_schedule.py
       - name: Latest-five retention filesystem safety
         run: python scripts/check_latest_runs.py
+      - name: Long-lived SPU decrementer arithmetic
+        run: python scripts/check_spu_decrementer.py
       - name: Actual indexed strip restart regression
         run: python scripts/check_rsx_restart.py
       - name: Actual indexed vertex reuse regression
@@ -89,6 +91,8 @@ jobs:
         run: python scripts/check_loadtime.py
       - name: Latest-five retention filesystem safety
         run: python scripts/check_latest_runs.py
+      - name: Long-lived SPU decrementer arithmetic
+        run: python scripts/check_spu_decrementer.py
       - name: Texture snapshot regression
         run: python scripts/check_texture_capture.py
       - name: Memory capacity contract

@@ -318,6 +318,25 @@ Imported per-callback strip/fan vertex reuse from fork modular commit `8ee85989d
 Five alternating checked-O1 fork helper pairs have matching output hashes: baseline median 2.495 seconds, candidate 0.986 seconds for 20000 draws of 512 indices; single-triangle medians are 0.248/0.249 seconds. These are helper measurements. Checked original-target native candidate `b7b897b156ed83fec9d64de24bc146039a778f2f75335046f7c3a16101512ea6` reached the original menu/PLAY and Grizzly HUD in run `20261020T142556.536251Z`; matched native samples hit cache lookup/copy. This binary includes retained runtime overlays and does not establish an isolated build of this port. Diagnostic API presents remained about 895 ms apart, with no controlled native speedup or 30 FPS claim. Material defects and source-parity work remain open; Vulkan and retail mstream remain parked.
 
 
+## Long-lived decrementer arithmetic (issue 168)
+
+The split-second RdDec arithmetic is a selective port of upstream `7e257f75`
+(PR313), already present in own-fork combined baseline `326c28d`. The curated
+copy had retained the older elapsed-nanoseconds multiplication, which overflows
+after about 231 seconds. The authored production-case regression comes from
+fork modular `codex/spu-decrementer-regression` at `f446ff9`; its curated copy
+adds only the local Windows compiler-environment setup. Python arbitrary-precision
+arithmetic independently checks 2117 reads, including overflow boundaries, long
+elapsed intervals, final 32-bit wrap and lazy base initialization. The old native
+case fails 2076 cases; the existing fork case and selective port pass all cases.
+
+Five retained native reads at elapsed roughly 354 seconds fit the overflowed
+arithmetic interval and fall outside the exact timer interval. Private raw contexts
+and original instruction bytes remain excluded. Both compiled and interpreted
+execution use this shared helper, so this finding does not establish the first
+PM divergence in issue 9 or a native performance improvement. Native validation
+of the corrected candidate beyond the old overflow boundary is still required.
+
 ## Interpreter report ownership (issue 163)
 
 Per-thread interpreter PC and instruction-count reporting comes from own-fork `codex/spu-interpreter-thread-stats` commit `0b03c7f`, integrated into `combined` as `326c28d`. The selective port updates the two definitions, public declarations and existing owning-thread consumers. Host budgets, guest instructions, errors and required PM interpretation remain intact. The payload-free real-interpreter test runs 401 authored IL/STOP programs across four workers, checking register values, program bytes, stop state and report isolation; source-audit CI runs the curated test on Windows and Linux. Native timing and the remaining performance limit are tracked in [issue 163](https://github.com/robbe1912/motorstorm-mv-recomp/issues/163); this change does not establish a speedup or stable 30 FPS. No external PR was opened.
