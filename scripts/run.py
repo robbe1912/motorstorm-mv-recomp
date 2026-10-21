@@ -136,5 +136,7 @@ def main():
         if replay_thread:replay_thread.join(timeout=2)
         record.update(reason=reason,elapsed=time.monotonic()-start,returncode=p.returncode,terminated_by_guard=terminated,window_ready=window_ready)
         (out/'final.json').write_text(json.dumps(record,indent=2));log.close();err.close();print('Closed:',reason,flush=True)
+        from prune_latest_runs import automatic as trim_latest
+        trim_latest(ROOT)
 
 if __name__=='__main__':main()

@@ -200,6 +200,9 @@ def apply(report):
 def automatic(repo, profile=None):
     """User-approved launcher maintenance; no background agent or scheduler."""
     repo = Path(repo)
+    if (repo / 'temp/run-retention-policy.json').exists():
+        from prune_latest_runs import automatic as latest
+        return latest(repo, profile)
     if not (repo / 'temp/runs').exists():
         return
     extra = STAMP.findall(Path(profile).read_text(encoding='utf-8')) if profile else []

@@ -1,5 +1,29 @@
 # Run storage and retention
 
+On 2026-10-21 the user selected **only the newest five runs** for the active
+`motorstorm-convolution-capture` checkout. That checkout opts into count-based
+retention with ignored `temp/run-retention-policy.json`:
+
+```json
+{"mode": "latest", "keep": 5}
+```
+
+The launcher applies this policy before startup and after owned shutdown. A
+running sixth capture may temporarily coexist with the five previous runs.
+Unlike the older conservative policy below, this explicitly discards older raw
+diagnostics, screenshots, failures and dumps regardless of age or pins. Store
+reusable menu reference images outside `temp/runs` before opting in. Small
+top-level JSON identities/gates and deletion receipts remain under
+`temp/run-receipts`; these do not reconstruct discarded captures. Native process
+ownership and junction protection still apply. Dry-run or apply manually with:
+
+```powershell
+python scripts/prune_latest_runs.py --repo E:/GitRepos/motorstorm-convolution-capture
+python scripts/prune_latest_runs.py --repo E:/GitRepos/motorstorm-convolution-capture --apply
+```
+
+Checkouts without that local policy retain the earlier conservative behavior:
+
 User-approved policy (2026-10-15): keep the newest **10** runs; expire only
 otherwise disposable, completed runs older than **14 days**. Documentation,
 replay references and unique evidence take priority over age and disk pressure.

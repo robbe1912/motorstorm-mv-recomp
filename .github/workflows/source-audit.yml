@@ -20,6 +20,8 @@ jobs:
         run: python scripts/check_run_retention.py
       - name: Bounded frame capture selector
         run: python scripts/check_rsx_capture_schedule.py
+      - name: Latest-five retention filesystem safety
+        run: python scripts/check_latest_runs.py
       - name: Actual indexed strip restart regression
         run: python scripts/check_rsx_restart.py
       - name: Actual indexed vertex reuse regression
@@ -85,6 +87,8 @@ jobs:
         run: python scripts/check_rsx_surface_layout.py
       - name: Load-time observer/report regression
         run: python scripts/check_loadtime.py
+      - name: Latest-five retention filesystem safety
+        run: python scripts/check_latest_runs.py
       - name: Texture snapshot regression
         run: python scripts/check_texture_capture.py
       - name: Memory capacity contract
