@@ -36,6 +36,46 @@ hide mechanism was not traced, and this run does not verify menu or race renderi
 
 Inherited probes are cleared; development SPU_PM_INTERP=1 remains. Six known pre-menu wedge probes are zeroed: SPU_WP, SPU_PM_GATE_TRACE, SPU_PM_RETIRE_GUARD, SPU_PM_PC_RESUME, SPU_PM_FLOW_RESUME, SPU_PM_YIELD_RESUME. Probe-off boots both clean/instrumented menus; individual guilty knob is not isolated. FLOW_FSDBG=1 correlated with early resourcesystem 938 fatal and is omitted. Hooks alone were exonerated for this pre-menu wedge, not permanent stability.
 
+## Runtime profile admission (issue 149)
+
+The default `--execution-profile baseline-interpreter` retains that curated
+environment. Admission requires the selected EXE's adjacent `build_identity.json`,
+matching EXE and configured ELF hashes, selected runtime source and recorded
+capabilities. Older builds without capabilities must be rebuilt. Capabilities
+are never inferred from a later source checkout. An unsupported baseline fails
+before run retention, output creation, PAD replay or process creation.
+
+For a deliberate trial of a runtime without the curated policy interpreter:
+
+```powershell
+python scripts/run.py --executable 'build/separate/ms1_recomp.exe' --execution-profile toolkit-default --seconds 60
+```
+
+`toolkit-default` omits the curated interpreter and resume/probe switches; inherited
+SPU/FLOW diagnostics are still cleared. It requires explicit selection even if
+the baseline is unsupported. `launch.json` and `final.json` retain the selected
+profile, exact profile environment, matching build record and EXE/ELF identities.
+The recorded build source includes its capability-source hash and, for a toolkit
+Git checkout, revision and dirty status. These records identify the selected
+build; they do not prove all possible source capabilities or execution parity.
+
+This selection starts a fresh runtime baseline. It is not an API-only comparison
+with an earlier curated D3D12 build. Renderer comparisons need matching runtime,
+CPU/SPU/input profiles, build conditions and observations on both renderers.
+Vulkan host integration remains under #146; this tooling change launches no
+Vulkan trial and establishes no original assets, race entry or 30 FPS result.
+
+`python scripts/check_runtime_profile.py` uses authored inert identities and
+intercepts native compilation/process creation while executing the real build
+and launcher entry points. It requires Python 3.10+ and `psutil` from
+`requirements.txt`. Add `--historical-runtime PATH` to verify actual
+`runtime/spu/spu_channels.c` from own-fork commit
+`39a36296511c445707adabcd312f0b740cfbd694` (Git blob
+`506da3f99dbfa7576dda3d0d53d9d859643e54fb`): the unsupported default must
+reject before launch and explicit toolkit-default must record the selection.
+Without that source, only this optional historical check is skipped. No game
+inputs or original instructions are used by either check.
+
 ## Input and proof
 
 Write one ASCII line MASK POLLS to the current pad.txt:
