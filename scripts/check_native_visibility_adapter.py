@@ -2,6 +2,7 @@
 from pathlib import Path
 import json
 import os
+import re
 import shutil
 import subprocess
 
@@ -14,6 +15,54 @@ def main():
     fixture = root / 'scripts/fixtures/native_visibility_adapter.cpp'
     compiler = os.environ.get('MV_CLANG') or os.environ.get('CXX') or shutil.which('clang-cl' if os.name == 'nt' else 'c++')
     assert compiler, 'Set MV_CLANG/CXX'
+
+    def check_optimized_snapshot():
+        version = subprocess.run([compiler, '--version'], capture_output=True, text=True)
+        if 'clang' not in (version.stdout + version.stderr).lower():
+            print('SKIP: LLVM snapshot-copy inspection requires Clang; executable checks still run')
+            return
+        folder = out / 'optimized-snapshot'
+        folder.mkdir(exist_ok=True)
+        text = source.read_text()
+        # This observation hook changes optimizer alias information. Inspect
+        # the actual copy path without it, using only the authored ABI header.
+        hook = '#ifdef MOTORSTORM_VISIBILITY_FIXTURE\n    native_visibility_fixture_after_snapshot(ctx);\n#endif'
+        assert text.count(hook) == 1
+        text = text.replace(hook, '')
+
+        def copies_are_independent(label, contents):
+            path = folder / (label + '.cpp')
+            path.write_text(contents)
+            ir_path = folder / (label + '.ll')
+            if os.name == 'nt':
+                command = [compiler, '/nologo', '/std:c++17', '/O2', '/EHsc', '/fp:strict',
+                           '/DMOTORSTORM_VISIBILITY_FIXTURE', '/I' + str(source.parent),
+                           '/I' + str(fixture.parent), '/c', str(path), '/clang:-S', '/clang:-emit-llvm']
+            else:
+                command = [compiler, '-std=c++17', '-O2', '-ffp-contract=off', '-frounding-math',
+                           '-DMOTORSTORM_VISIBILITY_FIXTURE', '-I' + str(source.parent),
+                           '-I' + str(fixture.parent), '-S', '-emit-llvm', str(path), '-o', str(ir_path)]
+            (folder / (label + '-command.json')).write_text(json.dumps(command, indent=2))
+            result = subprocess.run(command, cwd=folder, capture_output=True, text=True)
+            (folder / (label + '-build.log')).write_text(result.stdout + result.stderr)
+            result.check_returncode()
+            ir = ir_path.read_text()
+            pairs = []
+            for body in re.findall(r'^define[^\n]*\{\n(.*?)^\}', ir, re.M | re.S):
+                copies = re.findall(r'@llvm\.memcpy[^\(]*\([^,]* (%[\w.]+),[^,]* (%[\w.]+), i64 (\d+)', body)
+                copies = [(dst, src) for dst, src, size in copies if int(size) >= 200000]
+                if len(copies) == 2:
+                    pairs.append(copies)
+            assert pairs, 'Optimized context copies not found; inspect retained LLVM output'
+            return all(second[1] == first[0] for first, second in pairs)
+
+        assert copies_are_independent('ordered', text), 'Compiler rereads live context for candidate snapshot'
+        barrier = 'std::atomic_signal_fence(std::memory_order_seq_cst);'
+        assert text.count(barrier) == 1
+        assert not copies_are_independent('missing-barrier', text.replace(barrier, '')), 'Missing-barrier control did not reproduce copy forwarding'
+        print('PASS: optimized snapshot copies use saved context; missing-barrier compiler control rejected')
+
+    check_optimized_snapshot()
 
     def build(label, adapter):
         folder = out / label

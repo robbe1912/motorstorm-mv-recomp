@@ -154,6 +154,9 @@ bool snapshot(const spu_context* ctx,spu_context* reference,spu_context* candida
        reference->list_stall_mask || (reference->int_enable && (reference->event_status&reference->event_mask))) return false;
     // Masked events can arrive between reads. Start both executions from one
     // snapshot; preserve the live event and compare every context field.
+    // Materialize that snapshot: otherwise memcpy forwarding can replace the
+    // second copy with another read of the concurrently updated live context.
+    std::atomic_signal_fence(std::memory_order_seq_cst);
     std::memcpy(candidate,reference,sizeof(*ctx));
     reference->ls=reference->ls_store;candidate->ls=candidate->ls_store;
     return true;
