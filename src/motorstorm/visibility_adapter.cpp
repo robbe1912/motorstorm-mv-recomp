@@ -36,21 +36,30 @@ namespace {
 using namespace motorstorm::game;
 using Function = void (*)(spu_context*);
 enum class Mode { reference, shadow, native };
+const char* startup_option(const char* name) {
+#ifdef MOTORSTORM_VISIBILITY_FIXTURE
+    return native_visibility_fixture_environment(name);
+#else
+    return std::getenv(name);
+#endif
+}
+
 struct State {
     Mode mode = Mode::reference;
-    bool cpu, instrumentation;
+    bool cpu, instrumentation, policy_interpretation;
     std::atomic<unsigned long long> completed{0}, fallbacks{0}, compared{0};
-    State() : cpu(supports_native_world_transforms()), instrumentation(false) {
+    State() : cpu(supports_native_world_transforms()), instrumentation(false),
+              policy_interpretation(startup_option("SPU_PM_INTERP") != nullptr) {
 #ifdef MOTORSTORM_VISIBILITY_FIXTURE
         cpu = cpu && native_visibility_fixture_cpu();
 #endif
-        const char* mode_text = std::getenv("MS_NATIVE_VISIBILITY");
+        const char* mode_text = startup_option("MS_NATIVE_VISIBILITY");
         if (!mode_text || !std::strcmp(mode_text, "0")) {}
         else if (!std::strcmp(mode_text, "shadow")) mode = Mode::shadow;
         else if (!std::strcmp(mode_text, "1")) mode = Mode::native;
         else throw std::invalid_argument("MS_NATIVE_VISIBILITY must be 0, shadow or 1");
         for (const char* name : {"SPU_LS_LOWREAD", "SPU_LS_WATCH", "SPU_SMC_WATCH", "SPU_PCHIST"})
-            instrumentation |= std::getenv(name) != nullptr;
+            instrumentation |= startup_option(name) != nullptr;
         std::fprintf(stderr, "[native-visibility] mode=%s cpu=%d\n",
                      mode_text ? mode_text : "0", int(cpu));
     }
@@ -322,7 +331,7 @@ int prepare_leaf(const spu_context* ctx,std::uint64_t remaining,spu_native_leaf_
     }
     // A nested correctness reference must stay interpreted. Use the existing
     // admission policy; do not manufacture a span or enable broad handoff.
-    if (!std::getenv("SPU_PM_INTERP") &&
+    if (!state().policy_interpretation &&
         !(ctx->interp_span_lo<=0x83a0 && ctx->interp_span_hi>=0x85f4)) return 0;
     const auto continuation=ctx->gpr[0]._u32[0];
     if ((continuation&3) || continuation>=sizeof(ctx->ls_store) ||

@@ -7,6 +7,7 @@
 #include <stdatomic.h>
 #include <signal.h>
 #ifdef BASELINE_ONLY
+unsigned leaf_test_environment_reads(void) { abort(); }
 /* Link-only traps for new API paths absent from the hash-pinned original.
  * Its legacy-record driver never invokes either one. */
 int spu_native_leaf_register(const spu_native_leaf* leaf) { (void)leaf;abort(); }
@@ -78,7 +79,9 @@ int g_spu_ls_watch_n,g_spu_ls_probe,g_wws_read_probe,g_wws_code_probe,g_spu_smc_
 void spu_ls_watch_slow(uint32_t a,int w,const uint8_t* p,uint32_t pc,uint32_t lr) {
     (void)a;(void)w;(void)p;(void)pc;(void)lr;abort();
 }
-static atomic_int enabled,calls;
+extern unsigned leaf_test_environment_reads(void);
+void spu_trace_dump(uint32_t at);
+static atomic_int enabled,calls,worker_ready;
 static int bad,nested,options;
 static uint8_t shared_ls[0x40000];
 static void require(int ok,const char* why) {
@@ -165,12 +168,21 @@ static DWORD WINAPI worker(void* unused) {
 static void* worker(void* unused) {
 #endif
     (void)unused;
+    atomic_fetch_add(&worker_ready,1);
+    while(atomic_load(&worker_ready)!=4) {}
     for(unsigned i=0;i<100;i++) {
         spu_context* c=program(42);
         require(spu_interp_run(c,0x100)==0x2000,"worker stop");
         require(g_spu_interp_steps==4 && c->gpr[3]._u32[0]==42,"worker state/steps");free(c);
     }
     return 0;
+}
+static void option(const char* name,const char* value) {
+#ifdef _WIN32
+    require(!_putenv_s(name,value ? value : ""),"test option update");
+#else
+    require(!(value ? setenv(name,value,1) : unsetenv(name)),"test option update");
+#endif
 }
 static void aborted(int sig) { (void)sig; _Exit(86); }
 static void forbidden_continuation(spu_context* c) { (void)c;abort(); }
@@ -200,11 +212,18 @@ int main(int argc,char** argv) {
     if (!strcmp(mode,"legacy-record")) return legacy_record();
     g_spu_trampoline_fn=forbidden_continuation;
     if (!strcmp(mode,"empty")) { compare(42,0,0,0);puts("PASS empty registry unchanged");return 0; }
+    if(!strcmp(mode,"prefreeze_trace")) {
+        option("SPU_CALLTRACE","0");spu_trace_dump(0x200);
+    }
     spu_native_leaf leaf={0x200,0x208,prepare};
     require(spu_native_leaf_register(NULL)==-1,"invalid registration");
     require(spu_native_leaf_register(&leaf)==0,"registration");
     require(spu_native_leaf_register(&leaf)==-1,"duplicate registration");
     spu_native_leaf zero={0,8,prepare};require(!spu_native_leaf_register(&zero),"zero entry registration");
+    if(!strcmp(mode,"prefreeze_trace")) {
+        compare(42,0,0,0);puts("PASS prefreeze trace retains registration");return 0;
+    }
+    if (!strcmp(mode,"cold_workers")) { atomic_store(&enabled,1);goto workers; }
     if (!strcmp(mode,"ambiguous")) {
         leaf.prepare=also_prepare;require(!spu_native_leaf_register(&leaf),"second guard");
     }
@@ -215,7 +234,27 @@ int main(int argc,char** argv) {
         atomic_store(&enabled,1);spu_context* c=program(42);spu_interp_run(c,0x100);
         require(0,"invalid execution was accepted");
     }
-    if (!strcmp(mode,"instrumented")) { compare(42,0,0,0); puts("PASS instrumented stream retained");return 0; }
+    if (!strcmp(mode,"instrumented")) {
+        compare(42,0,0,0);
+        const char* value=getenv("NATIVE_TEST_STARTUP_OPTION");
+        if(value) {
+            char startup[64];require(strlen(value)<sizeof(startup),"test option name");
+            strcpy(startup,value);option(startup,NULL);compare(42,0,0,0);
+            if(!strcmp(startup,"SPU_CALLTRACE")) spu_trace_dump(0x200);
+        }
+        puts("PASS instrumented stream retained");return 0;
+    }
+    if (!strcmp(mode,"lookups")) {
+        compare(42,0,0,1);compare(43,0,0,0);
+        unsigned reads=leaf_test_environment_reads();
+        require(reads>=7,"startup option reads observed");
+        option("SPU_BOUNDARY_DIR","1");option("SPU_CALLTRACE","1");
+        spu_trace_dump(0x200);
+        for(unsigned i=0;i<200;i++) { compare(42,0,0,1);compare(43,0,0,0); }
+        require(leaf_test_environment_reads()==reads,"no warmed native-option environment reads");
+        option("SPU_BOUNDARY_DIR",NULL);option("SPU_CALLTRACE",NULL);
+        puts("PASS no warmed environment scans across accepted/rejected operations");return 0;
+    }
     for(unsigned rounding=0;rounding<4;rounding++) {
         HostFP saved=get_fp();mode_fp(saved,rounding);
         compare(42,0,0,1);compare(43,0,0,0);
@@ -239,7 +278,9 @@ int main(int argc,char** argv) {
     int before=atomic_load(&calls);spu_interp_run(c,0x100);
     require(atomic_load(&calls)==before && c->event_status==2,"pending event retained");free(c);
     require(spu_native_leaf_register(&leaf)==-1,"frozen registry");
-    before=atomic_load(&calls);
+workers:
+    ;
+    int worker_calls=atomic_load(&calls);
 #ifdef _WIN32
     HANDLE threads[4];
     for(unsigned i=0;i<4;i++) { threads[i]=CreateThread(NULL,0,worker,NULL,0,NULL);require(threads[i]!=NULL,"thread create"); }
@@ -250,6 +291,7 @@ int main(int argc,char** argv) {
     for(unsigned i=0;i<4;i++) require(!pthread_create(&threads[i],NULL,worker,NULL),"thread create");
     for(unsigned i=0;i<4;i++) require(!pthread_join(threads[i],NULL),"thread join");
 #endif
-    require(atomic_load(&calls)-before==400,"all workers executed real replacements");
+    require(atomic_load(&calls)-worker_calls==400,"all workers executed real replacements");
+    if(!strcmp(mode,"cold_workers")) require(leaf_test_environment_reads()==7,"racing first callers capture options once");
     puts("PASS actual interpreter native leaves: complete state, guards, stops, budgets, nesting, events, FP and workers");return 0;
 }

@@ -17,6 +17,7 @@ void require(bool yes, const char* message) {
 bool cpu = true, matches = true, spy = false;
 unsigned hook = 0, real_calls = 0, entry_calls = 0;
 bool inject_masked_event=false;
+unsigned policy_reads=0;
 spu_native_leaf registered_leaf{};
 spu_context* real_context = nullptr;
 std::unique_ptr<spu_context> expected_entry;
@@ -72,9 +73,15 @@ void expect_original(spu_context* ctx) {
 }
 } // namespace
 
+const char* native_visibility_fixture_environment(const char* name) {
+    if(!std::strcmp(name,"SPU_PM_INTERP")) ++policy_reads;
+    return std::getenv(name);
+}
+
 extern "C" {
 thread_local std::uint64_t g_spu_interp_steps=0;
 thread_local std::uint32_t g_spu_interp_last_pc=0;
+
 int spu_native_leaf_register(const spu_native_leaf* leaf) {
     require(leaf && leaf->begin==0x83a0 && leaf->end==0x85f4 && leaf->prepare && !registered_leaf.prepare,
             "Exact single leaf registration");
@@ -175,6 +182,21 @@ int main(int argc, char** argv) { try {
         drain(reference.get(),true);inject_masked_event=true;drain(ctx.get(),false);ctx->ls=reference->ls;
         require(!std::memcmp(ctx.get(),reference.get(),sizeof(*ctx)),"Live masked event preserved");
         std::puts("PASS one comparison snapshot preserves concurrent masked event");return 0;
+    }
+    if(command=="policy_options" || command=="policy_absent") {
+        const bool present=command=="policy_options";
+        auto ctx=entry(2,2);spu_native_leaf_plan plan{};
+        require(bool(registered_leaf.prepare(ctx.get(),10000,&plan))==present,"Startup policy presence admission");
+        require(policy_reads==1,"Policy option captured once");
+#ifdef _WIN32
+        require(!_putenv_s("SPU_PM_INTERP",present ? "" : "1"),"Test policy environment change");
+#else
+        require(!(present ? unsetenv("SPU_PM_INTERP") : setenv("SPU_PM_INTERP","1",1)),"Test policy environment change");
+#endif
+        for(unsigned i=0;i<200;i++)
+            require(bool(registered_leaf.prepare(ctx.get(),10000,&plan))==present,"Policy startup presence retained");
+        require(policy_reads==1,"No warmed policy environment reads");
+        std::puts("PASS cached policy presence and unchanged post-startup admission");return 0;
     }
     if (command == "leaf_only") {
         require(registered_leaf.prepare,"Registered interpreter leaf callback");

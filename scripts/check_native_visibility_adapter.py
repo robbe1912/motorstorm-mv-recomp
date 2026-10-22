@@ -99,7 +99,7 @@ def main():
 
     def run(exe, mode, command='all', extra=None):
         env = dict(os.environ, MS_NATIVE_VISIBILITY=mode)
-        for name in ['SPU_LS_LOWREAD', 'SPU_LS_WATCH', 'SPU_SMC_WATCH', 'SPU_PCHIST']:
+        for name in ['SPU_LS_LOWREAD', 'SPU_LS_WATCH', 'SPU_SMC_WATCH', 'SPU_PCHIST','SPU_PM_INTERP']:
             env.pop(name, None)
         env.update(extra or {})
         result = subprocess.run([str(exe), command], env=env, text=True, capture_output=True)
@@ -113,6 +113,8 @@ def main():
         result.check_returncode()
     for mode in ['0','1']:
         result=run(exe,mode,'leaf_only');print(result.stdout,end='');result.check_returncode()
+    for command,extra in [('policy_options',{'SPU_PM_INTERP':'0'}),('policy_absent',{})]:
+        result=run(exe,'1',command,extra);print(result.stdout,end='');result.check_returncode()
     result=run(exe,'shadow','snapshot_only');print(result.stdout,end='');result.check_returncode()
     for mode, command, extra in [('1', 'unsupported', None), ('1', 'instrumented', {'SPU_PCHIST': '1'})]:
         result = run(exe, mode, command, extra)
@@ -173,6 +175,13 @@ def main():
     assert result.returncode == 1 and 'Adapter full-context parity' in result.stderr, result.stderr
     result = run(exe, 'shadow')
     assert result.returncode != 0 and 'NATIVE_VISIBILITY_SHADOW_MISMATCH' in result.stderr, result.stderr
+    before='!state().policy_interpretation'
+    assert text.count(before)==1
+    mutant=out/'hot-policy-scan.cpp'
+    mutant.write_text(text.replace(before,'!startup_option("SPU_PM_INTERP")'))
+    exe=build('hot-policy-scan',mutant)
+    result=run(exe,'1','policy_options',{'SPU_PM_INTERP':'0'})
+    assert result.returncode==1 and 'Policy option captured once' in result.stderr,result.stderr
     print('PASS: full-state/transaction mutants rejected; shadow mismatch fatal; original fallback and baseline admission verified')
 
 

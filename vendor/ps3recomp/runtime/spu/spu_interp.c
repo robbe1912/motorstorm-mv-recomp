@@ -36,6 +36,7 @@ static unsigned native_count;
 static uint32_t native_entries[0x40000 / 128];
 static atomic_flag native_lock = ATOMIC_FLAG_INIT;
 static atomic_int native_frozen;
+static int native_instrumented,native_calltrace;
 static SPU_THREAD_LOCAL int native_busy;
 static void native_lock_enter(void) {
     while (atomic_flag_test_and_set_explicit(&native_lock,memory_order_acquire)) {}
@@ -66,7 +67,17 @@ int spu_native_leaf_register(const spu_native_leaf* leaf) {
 static void native_freeze(void) {
     if (atomic_load_explicit(&native_frozen,memory_order_acquire)) return;
     native_lock_enter();
-    atomic_store_explicit(&native_frozen,1,memory_order_release);
+    if (!atomic_load_explicit(&native_frozen,memory_order_relaxed)) {
+        /* Presence, including an empty value, is a startup option. Capture
+         * before release publication; racing first callers do not recapture. */
+        static const char* options[]={"SPU_LS_LOWREAD","SPU_LS_WATCH","SPU_SMC_WATCH",
+            "SPU_PCHIST","SPU_TRACE_CALLS","SPU_BOUNDARY_DIR"};
+        native_calltrace=getenv("SPU_CALLTRACE")!=NULL;
+        native_instrumented=native_calltrace;
+        for(unsigned i=0;i<sizeof(options)/sizeof(options[0]);i++)
+            native_instrumented |= getenv(options[i])!=NULL;
+        atomic_store_explicit(&native_frozen,1,memory_order_release);
+    }
     native_lock_leave();
 }
 static void native_error(const char* reason) {
@@ -460,7 +471,9 @@ void spu_trace_call(uint32_t from, uint32_t to) {
     s_trace_i++;
 }
 void spu_trace_dump(uint32_t at) {
-    if (!getenv("SPU_CALLTRACE")) return;
+    /* A direct dump before any interpreter run must not freeze registration. */
+    if (atomic_load_explicit(&native_frozen,memory_order_acquire) ?
+        !native_calltrace : !getenv("SPU_CALLTRACE")) return;
     fprintf(stderr, "[SPU-TRACE] halt at LS 0x%05X; last %d calls (from->to):\n", at, SPU_TRACE_N);
     unsigned n = s_trace_i < SPU_TRACE_N ? s_trace_i : SPU_TRACE_N;
     for (unsigned k = 0; k < n; k++) {
@@ -1019,9 +1032,7 @@ static uint32_t interp_run_until_impl(spu_context* ctx, uint32_t start_lsa, uint
             (native_entries[ctx->pc>>7] & (1u<<((ctx->pc>>2)&31))) &&
             !_tr && !_cap && !_g1 && !s_kh && !g_spu_ls_watch_n &&
             g_spu_ls_probe<=0 && g_spu_smc_watch<=0 &&
-            !getenv("SPU_LS_LOWREAD") && !getenv("SPU_LS_WATCH") &&
-            !getenv("SPU_SMC_WATCH") && !getenv("SPU_PCHIST") &&
-            !getenv("SPU_TRACE_CALLS") && !getenv("SPU_BOUNDARY_DIR")) {
+            !native_instrumented) {
             uint64_t remaining=(local_budget ? local_budget : UINT64_MAX)-steps;
             if (g_spu_interp_budget) {
                 uint64_t legacy=g_spu_interp_budget>steps ? g_spu_interp_budget-steps-1 : 0;

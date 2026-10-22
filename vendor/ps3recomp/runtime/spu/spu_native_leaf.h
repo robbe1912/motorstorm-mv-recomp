@@ -1,6 +1,11 @@
 /* Opt-in migration seam for bounded, privately owned, channel-free leaves.
  * Register before the first interpreter run; registrations are copied and then
- * frozen process-wide. Registered callback code lives for the process lifetime.
+ * frozen process-wide. Native-leaf diagnostic option presence (SPU_LS_LOWREAD,
+ * SPU_LS_WATCH, SPU_SMC_WATCH, SPU_PCHIST, SPU_TRACE_CALLS, SPU_BOUNDARY_DIR,
+ * SPU_CALLTRACE) is captured at first run before freeze publication, and must
+ * not be changed concurrently with startup. Later environment changes do not
+ * reconfigure these options. Live context/watch/IRQ/DMA guards remain dynamic.
+ * Registered callback code lives for the process lifetime.
  * Preparation is read-only and thread-safe. Its plan/cookie must survive until
  * the immediate same-thread execute call and be safe to discard without it;
  * recursive runs cannot use this seam.

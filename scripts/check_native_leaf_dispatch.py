@@ -43,24 +43,49 @@ def run(exe, mode='normal', extra=None):
     (exe.parent/(mode+'.log')).write_text(r.stdout+r.stderr)
     return r
 
-exe=build('production',spu/'spu_interp.c')
-for mode in ['normal','empty']:
+# Count real runtime environment reads without replacing getenv results.
+source=(spu/'spu_interp.c').read_text(encoding='utf-8')
+reader=r'''
+static atomic_uint leaf_test_env_reads;
+unsigned leaf_test_environment_reads(void) { return atomic_load(&leaf_test_env_reads); }
+static char* leaf_test_getenv(const char* name) {
+    static const char* options[]={"SPU_LS_LOWREAD","SPU_LS_WATCH","SPU_SMC_WATCH",
+        "SPU_PCHIST","SPU_TRACE_CALLS","SPU_BOUNDARY_DIR","SPU_CALLTRACE"};
+    for(unsigned i=0;i<sizeof(options)/sizeof(options[0]);i++)
+        if (!strcmp(name,options[i])) { atomic_fetch_add(&leaf_test_env_reads,1);break; }
+    return getenv(name);
+}
+#define getenv leaf_test_getenv
+'''
+def instrument(contents):
+    anchor='/* Work descriptor for the next SYS_SPU_THREAD_STOP_RECEIVE_EVENT service'
+    assert contents.count(anchor)==1
+    return contents.replace(anchor,reader+'\n'+anchor)
+production=out/'instrumented-interpreter.c'
+production.write_text(instrument(source))
+exe=build('production',production)
+for mode in ['normal','empty','lookups','cold_workers','prefreeze_trace']:
     r=run(exe,mode);assert r.returncode==0,r.stdout+r.stderr
 for mode,message in [('bad','continuation/status'),('plan','invalid plan'),('ambiguous','ambiguous guards')]:
     r=run(exe,mode)
     assert r.returncode==86 and '[spu-native-leaf] invalid execution: '+message in r.stderr,r.stdout+r.stderr
 r=run(exe,'tls')
 assert r.returncode==1 and 'FAIL caller TLS queue' in r.stderr,r.stdout+r.stderr
-for variable in ['SPU_LS_LOWREAD','SPU_SMC_WATCH','SPU_PCHIST','SPU_TRACE_CALLS',
-                 'SPU_BOUNDARY_DIR','YDKJ_SPU_TRACE','YDKJ_CRI_GATE1TRACE','SPU_STEPCAP']:
-    r=run(exe,'instrumented',{variable:'100'})
+for variable in ['SPU_LS_LOWREAD','SPU_LS_WATCH','SPU_SMC_WATCH','SPU_PCHIST','SPU_TRACE_CALLS',
+                 'SPU_BOUNDARY_DIR','SPU_CALLTRACE','YDKJ_SPU_TRACE','YDKJ_CRI_GATE1TRACE','SPU_STEPCAP']:
+    r=run(exe,'instrumented',{variable:'0' if variable=='SPU_CALLTRACE' else '100', **({'NATIVE_TEST_STARTUP_OPTION':variable} if variable.startswith(('SPU_LS_','SPU_SMC_','SPU_PCHIST','SPU_TRACE_CALLS','SPU_BOUNDARY_DIR','SPU_CALLTRACE')) else {})})
     assert r.returncode==0,r.stdout+r.stderr
+    if variable=='SPU_CALLTRACE': assert '[SPU-TRACE] halt at LS 0x00200' in r.stderr,r.stderr
 
 source=(spu/'spu_interp.c').read_text(encoding='utf-8')
 
 # Recover the exact pre-port public implementation, not a second model of its
 # behavior. The pinned digest prevents the reconstruction from hiding drift.
 reference=source
+# The option cache changes only the trace gate outside the registry/hook.
+trace_begin=reference.index('    /* A direct dump before any interpreter run')
+trace_end=reference.index('\n    fprintf(stderr, "[SPU-TRACE]',trace_begin)
+reference=reference[:trace_begin]+'    if (!getenv("SPU_CALLTRACE")) return;'+reference[trace_end:]
 def undo(before,after):
     global reference
     assert reference.count(before)==1,before
@@ -95,6 +120,7 @@ assert len(records[0])>56*0x40000
 (out/'legacy-record.json').write_text(json.dumps({'cases':56,'bytes':len(records[0]),'sha256':hashlib.sha256(records[0]).hexdigest(),'normalization':'Only LS allocation pointer set NULL; old API, four FP modes, seven global ceilings, normal and real IRQ vector cases'},indent=2),encoding='utf-8')
 
 for name,before,after in [
+    ('hot-environment-scan','!native_instrumented)', '!native_instrumented && !getenv("SPU_LS_LOWREAD"))'),
     ('missing-seam','if (native_count && ctx->pc<0x40000','if (0 && ctx->pc<0x40000'),
     ('stop-bypass','(stop && stop>=leaf->begin && stop<leaf->end)','0'),
     ('zero-stop-sentinel','(stop && stop>=leaf->begin && stop<leaf->end)','(stop>=leaf->begin && stop<leaf->end)'),
@@ -102,7 +128,8 @@ for name,before,after in [
     ('legacy-budget-bypass','if (legacy<remaining) remaining=legacy;','/* omitted legacy ceiling */'),
 ]:
     assert source.count(before)==1,name
-    path=out/(name+'.c');path.write_text(source.replace(before,after),encoding='utf-8')
-    r=run(build(name,path))
-    assert r.returncode==1 and 'FAIL real host execution count' in r.stderr,r.stdout+r.stderr
-print('PASS actual interpreter native-leaf state/stop/budget/IRQ/TLS/FP/thread tests and hash-pinned pre-port equivalence; five unsafe dispatch mutants and faulty TLS callback rejected')
+    path=out/(name+'.c');path.write_text(instrument(source.replace(before,after)),encoding='utf-8')
+    r=run(build(name,path),'lookups' if name=='hot-environment-scan' else 'normal')
+    message='FAIL no warmed native-option environment reads' if name=='hot-environment-scan' else 'FAIL real host execution count'
+    assert r.returncode==1 and message in r.stderr,r.stdout+r.stderr
+print('PASS actual interpreter native-leaf state/stop/budget/IRQ/TLS/FP/thread tests and hash-pinned pre-port equivalence; six unsafe dispatch/environment mutants and faulty TLS callback rejected')

@@ -47,3 +47,5 @@ int game_visibility_code_matches(const spu_context*);
 bool native_visibility_fixture_cpu();
 void native_visibility_fixture_after_math(spu_context*);
 void native_visibility_fixture_after_snapshot(const spu_context*);
+
+const char* native_visibility_fixture_environment(const char*);
