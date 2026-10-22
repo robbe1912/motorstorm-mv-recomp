@@ -61,6 +61,11 @@ VisibilityPlaneResult test_visibility_planes(
         distance = _mm256_fmadd_ps(y, _mm256_set1_ps(plane.y), distance);
         distance = _mm256_fmadd_ps(z, _mm256_set1_ps(plane.z), distance);
         distance = _mm256_add_ps(distance, _mm256_set1_ps(plane.offset));
+#if defined(__GNUC__)
+        // GCC does not model arithmetic exception flags as data dependencies of
+        // stmxcsr. Materialize the whole vector before observing its flags.
+        __asm__ __volatile__("" : "+x"(distance) : : "memory");
+#endif
         if (_mm_getcsr() & 0x1du) {
             throw std::range_error("Unsupported visibility numeric range");
         }

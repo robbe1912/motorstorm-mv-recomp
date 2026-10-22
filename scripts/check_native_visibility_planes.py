@@ -63,6 +63,13 @@ def main():
         ('fusion', '_mm256_fmadd_ps(y, _mm256_set1_ps(plane.y), distance)',
          '_mm256_add_ps(_mm256_mul_ps(y, _mm256_set1_ps(plane.y)), distance)', 'Independent fused plane cancellation'),
     ]
+    if os.name != 'nt':
+        macros = subprocess.check_output([compiler, '-dM', '-E', '-x', 'c++', '-'],
+                                         input='', text=True)
+        if '#define __GNUC__ ' in macros and '#define __clang__ ' not in macros:
+            mutations.append(('status-ordering',
+                '__asm__ __volatile__("" : "+x"(distance) : : "memory");',
+                '(void)distance;', 'Unsupported visibility numeric range rejected'))
     for label, old, new, error in mutations:
         assert text.count(old) == 1
         mutant = out / f'{label}.cpp'
