@@ -69,7 +69,7 @@ def main():
     assert result.returncode != 0 and 'NATIVE_VISIBILITY_ERROR MS_NATIVE_VISIBILITY must be' in result.stderr, result.stderr
     text = source.read_text()
     mutant = out / 'preferred-only.cpp'
-    before = 'for (unsigned lane = 0; lane < 4; ++lane) {\n        ctx->gpr[14]'
+    before = 'for (unsigned lane = 0; lane < 4; ++lane) {\n        ctx->gpr[13]'
     assert text.count(before) == 1
     mutant.write_text(text.replace(before, before.replace('lane < 4', 'lane < 1')))
     exe = build('preferred-only', mutant)
@@ -80,17 +80,26 @@ def main():
     mutant = out / 'premature-write.cpp'
     before = 'native_visibility_fixture_after_math(ctx);'
     assert text.count(before) == 1
-    mutant.write_text(text.replace(before, 'advance(ctx, 1); ' + before))
+    mutant.write_text(text.replace(before, 'commit(ctx, prepared); ' + before))
     exe = build('premature-write', mutant)
     result = run(exe, '1', 'guard_only')
     assert result.returncode == 1 and 'Original fallback has no partial guest writes' in result.stderr, result.stderr
-    mutant = out / 'missing-scratch-guard.cpp'
-    before = 'if ((ctx->gpr[13]._u32[lane] & 0x7fffffffu) > maximum_magnitude)'
+    mutant = out / 'missing-corner-guard.cpp'
+    before = 'if (!supported_corners(prepared.corners))'
     assert text.count(before) == 1
     mutant.write_text(text.replace(before, 'if (false)'))
-    exe = build('missing-scratch-guard', mutant)
-    result = run(exe, '1', 'scratch_only')
+    exe = build('missing-corner-guard', mutant)
+    result = run(exe, '1', 'numeric_only')
     assert result.returncode == 1 and 'Original fallback has no partial guest writes' in result.stderr, result.stderr
+    mutant = out / 'wrong-coefficient.cpp'
+    before = 'const float values[] = {point.x,point.y,point.z,1.0f};'
+    assert text.count(before) == 1
+    mutant.write_text(text.replace(before, before.replace('1.0f', '0.0f')))
+    exe = build('wrong-coefficient', mutant)
+    result = run(exe, '1')
+    assert result.returncode == 1 and 'Adapter full-context parity' in result.stderr, result.stderr
+    result = run(exe, 'shadow')
+    assert result.returncode != 0 and 'NATIVE_VISIBILITY_SHADOW_MISMATCH' in result.stderr, result.stderr
     print('PASS: full-state/transaction mutants rejected; shadow mismatch fatal; original fallback and baseline admission verified')
 
 

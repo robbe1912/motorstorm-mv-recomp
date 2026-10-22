@@ -1,6 +1,7 @@
 #include "visibility_planes.h"
 
-#include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <immintrin.h>
 #include <stdexcept>
 
@@ -20,7 +21,12 @@ private:
 };
 
 void require_finite(float value) {
-    if (!std::isfinite(value)) {
+    // Check the IEEE-754 encoding without floating arithmetic or a library call.
+    // This also keeps signaling-NaN admission independent of caller FP flags.
+    std::uint32_t word;
+    static_assert(sizeof(word) == sizeof(value));
+    std::memcpy(&word, &value, sizeof(word));
+    if ((word & 0x7f800000u) == 0x7f800000u) {
         throw std::invalid_argument("Non-finite visibility input");
     }
 }
