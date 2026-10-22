@@ -36,6 +36,8 @@ jobs:
         run: python scripts/check_native_visibility_planes.py
       - name: Native visibility adapter and full-state negative controls
         run: python scripts/check_native_visibility_adapter.py
+      - name: Verified SPU visibility binding and code/data guards
+        run: python scripts/check_native_visibility_binding.py
       - name: Verified native game binding and input isolation
         run: python scripts/check_native_game_binding.py
       - name: Native scene transaction and original fallback
@@ -127,6 +129,8 @@ jobs:
         run: python scripts/check_native_visibility_planes.py
       - name: Native visibility adapter and full-state negative controls
         run: python scripts/check_native_visibility_adapter.py
+      - name: Verified SPU visibility binding and code/data guards
+        run: python scripts/check_native_visibility_binding.py
       - name: Verified native game binding and input isolation
         run: python scripts/check_native_game_binding.py
       - name: Native scene transaction and original fallback

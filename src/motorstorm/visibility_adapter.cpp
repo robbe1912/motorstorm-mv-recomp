@@ -65,7 +65,9 @@ bool pending(const spu_context* ctx) {
 }
 const char* admission(const spu_context* ctx) {
     if (!ctx || ctx->ls != ctx->ls_store) return "local-store ownership";
-    if (ctx->pc != 0x83a0 || ctx->status != 1) return "entry state";
+    // The verified function wrapper establishes entry. Direct calls retain
+    // their caller block PC; the original leaf does not consume that value.
+    if (ctx->status != 1) return "entry state";
     if (ctx->list_stall_mask || pending(ctx)) return "pending DMA/event";
     if (state().instrumentation || g_spu_ls_watch_n > 0) return "active instrumentation";
     if (!game_visibility_code_matches(ctx)) return "code/data identity";
@@ -170,6 +172,7 @@ extern "C" void motorstorm_visibility_planes(spu_context* ctx) try {
         original(ctx, "matrix/plane span"); return;
     }
     std::array<unsigned char, 64> matrix_snapshot, argument_snapshot;
+    const auto entry_pc = ctx->pc;
     std::array<unsigned char, maximum_planes * 16> snapshot;
     std::memcpy(matrix_snapshot.data(), ctx->ls + matrix, 64);
     std::memcpy(argument_snapshot.data(), &ctx->gpr[0], 16);
@@ -205,7 +208,7 @@ extern "C" void motorstorm_visibility_planes(spu_context* ctx) try {
     native_visibility_fixture_after_math(ctx);
 #endif
     if (const char* reason = admission(ctx)) { original(ctx, reason); return; }
-    if (std::memcmp(argument_snapshot.data(), &ctx->gpr[0], 16) ||
+    if (ctx->pc != entry_pc || std::memcmp(argument_snapshot.data(), &ctx->gpr[0], 16) ||
         std::memcmp(argument_snapshot.data()+16, &ctx->gpr[3], 48) ||
         std::memcmp(matrix_snapshot.data(), ctx->ls + matrix, 64) ||
         std::memcmp(snapshot.data(), ctx->ls + cursor, count * 16)) {

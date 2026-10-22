@@ -142,6 +142,7 @@ void native_visibility_fixture_after_math(spu_context* ctx) {
         if (expected_entry) expected_entry->gpr[reg]._u32[lane] ^= 1;
     }
     if (hook == 5) matches = false;
+    if (hook == 7) { ctx->pc ^= 4; if (expected_entry) expected_entry->pc ^= 4; }
 }
 
 int main(int argc, char** argv) { try {
@@ -166,7 +167,10 @@ int main(int argc, char** argv) { try {
         for (unsigned count : {1u,2u,3u,4u,5u,6u,64u}) for (unsigned fail = 0; fail <= count; ++fail) {
         if (count == 64 && fail != 0 && fail != 63 && fail != 64) continue;
         const auto saved = _mm_getcsr(); _mm_setcsr((saved & ~0x6000u) | (rounding << 13) | 0x20u);
-        auto ctx = entry(count, fail); auto reference = std::make_unique<spu_context>(*ctx); reference->ls = reference->ls_store;
+        auto ctx = entry(count, fail);
+        // Direct generated calls keep the caller block PC until the leaf queues.
+        ctx->pc = (fail & 1) ? 0x9650 : 0x83a0;
+        auto reference = std::make_unique<spu_context>(*ctx); reference->ls = reference->ls_store;
         const auto expected_exit = drain(reference.get(), true);
         real_context = ctx.get(); real_calls = entry_calls = 0;
         const auto caller = _mm_getcsr(); const auto actual_exit = drain(ctx.get(), false);
@@ -181,7 +185,6 @@ int main(int argc, char** argv) { try {
     if (command != "guard_only") {
         expect_original(nullptr);
         auto raw = std::make_unique<unsigned char[]>(0x40000); ctx->ls = raw.get(); expect_original(ctx.get()); ctx->ls = ctx->ls_store;
-        ctx->pc = 0x90; expect_original(ctx.get()); ctx->pc = 0x83a0;
         ctx->status = 0; expect_original(ctx.get()); ctx->status = 1;
         ctx->list_stall_mask = 1; expect_original(ctx.get()); ctx->list_stall_mask = 0;
         ctx->event_status = 2; expect_original(ctx.get()); ctx->event_status = 0;
@@ -198,7 +201,7 @@ int main(int argc, char** argv) { try {
         ctx->ls[0x20004] = 0x7f; ctx->ls[0x20005] = 0x80; expect_original(ctx.get()); put_float(ctx->ls + 0x20004, 20);
         put_float(ctx->ls + 0x10000, 0x1p33f); expect_original(ctx.get()); put_float(ctx->ls + 0x10000, 0);
     }
-    for (hook = 1; hook <= 6; ++hook) {
+    for (hook = 1; hook <= 7; ++hook) {
         auto test = entry(3,3); expect_original(test.get()); matches = true;
     }
     hook = 0;

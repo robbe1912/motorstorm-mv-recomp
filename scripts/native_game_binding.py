@@ -17,6 +17,10 @@ class Contract:
     symbol: str = 'func_006BEAE0'
     original: str = 'game_original_scene_list_evaluate'
     native: str = 'motorstorm_scene_evaluate'
+    context: str = 'ppu_context'
+    directory: str = 'ppu'
+    matcher: str = ''
+    windows: tuple = ()  # (ELF file offset, local-store offset, byte count)
 
 
 # Identities only: original/generated program bytes never belong in Git.
@@ -26,6 +30,13 @@ PRODUCTION = Contract(
 JOB_WAIT = Contract(PRODUCTION.elf_sha256,
     'ab53a9f3f0d538a07d6333eb2b45d78a2dd40e2a3dcbe317e08109f96fad5fca',
     'func_00C5C424', 'game_original_job_marker_wait', 'motorstorm_job_marker_wait')
+VISIBILITY = Contract(PRODUCTION.elf_sha256,
+    '4b14bf2fb492bd7bfc5203af19b9856fc0da9272143d3b84ffd855ce8c9cfa63',
+    'jobmod_056ac0eea1a6_e12270_spu_func_000083A0',
+    'game_original_visibility_box', 'motorstorm_visibility_planes',
+    context='spu_context', directory='spu/jobmod_056ac0eea1a6_e12270',
+    matcher='game_visibility_code_matches',
+    windows=((0xf7b320, 0x83a0, 596), (0xf893f0, 0x16470, 16)))
 
 
 def digest(path):
@@ -36,8 +47,8 @@ def digest(path):
     return hasher.hexdigest()
 
 
-def definition(source, symbol):
-    pattern = rb'\bvoid\s+(?P<symbol>' + re.escape(symbol.encode()) + rb')\s*\(\s*ppu_context\s*\*\s*ctx\s*\)\s*\{'
+def definition(source, symbol, context='ppu_context'):
+    pattern = rb'\bvoid\s+(?P<symbol>' + re.escape(symbol.encode()) + rb')\s*\(\s*' + re.escape(context.encode()) + rb'\s*\*\s*ctx\s*\)\s*\{'
     matches = list(re.finditer(pattern, source))
     if len(matches) != 1:
         raise ValueError(f'Expected one definition of {symbol}, found {len(matches)}')
@@ -66,11 +77,13 @@ def definition(source, symbol):
     raise ValueError('Unterminated reference body')
 
 
-def transform(source, contract):
-    for symbol in (contract.symbol, contract.original, contract.native):
+def transform(source, contract, windows=()):
+    for symbol in (contract.symbol, contract.original, contract.native, contract.context):
         if not re.fullmatch(r'[A-Za-z_]\w*', symbol):
             raise ValueError('Invalid binding symbol')
-    match, end = definition(source, contract.symbol)
+    if bool(contract.matcher) != bool(contract.windows) or len(windows) != len(contract.windows):
+        raise ValueError('Expected all verified code/data windows')
+    match, end = definition(source, contract.symbol, contract.context)
     body = source[match.start():end].replace(b'\r\n', b'\n')
     if hashlib.sha256(body).hexdigest() != contract.body_sha256:
         raise ValueError('Reference body identity changed; verify it before binding')
@@ -78,9 +91,38 @@ def transform(source, contract):
         raise ValueError('Reference symbol already present')
     renamed = source[:match.start('symbol')] + contract.original.encode() + source[match.end('symbol'):]
     wrapper = (f'\n// Handwritten game entry; preserve direct and registered callers.\n'
-               f'void {contract.native}(ppu_context*);\n'
-               f'void {contract.symbol}(ppu_context* ctx) {{ {contract.native}(ctx); }}\n').encode()
+               f'void {contract.native}({contract.context}*);\n'
+               f'void {contract.symbol}({contract.context}* ctx) {{ {contract.native}(ctx); }}\n').encode()
+    if contract.matcher:
+        if not re.fullmatch(r'[A-Za-z_]\w*', contract.matcher) or contract.context != 'spu_context':
+            raise ValueError('Invalid local-store matcher')
+        if re.search(rb'\b' + contract.matcher.encode() + rb'\b', source):
+            raise ValueError('Matcher symbol already present')
+        guard = ['\n#include <string.h>\n', f'int {contract.matcher}(const spu_context* ctx) {{\n']
+        conditions = ['ctx', 'ctx->ls']
+        for i, ((_, address, count), data) in enumerate(zip(contract.windows, windows)):
+            if len(data) != count:
+                raise ValueError('Truncated verified window')
+            guard.append(f'    static const unsigned char window_{i}[] = {{' + ','.join(f'0x{b:02x}' for b in data) + '};\n')
+            conditions.extend([f'{address}u + sizeof(window_{i}) <= sizeof(ctx->ls_store)',
+                f'memcmp(ctx->ls + {address}u, window_{i}, sizeof(window_{i})) == 0'])
+        guard.append('    return ' + ' &&\n        '.join(conditions) + ';\n}\n')
+        wrapper += ''.join(guard).encode()
     return renamed + wrapper
+
+
+def read_windows(elf, contract):
+    result = []
+    with Path(elf).open('rb') as source:
+        for offset, address, count in contract.windows:
+            if offset < 0 or address < 0 or count <= 0 or address + count > 0x40000:
+                raise ValueError('Invalid verified window bounds')
+            source.seek(offset)
+            data = source.read(count)
+            if len(data) != count:
+                raise ValueError('Truncated original ELF window')
+            result.append(data)
+    return result
 
 
 def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=None, known_contracts=None):
@@ -94,8 +136,11 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
     if any(elf_sha != c.elf_sha256 for c in selected):
         raise ValueError('Unsupported original ELF identity for native game binding')
     known = tuple(known_contracts) if known_contracts is not None else (
-        (PRODUCTION, JOB_WAIT) if elf_sha == PRODUCTION.elf_sha256 else selected)
+        (PRODUCTION, JOB_WAIT, VISIBILITY) if elf_sha == PRODUCTION.elf_sha256 else selected)
     known = tuple(dict.fromkeys((*known, *selected)))
+    directories = {Path(entry.directory) for entry in known}
+    if any(path.is_absolute() or '..' in path.parts for path in directories):
+        raise ValueError('Binding directories must stay inside generated inputs')
     files = {}
     for path in sorted(generated.rglob('*')):
         if IGNORED_CACHES.intersection(path.relative_to(generated).parts):
@@ -108,10 +153,10 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
         raise ValueError('Expected the selected generated tree with ppu/ppu_recomp.h')
     definitions = {}
     for relative in files:
-        if relative.parent == Path('ppu') and relative.suffix in {'.c', '.cpp'}:
+        if relative.parent in directories and relative.suffix in {'.c', '.cpp'}:
             source = (generated/relative).read_bytes()
             for entry in known:
-                if re.search(rb'\bvoid\s+' + entry.symbol.encode() + rb'\s*\(\s*ppu_context\s*\*\s*ctx\s*\)\s*\{', source):
+                if relative.parent == Path(entry.directory) and re.search(rb'\bvoid\s+' + entry.symbol.encode() + rb'\s*\(\s*' + re.escape(entry.context.encode()) + rb'\s*\*\s*ctx\s*\)\s*\{', source):
                     definitions.setdefault(entry, []).append((relative, source))
     changes, allowed, bindings = {}, {}, []
     for entry in known:
@@ -122,7 +167,7 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
             continue
         relative, source = candidates[0]
         try:
-            changed = transform(source, entry)
+            changed = transform(source, entry, read_windows(elf, entry))
         except ValueError:
             if entry in selected:
                 raise
@@ -135,7 +180,7 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
             changes[relative] = changed
             bindings.append(dict(symbol=entry.symbol, original_tu=(generated/relative).as_posix(),
                 copied_tu=(output/relative).as_posix(), reference_body_sha256=entry.body_sha256,
-                copied_tu_sha256=sha))
+                copied_tu_sha256=sha, context=entry.context))
     if not output.exists():
         shutil.copytree(generated, output, ignore=shutil.ignore_patterns(*IGNORED_CACHES))
     for path in output.rglob('*'):
@@ -173,8 +218,9 @@ def main():
         parser.add_argument('--'+name, type=Path, required=True)
     parser.add_argument('--without-world-transforms', action='store_true')
     parser.add_argument('--job-wait', action='store_true')
+    parser.add_argument('--visibility', action='store_true')
     args = parser.parse_args()
-    selected = ([] if args.without_world_transforms else [PRODUCTION]) + ([JOB_WAIT] if args.job_wait else [])
+    selected = ([] if args.without_world_transforms else [PRODUCTION]) + ([JOB_WAIT] if args.job_wait else []) + ([VISIBILITY] if args.visibility else [])
     result = prepare(args.generated, args.output, args.elf, args.manifest, contracts=selected)
     print('Verified native game bindings:', ', '.join(b['symbol'] for b in result['bindings']))
 

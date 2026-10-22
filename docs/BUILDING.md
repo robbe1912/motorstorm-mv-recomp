@@ -87,6 +87,8 @@ The wrapper kills ms1_recomp.exe before relinking, configures root CMake into bu
 
 The selected debug-US build binds native hierarchy work and cooperative job waits by default. Its original ELF and reference functions must match the verified contracts; the build copies generated inputs locally and changes only the copied binding TUs. See [native binding and reference mode](NATIVE_GAME.md#build-and-scene-bridge). Use both `--no-native-world-transforms --no-native-job-wait` for an unbound reference build. Other targets require their own verified bindings.
 
+The visibility prototype is opt-in: `--native-visibility` binds its verified SPU module, while runtime `MS_NATIVE_VISIBILITY=0` remains the default reference mode. `shadow` compares current operations and `1` selects native work; current-game validation is still in progress. Direct CMake uses `PORT_NATIVE_VISIBILITY=ON`. Keep `--no-native-visibility` for a fully unbound reference build.
+
 Public vendor tests exclude unreviewed guest fixtures. PS3RECOMP_BUILD_TESTS=ON fails clearly; review upstream synthetic tests separately. Build success establishes compilation, not native gameplay. Use [operations](OPERATIONS.md) for live work.
 
 For performance evaluation, `python scripts/project.py build --optimize` enables
