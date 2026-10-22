@@ -17,6 +17,14 @@ checks, minimized reproducers and two implementation mutants. This finite-domain
 gate complements the dedicated rounding/fusion tests; it does not establish SPU
 equivalence, runtime integration or a measured speedup.
 
+## Visibility plane prototype
+
+[Issue 194](https://github.com/robbe1912/motorstorm-mv-recomp/issues/194) owns the next visibility replacement. [`visibility_planes.h`](../src/motorstorm/visibility_planes.h) exposes ordinary host planes and eight corners; [`visibility_planes.cpp`](../src/motorstorm/visibility_planes.cpp) visits planes in order and identifies the first plane with any corner below the threshold. This tests full containment; it must not be interpreted as proving that every corner is outside. The handwritten AVX2/FMA operation uses a separate x product, fused y/z terms and a final offset addition, toward-zero/flush semantics and exact caller MXCSR restoration. Non-finite inputs and unsupported arithmetic ranges throw before any guest commit. Baseline CPU/OS admission is required before calling this separately compiled operation.
+
+`python scripts/check_native_visibility_planes.py` compiles the feature gate and fixture without AVX2, then compiles only the operation with AVX2/FMA. Authored tests cover all corner lanes, boundary equality, plane order, 512 bounded integer-oracle cases in each caller rounding mode, independent fusion/rounding examples, range rejection and immutable inputs/FP state. Wrong rounding, inclusive comparison, all-corners reduction and split-FMA mutants must fail. This is operation verification, not original-game admission.
+
+Private original-reference work verifies a 464-byte code window covering the loop and return helpers against the original ELF and all 28 saved hashed contexts. The isolated actual-AOT value-helper reference agrees on result/prefix/immutable LS for 2,048 finite authored cases and 32 preferred-input replays from eight historical captures. A prototype that computes the prefix natively and retains one decisive original iteration also matches the complete constructed context, normalizing only clone LS backing-pointer identity. This still retains original execution; it is not complete interpreter removal. Public adapter/binding, ownership and DMA admission, current shadow invocations, enabled native gameplay and matched performance evidence remain required. No speedup or 30 FPS claim follows from these offline checks.
+
 ## Build and scene bridge
 
 `python scripts/project.py build --optimize --jobs 1` enables native hierarchy and job-wait bindings by default for the verified original debug-US ELF. Both `--no-native-world-transforms --no-native-job-wait` retain the unbound reference build. Direct CMake configuration uses `PORT_NATIVE_WORLD_TRANSFORMS=ON`, `PORT_NATIVE_JOB_WAIT=ON` and `PORT_TARGET_ELF` pointing to the selected original ELF. This does not change the required PM interpretation for unreplaced work.
