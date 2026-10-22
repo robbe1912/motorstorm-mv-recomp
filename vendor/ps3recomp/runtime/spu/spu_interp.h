@@ -35,6 +35,10 @@ uint32_t spu_interp_run(spu_context* ctx, uint32_t start_lsa);
 /* As spu_interp_run, but also hands back at stop_lsa (0 = no such point): the
  * return point of the drain the caller goes back to (spu_smc_microstep). */
 uint32_t spu_interp_run_until(spu_context* ctx, uint32_t start_lsa, uint32_t stop_lsa);
+/* Additional exact guest-instruction ceiling, 0=off. The existing global
+ * attempted-step ceiling and interrupt policy still apply unchanged. */
+uint32_t spu_interp_run_until_budget(spu_context* ctx, uint32_t start_lsa,
+                                    uint32_t stop_lsa, uint64_t budget);
 /* Host-armed step ceiling for differential harnesses: when nonzero,
  * spu_interp_run/until returns at the ceiling with g_spu_interp_budget_hit
  * set (host treats that as a timeout). Default 0 = off, no change. */

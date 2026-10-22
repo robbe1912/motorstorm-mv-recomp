@@ -1,5 +1,38 @@
 # Vendor provenance and upstream
 
+Issue [196](https://github.com/robbe1912/motorstorm-mv-recomp/issues/196)
+adds an explicit native-leaf registration seam, developed on own-fork modular
+branch `codex/spu-native-leaf-dispatch` through `d996c59` and integrated into
+fork `combined` at `2a37eda`. The atomic head passed Windows, Linux and macOS
+focused checks; the combined tree is identical and passed the local suite.
+Registrations are copied before interpretation and then frozen. Guards must
+prove private ownership and unchanged code/data, decline without effects, and
+provide an exact instruction count and real continuation. No game identity,
+automatic compiled handoff or interpreter-disable switch is added.
+
+The curated port is selective: it preserves existing interrupt delivery,
+forced-policy interpretation, rejoin behavior, statistics, and the legacy
+global ceiling that counts an attempted step before decoding. The new optional
+local ceiling counts decoded instructions; native plans must fit both limits.
+Unregistered, rejected, traced, watched, interrupted and partial-budget work
+continues through the retained interpreter. Callback code has process lifetime;
+preparation is read-only/thread-safe, execution stays on its owner thread, and
+invalid plans or continuations fail visibly. See
+[`spu_native_leaf.h`](../vendor/ps3recomp/runtime/spu/spu_native_leaf.h).
+
+`python scripts/check_native_leaf_dispatch.py` compiles the actual interpreter
+and interrupt runtime against authored programs. It checks complete context,
+FP/TLS, real interrupt delivery, changed code, nesting, four workers, stops and
+intersecting budget limits; five unsafe runtime mutants and a faulty TLS
+callback are rejected. A separately compiled, hash-pinned pre-port interpreter
+matches 56 full-state/telemetry records byte-for-byte after normalizing only
+the LS allocation pointer. These cover four FP modes, seven legacy ceilings,
+and normal/interrupt paths. This establishes runtime compatibility for those
+cases, not a game performance improvement. Application registration and fresh
+visibility shadow/native gameplay validation remain under issue 194; stable
+30 FPS remains unverified. Private boundary-observer and SIMD-scope additions
+require their own selective integration rather than replacing that runtime.
+
 Issue [170](https://github.com/robbe1912/motorstorm-mv-recomp/issues/170)
 adds opt-in DX12 texture-slot phase attribution from own-fork modular commit
 `f896596`, integrated into fork `combined` at `412278d`. Set both
