@@ -28,10 +28,10 @@ callback are rejected. A separately compiled, hash-pinned pre-port interpreter
 matches 56 full-state/telemetry records byte-for-byte after normalizing only
 the LS allocation pointer. These cover four FP modes, seven legacy ceilings,
 and normal/interrupt paths. This establishes runtime compatibility for those
-cases, not a game performance improvement. Application registration and fresh
-visibility shadow/native gameplay validation remain under issue 194; stable
-30 FPS remains unverified. Private boundary-observer and SIMD-scope additions
-require their own selective integration rather than replacing that runtime.
+cases, not a game performance improvement. Application registration and checked
+normal-PLAY shadow/native validation are recorded in [Native game operations](NATIVE_GAME.md);
+stable 30 FPS remains unachieved. The private selective integration preserves
+its boundary observer and SIMD scopes instead of replacing that runtime.
 
 
 Issue [201](https://github.com/robbe1912/motorstorm-mv-recomp/issues/201) removes native-leaf diagnostic-option scans from the hot path. Own-fork modular `codex/spu-leaf-startup-options` at `a42bb551` passed focused Windows/Linux/macOS checks and was integrated into `combined` at `3dc12531`; the combined focused matrix and local suite passed. Seven option presences are captured once under the registration lock before release-publishing the frozen registry. Empty strings and `"0"` still mean present. Later environment changes do not reconfigure startup diagnostics; dynamic context, interrupt, DMA and watch checks remain live. A direct pre-freeze call-trace dump retains its old behavior without freezing registration. The actual-interpreter test counts real environment reads, exercises racing first callers, accepted/rejected warm paths and unchanged startup tracing after environment changes, and rejects a restored hot lookup. The hash-pinned original-runtime comparison still passes. The application separately caches startup policy-interpretation presence. Selective private integration preserves its boundary observer and SIMD scopes; no game identity is added to the toolkit.
