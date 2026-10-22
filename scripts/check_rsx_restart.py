@@ -18,13 +18,17 @@ PREFIX = r'''
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 typedef uint32_t u32;typedef uint64_t u64;typedef uint8_t u8;
 typedef struct {float v[4];} VPSlot;
 typedef struct {struct {int enabled;} vertex_attribs[16];u32 index_array_dma,begin_epoch,restart_index_enable,restart_index;} rsx_state;
 #define MAX_VERTICES 4096
 #define VP_VERT_STRIDE 256
 static VPSlot buffer[4096*16];
-static struct {void*vp_vb_mapped;u32 vp_vb_offset,vp_parity;} s_d3d={buffer,0,0};
+static struct {void*vp_vb_mapped;u32 vp_vb_offset,vp_parity,vp_capacity;} s_d3d={buffer,0,0,MAX_VERTICES};
+/* This assembly fixture stays within its authored storage. Growth has its own
+ * production-path contract in check_rsx_vp_upload.py. */
+static void vp_upload_reserve(u64 n){if(n>MAX_VERTICES-s_d3d.vp_vb_offset/VP_VERT_STRIDE)abort();}
 uint8_t*vm_base=(uint8_t*)1;static const u32*indices;static unsigned markers_fetched;
 static u32 read_guest_index(const rsx_state*s,u32 k){(void)s;return indices[k];}
 static void read_vp_vertex(const rsx_state*s,u32 i,VPSlot*out){out[0].v[0]=(float)i;if(s->restart_index_enable&&((s->index_array_dma>>4)!=1||s->restart_index<=65535)&&i==s->restart_index)markers_fetched++;}
@@ -47,7 +51,7 @@ def main():
     ap.add_argument('--source', type=Path, default=ROOT / 'vendor/ps3recomp/libs/video/rsx_d3d12_backend.c')
     args = ap.parse_args()
     source = args.source.resolve()
-    text = source.read_text()
+    text = source.read_text(encoding='utf-8')
     a = text.index('static u32 upload_strip_vp_indexed(')
     b = text.index('\nstatic void d3d12_draw_arrays(', a)
     body = text[a:b]
@@ -57,9 +61,9 @@ def main():
     out = ROOT / 'temp/checks' / ('rsx-restart-' + stamp)
     out.mkdir(parents=True)
     c, exe = out / 'check.c', out / ('check.exe' if os.name == 'nt' else 'check')
-    c.write_text(PREFIX + include + body + CHECK)
+    c.write_text(PREFIX + include + body + CHECK, encoding='utf-8')
     env = os.environ.copy()
-    if os.name == 'nt':
+    if os.name == 'nt' and not env.get('CC'):
         from project import build_environment
         env = build_environment()
         cmd = [env['MV_CLANG'], '/nologo', str(c), '/Fe' + str(exe), '/Fo' + str(out / 'check.obj')]

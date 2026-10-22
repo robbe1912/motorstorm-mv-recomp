@@ -1,0 +1,118 @@
+/* Actual upload functions; authored storage, retirement and vertex adapters. */
+#include "rsx_commands.h"
+#include "rsx_index_strip.h"
+#include "rsx_upload_buffer.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#define MAX_VERTICES 8u
+#define VP_VERT_STRIDE 256u
+typedef struct { float v[4]; } VPSlot;
+static struct {
+    void* vp_vb_mapped;
+    u32 vp_vb_offset, vp_parity, vp_capacity;
+    struct { u32 raw; } cur_texs[16];
+} s_d3d;
+static unsigned char guest;
+uint8_t* vm_base = &guest;
+static u64 s_req_verts, s_req_draws, s_drop_draws, s_perf_nverts;
+static double s_perf_vtx, s_lock_sx, s_lock_sy;
+static u32 s_duck_raw, s_lock_n;
+static int s_lock_valid;
+static float s_lock_x, s_lock_y;
+static int perf_on(void) { return 0; }
+static double perf_now(void) { return 0; }
+static void vp_attrs_dbg(const rsx_state* s) { (void)s; }
+u32 cellGcmResolveOffset(u32 offset) { return offset; }
+static VPSlot vertices[64][16];
+static u32 indices[64], retires;
+static u32 read_guest_index(const rsx_state* s, u32 k) { (void)s; return indices[k]; }
+static void read_vp_vertex(const rsx_state* s, u32 k, VPSlot* out)
+{ (void)s; if (k >= 64) abort(); memcpy(out, vertices[k], VP_VERT_STRIDE); }
+static int allocate(void* c, uint64_t bytes, rsx_upload_buffer* b)
+{
+    (void)c; b->memory = malloc((size_t)bytes); b->resource = b->memory;
+    if (!b->memory) return 0;
+    memset(b->memory, 0xcd, (size_t)bytes); return 1;
+}
+static int retire(void* c) { (void)c; ++retires; return 1; }
+static void dispose(void* c, rsx_upload_buffer* b) { (void)c; free(b->memory); }
+static void vp_upload_reserve(u64 count)
+{
+    rsx_upload_buffer b = {s_d3d.vp_vb_mapped, s_d3d.vp_vb_mapped, s_d3d.vp_capacity};
+    const rsx_upload_ops ops = {NULL, allocate, retire, dispose};
+    if (!rsx_upload_reserve(&b, s_d3d.vp_vb_offset, count, VP_VERT_STRIDE, &ops)) abort();
+    s_d3d.vp_vb_mapped = b.memory; s_d3d.vp_capacity = b.capacity;
+}
+@UPLOAD_FUNCTIONS@
+#define CHECK(x) do { if (!(x)) { fprintf(stderr,"FAIL line %d: %s\n",__LINE__,#x); return 1; } } while (0)
+int main(int argc, char** argv)
+{
+    rsx_state state = {0}; state.vertex_attribs[0].enabled = 1;
+    /* Bit-exact authored attributes, including opaque/non-numeric lanes. */
+    for (u32 i=0;i<64;++i) for (u32 a=0;a<16;++a) for (u32 lane=0;lane<4;++lane) {
+        u32 bits = (i*64+a*4+lane)*2654435761u;
+        memcpy(&vertices[i][a].v[lane], &bits, 4);
+    }
+    for (u32 i=0;i<64;++i) indices[i]=(i*17+7)%64;
+    /* Independently listed triangle order, distinct for the two strip APIs. */
+    const u32 order[8][12] = {
+        {0,1,2,0,2,3,4,5,6,4,6,7}, {0,1,2,3,4,5},
+        {0,1,2,1,3,2}, {0,1,2,0,2,3},
+        {0,1,2,0,2,3,4,5,6,4,6,7}, {0,1,2,3,4,5},
+        {0,1,2,2,1,3}, {0,1,2,0,2,3}
+    };
+    const u32 wanted[8]={12,6,6,6,12,6,6,6};
+    const char* names[8]={"quads","tris","strip","fan","indexed quads","indexed tris","indexed strip","indexed fan"};
+    const int strip_only = argc>1 && !strcmp(argv[1],"--strip-only");
+    u32 schedules=0, uploads=0;
+    for (u32 kind=0;kind<8;++kind) {
+        if (strip_only && kind!=2) continue;
+        for (u32 initial_parity=0;initial_parity<2;++initial_parity) {
+            s_d3d.vp_capacity=MAX_VERTICES; retires=0;
+            s_d3d.vp_vb_mapped=malloc(2*MAX_VERTICES*VP_VERT_STRIDE);
+            CHECK(s_d3d.vp_vb_mapped);
+            memset(s_d3d.vp_vb_mapped,0x17,MAX_VERTICES*VP_VERT_STRIDE);
+            memset((u8*)s_d3d.vp_vb_mapped+MAX_VERTICES*VP_VERT_STRIDE,0x62,MAX_VERTICES*VP_VERT_STRIDE);
+            u32 used[2]={MAX_VERTICES,MAX_VERTICES};
+            for (u32 pass=0;pass<8;++pass) {
+                const u32 parity=(initial_parity+pass)%2, old_capacity=s_d3d.vp_capacity;
+                const size_t old_bytes=(size_t)old_capacity*VP_VERT_STRIDE;
+                u8* previous=malloc(old_bytes*2); CHECK(previous);
+                memcpy(previous,s_d3d.vp_vb_mapped,old_bytes*2);
+                s_d3d.vp_parity=parity; s_d3d.vp_vb_offset=used[parity]*VP_VERT_STRIDE;
+                ++state.begin_epoch; u32 n=0;
+                switch(kind) {
+                    case 0:n=upload_quads_vp(&state,17,8);break;
+                    case 1:n=upload_tris_vp(&state,17,6);break;
+                    case 2:n=upload_strip_vp(&state,17,4,0);break;
+                    case 3:n=upload_strip_vp(&state,17,4,1);break;
+                    case 4:n=upload_quads_vp_indexed(&state,17,8);break;
+                    case 5:n=upload_tris_vp_indexed(&state,17,6);break;
+                    case 6:n=upload_strip_vp_indexed(&state,17,4,0);break;
+                    case 7:n=upload_strip_vp_indexed(&state,17,4,1);break;
+                }
+                if (n!=wanted[kind]) {
+                    fprintf(stderr,"FAIL: %s expected %u vertices at capacity, got %u\n",names[kind],wanted[kind],n);
+                    return 1;
+                }
+                CHECK(s_d3d.vp_vb_offset==(used[parity]+n)*VP_VERT_STRIDE);
+                u8* actual=s_d3d.vp_vb_mapped;
+                const size_t new_bytes=(size_t)s_d3d.vp_capacity*VP_VERT_STRIDE;
+                for(u32 p=0;p<2;++p) for(size_t i=0;i<old_bytes;++i) {
+                    if(p==parity && i>=(size_t)used[p]*VP_VERT_STRIDE && i<(size_t)(used[p]+n)*VP_VERT_STRIDE) continue;
+                    CHECK(actual[p*new_bytes+i]==previous[p*old_bytes+i]);
+                }
+                for(u32 v=0;v<n;++v) {
+                    u32 index=17+order[kind][v]; if(kind>=4) index=indices[index];
+                    CHECK(!memcmp(actual+parity*new_bytes+(used[parity]+v)*VP_VERT_STRIDE,vertices[index],VP_VERT_STRIDE));
+                }
+                free(previous); used[parity]+=n; ++uploads;
+            }
+            CHECK(retires>=2); CHECK(!s_drop_draws);
+            free(s_d3d.vp_vb_mapped); ++schedules;
+        }
+    }
+    printf("PASS: %u schedules/%u complete uploads; all six production paths, both parity halves and prior bytes\n",schedules,uploads);
+    return 0;
+}

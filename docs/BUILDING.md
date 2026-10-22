@@ -156,3 +156,29 @@ decoding before filtering, clamp/wrap, remapping, named units and LOD/bias;
 it also rejects insufficient source capacity and cube overlap. Logs and hashes
 remain in ignored `temp/checks/rsx-alias-*`. This is a sampling-contract test,
 not native race or performance acceptance.
+
+## VP upload capacity regression
+
+`python scripts/check_rsx_vp_upload.py` compiles the six actual VP upload
+functions, the shared two-parity growth helper and the actual retirement gate
+against authored vertex/storage/fence adapters. It checks 128 complete uploads
+over 16 schedules, preserving earlier bytes in both halves across repeated
+growth. It also covers allocation/retirement rollback and arithmetic limits,
+and requires independently broken parity-copy and unchecked-retirement controls
+to fail. `--baseline 614798b9f2348e08e9e54c95fb1b4c111409fe2f` must reproduce
+the original strip returning zero where six vertices are required; that revision
+must exist locally. The ordinary command requires no historical Git objects.
+
+Windows uses the normal clang-cl setup. For a GNU-style compiler, including
+MinGW on Windows, set `CC=clang` or use `--cc clang`. On Linux, the default is
+`CC` or `cc`. Python 3.10+ and a C11 compiler suffice; no game inputs, native
+game executable or GPU are used. Source/executable hashes and full logs stay
+under `temp/checks/vp-upload-*`. The Windows/Linux source workflow runs the
+ordinary command, but wiring a job is not a hosted test result.
+
+The existing `check_rsx_restart.py` and `check_rsx_indexed_strip.py` also accept
+GNU-style `CC` on Windows. Their original restart, decoded-attribute, winding,
+split-packet and cache-work checks remain; the indexed boundary check now
+requires the full draw and preserved prior bytes after growth. These tests do
+not prove GPU resource lifetime or presentation; see the qualified
+[vendor adoption](VENDOR.md#vp-upload-capacity-adoption-issue-129).

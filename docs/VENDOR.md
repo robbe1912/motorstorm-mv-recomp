@@ -509,3 +509,37 @@ with broader producer and sustained-30 acceptance in issues 155 and 27.
 Own-fork modular90bbae9 (fixture portability93a335a), combined621fcfa, adds CPU-surface service at the end of a submitted render batch, after captures, presentation and allocator/fence advancement. The message pump remains. Recording must be closed; existing generation/resource-state checks, command order, GPU fences, copies, deadlines and errors remain. This addresses queue delay measured under179, without skipping unchanged or changed reads.
 
 Absolute QPC boundaries and client/renderer IDs supplement optional profile records. The authored regression compiles production completion/request/service functions, verifies a submitted model pixel and waiter event, and rejects premature recording/missing completion; default-off clocks and prior accounting/packing controls remain. This models scheduling, not an actual GPU. Own-fork focused Linux/Windows jobs pass; actual muted DX12 normal-PLAY validation completed on checkedO2/Ob2 EXE61d63b581a423ca8acca09ddc950fb11aa50c9c6424d29738001594fbef491fc/PDB931cb331424d6d5d20967877a11f193bb111f4cdf701ab97d8cd58f49cd4c51f. Native hierarchy/PM1/debug validation retained. Run20261021T175402.989970Z reached observed menu/race/HUD and an explicit owned stop305.875s/native1.77requests from one client are fully QPC-contained in44.863s, with5.283s request wall/3.974s queue/1.245s prior GPU fence. This is an unmatched diagnostic case; it does not prove a causal FPS speedup, and a loading request still queued5.293s. No stable30 claim; see181 for protected evidence and limits.
+
+## VP upload capacity adoption (issue 129)
+
+The selective port comes from own-fork atomic
+[`c919338981269d2298c52743d01aaaf60d84b70d`](https://github.com/robbe1912/ps3recomp/commit/c919338981269d2298c52743d01aaaf60d84b70d),
+`codex/rsx-vp-upload-capacity`, already contained in combined
+`2a37eda34bda36f2a08c647eee34ebe3a4da2396`. The shared upload header is unchanged.
+The curated adapter uses its existing stride constant and updates its additional
+capture parity offset. Its newer indexed vertex cache, render-target handling,
+record queue and guest flip/presentation gates remain intact.
+
+The initial vertex capacity remains 393216. Every VP uploader reserves a complete
+expanded draw, with checked byte limits, before writing. Growth preserves offsets
+within each half and relocates the second half. Allocation and Map failures stay
+visible; failure to verify GPU retirement aborts before old storage is released.
+The queue still uses its existing independent capacity contract under
+[issue 130](https://github.com/robbe1912/motorstorm-mv-recomp/issues/130).
+
+Local Windows Clang/MinGW checks pass the original fork storage/strip fixtures,
+128 authored uploads through all six functions in both trees, the curated
+retirement gate, the existing restart and real-attribute indexed checks, and a
+complete compilation of the curated D3D12 backend. The original strip function
+fails specifically at six required vertices; broken second-half copying and
+unchecked retirement also fail their independent expectations. Storage, vertex
+fetch and fence/wait operations in the new fixtures are adapters, not real GPU
+work. The existing indexed test still uses the actual shared attribute decoder.
+
+Linux execution and the new hosted workflow have not been verified for this port.
+No full game build or native session was run. The original issue's final display
+draw, advancing host presentation and matched normal-PLAY images remain
+unverified. This is a reviewable source correction; it does not close
+[issue 129](https://github.com/robbe1912/motorstorm-mv-recomp/issues/129),
+issue 130, graphics/playability or stable 30 FPS acceptance. No external PR was
+opened; original inputs and captures remain private.

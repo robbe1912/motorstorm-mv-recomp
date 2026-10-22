@@ -31,7 +31,7 @@ def main():
     fetch = VIDEO / 'rsx_vertex_fetch.c'
     include = ROOT / 'vendor/ps3recomp/include'
     env = os.environ.copy()
-    if os.name == 'nt':
+    if os.name == 'nt' and not env.get('CC'):
         from project import build_environment
         env = build_environment()
         cmd = [env['MV_CLANG'], '/nologo', '/O2', '/I' + str(include), '/I' + str(VIDEO),
@@ -42,7 +42,7 @@ def main():
     with (out / 'build.log').open('wb') as log:
         build = subprocess.run(cmd, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=120)
     inputs = [source, fixture, fetch, VIDEO / 'rsx_vertex_fetch.h', VIDEO / 'rsx_commands.h',
-              VIDEO / 'rsx_index_strip.h', Path(__file__)]
+              VIDEO / 'rsx_index_strip.h', VIDEO / 'rsx_upload_buffer.h', Path(__file__)]
     result = dict(command=cmd, build_returncode=build.returncode, game_inputs=False,
                   production_functions=['upload_strip_vp_indexed', 'rsx_fetch_attrib'],
                   source_hashes={str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs})
