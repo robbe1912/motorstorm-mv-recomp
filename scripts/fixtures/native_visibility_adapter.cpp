@@ -16,6 +16,8 @@ void require(bool yes, const char* message) {
 }
 bool cpu = true, matches = true, spy = false;
 unsigned hook = 0, real_calls = 0, entry_calls = 0;
+bool inject_masked_event=false;
+spu_native_leaf registered_leaf{};
 spu_context* real_context = nullptr;
 std::unique_ptr<spu_context> expected_entry;
 void put_float(unsigned char* p, float value) {
@@ -71,6 +73,18 @@ void expect_original(spu_context* ctx) {
 } // namespace
 
 extern "C" {
+thread_local std::uint64_t g_spu_interp_steps=0;
+thread_local std::uint32_t g_spu_interp_last_pc=0;
+int spu_native_leaf_register(const spu_native_leaf* leaf) {
+    require(leaf && leaf->begin==0x83a0 && leaf->end==0x85f4 && leaf->prepare && !registered_leaf.prepare,
+            "Exact single leaf registration");
+    registered_leaf=*leaf;return 0;
+}
+// The independent ABI fixture does not implement a decoded interpreter.
+// Its existing compiled-wrapper tests must never enter that oracle path.
+std::uint32_t spu_interp_run_until_budget(spu_context*,std::uint32_t,std::uint32_t,std::uint64_t) {
+    require(false,"Unexpected interpreter in compiled-wrapper fixture");return 0;
+}
 thread_local void (*g_spu_trampoline_fn)(spu_context*) = nullptr;
 int g_spu_ls_watch_n = 0;
 void spu_indirect_branch(spu_context*) { require(false, "Unexpected caller dispatch"); }
@@ -130,6 +144,9 @@ void jobmod_056ac0eea1a6_e12270_spu_func_000084A0(spu_context* ctx) {
 }
 }
 bool native_visibility_fixture_cpu() { return cpu; }
+void native_visibility_fixture_after_snapshot(const spu_context* ctx) {
+    if(inject_masked_event) {const_cast<spu_context*>(ctx)->event_status|=0x400;inject_masked_event=false;}
+}
 void native_visibility_fixture_after_math(spu_context* ctx) {
     if (hook == 1) { ctx->event_status |= 2; if (expected_entry) expected_entry->event_status |= 2; }
     if (hook == 2 || hook == 4) {
@@ -152,6 +169,45 @@ int main(int argc, char** argv) { try {
     }
     const std::string mode = std::getenv("MS_NATIVE_VISIBILITY") ? std::getenv("MS_NATIVE_VISIBILITY") : "0";
     const std::string command = argc > 1 ? argv[1] : "all";
+    if(command=="snapshot_only") {
+        require(mode=="shadow","Snapshot test uses shadow mode");
+        auto ctx=entry(2,2);auto reference=entry(2,2);reference->event_status|=0x400;
+        drain(reference.get(),true);inject_masked_event=true;drain(ctx.get(),false);ctx->ls=reference->ls;
+        require(!std::memcmp(ctx.get(),reference.get(),sizeof(*ctx)),"Live masked event preserved");
+        std::puts("PASS one comparison snapshot preserves concurrent masked event");return 0;
+    }
+    if (command == "leaf_only") {
+        require(registered_leaf.prepare,"Registered interpreter leaf callback");
+        struct Case {unsigned count,fail,instructions,last;};
+        const Case cases[]={{1,0,146,0x85f0},{1,1,147,0x8444},{2,0,146,0x85f0},
+                            {2,1,230,0x85f0},{2,2,231,0x8444},{64,64,5439,0x8444}};
+        for (const auto& test:cases) {
+            auto ctx=entry(test.count,test.fail);ctx->interp_span_lo=0x83a0;ctx->interp_span_hi=0x85f4;
+            ctx->policy_mode=1;ctx->wi_prev_pc=0x83a0;
+            auto before=std::make_unique<spu_context>(*ctx);
+            const auto fp=_mm_getcsr();g_spu_trampoline_fn=spu_indirect_branch;
+            g_spu_interp_steps=123;g_spu_interp_last_pc=0x88;
+            spu_native_leaf_plan plan{};
+            require(!registered_leaf.prepare(ctx.get(),145,&plan),"Short local budget declines");
+            const auto accepted=registered_leaf.prepare(ctx.get(),test.instructions,&plan);
+            require(!std::memcmp(ctx.get(),before.get(),sizeof(*ctx)) && _mm_getcsr()==fp &&
+                    g_spu_trampoline_fn==spu_indirect_branch && g_spu_interp_steps==123 && g_spu_interp_last_pc==0x88,
+                    "Leaf preparation preserves complete state FP TLS reports");
+            if(mode=="0") {require(!accepted,"Reference leaf declines");continue;}
+            require(accepted && plan.instructions==test.instructions && plan.last_pc==test.last && plan.resume_pc==0x300,
+                    "Exact interpreter leaf plan accounting");
+            auto reference=std::make_unique<spu_context>(*ctx);reference->ls=reference->ls_store;
+            drain(reference.get(),true);reference->wi_prev_pc=test.last;
+            g_spu_trampoline_fn=spu_indirect_branch;
+            plan.execute(ctx.get(),&plan);
+            require(g_spu_trampoline_fn==spu_indirect_branch && g_spu_interp_steps==123 && g_spu_interp_last_pc==0x88 &&
+                    _mm_getcsr()==fp,"Leaf execution preserves caller FP TLS reports");
+            ctx->ls=reference->ls;
+            require(!std::memcmp(ctx.get(),reference.get(),sizeof(*ctx)),"Interpreter leaf full-context parity");
+        }
+        std::puts("PASS registered leaf read-only admission, counts, full-state execution, FP/TLS/report preservation");
+        return 0;
+    }
     if (command == "invalid") {
         auto ctx = entry(2, 2); motorstorm_visibility_planes(ctx.get());
         throw std::runtime_error("Invalid mode was accepted");

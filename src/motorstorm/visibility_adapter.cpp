@@ -2,6 +2,8 @@
 #include "native_visibility_api.h"
 #else
 #include "spu_context.h"
+#include "spu_native_leaf.h"
+#include "spu_interp.h"
 #endif
 #include "native_cpu.h"
 #include "visibility_planes.h"
@@ -67,6 +69,7 @@ const char* admission(const spu_context* ctx) {
     if (!ctx || ctx->ls != ctx->ls_store) return "local-store ownership";
     // The verified function wrapper establishes entry. Direct calls retain
     // their caller block PC; the original leaf does not consume that value.
+    if (ctx->irq_saved) return "active interrupt frame";
     if (ctx->status != 1) return "entry state";
     if (ctx->list_stall_mask || pending(ctx)) return "pending DMA/event";
     if (state().instrumentation || g_spu_ls_watch_n > 0) return "active instrumentation";
@@ -91,6 +94,7 @@ bool supported_corners(const VisibilityCorners& corners) {
 struct Prepared {
     VisibilityCorners corners;
     VisibilityPlaneResult result;
+    std::size_t count;
 };
 // ABI marshalling only; geometry lives in the ordinary typed math operation.
 // Preserve every lane, including scratch that is not a preferred scalar.
@@ -141,12 +145,23 @@ Function finish(spu_context* copy, std::size_t count, bool entry) {
     }
     throw std::runtime_error("Visibility reference exceeded bounded operation");
 }
-void compare(spu_context* ctx, const Prepared& prepared, std::size_t count) {
+bool snapshot(const spu_context* ctx,spu_context* reference,spu_context* candidate) {
+    std::memcpy(reference,ctx,sizeof(*ctx));
+#ifdef MOTORSTORM_VISIBILITY_FIXTURE
+    native_visibility_fixture_after_snapshot(ctx);
+#endif
+    if(reference->ls!=ctx->ls_store || reference->status!=1 || reference->irq_saved ||
+       reference->list_stall_mask || (reference->int_enable && (reference->event_status&reference->event_mask))) return false;
+    // Masked events can arrive between reads. Start both executions from one
+    // snapshot; preserve the live event and compare every context field.
+    std::memcpy(candidate,reference,sizeof(*ctx));
+    reference->ls=reference->ls_store;candidate->ls=candidate->ls_store;
+    return true;
+}
+bool compare(spu_context* ctx, const Prepared& prepared, std::size_t count) {
     auto reference = std::make_unique<spu_context>();
     auto candidate = std::make_unique<spu_context>();
-    std::memcpy(reference.get(), ctx, sizeof(*ctx));
-    std::memcpy(candidate.get(), ctx, sizeof(*ctx));
-    reference->ls = reference->ls_store; candidate->ls = candidate->ls_store;
+    if(!snapshot(ctx,reference.get(),candidate.get())) return false;
     const auto reference_exit = finish(reference.get(), count, true);
     commit(candidate.get(), prepared);
     const auto candidate_exit = finish(candidate.get(), 1, false);
@@ -155,21 +170,18 @@ void compare(spu_context* ctx, const Prepared& prepared, std::size_t count) {
         std::fputs("NATIVE_VISIBILITY_SHADOW_MISMATCH\n", stderr); std::abort();
     }
     ++state().compared;
+    return true;
 }
-} // namespace
-
-extern "C" void motorstorm_visibility_planes(spu_context* ctx) try {
-    auto& config = state();
-    if (config.mode == Mode::reference) { game_original_visibility_box(ctx); return; }
-    if (!config.cpu) { original(ctx, "CPU/OS features"); return; }
-    if (const char* reason = admission(ctx)) { original(ctx, reason); return; }
+const char* prepare(const spu_context* ctx, Prepared& prepared) {
+    if (!state().cpu) return "CPU/OS features";
+    if (const char* reason = admission(ctx)) return reason;
     constexpr std::size_t maximum_planes = 64;
     const auto matrix = ctx->gpr[3]._u32[0], cursor = ctx->gpr[4]._u32[0], count = ctx->gpr[5]._u32[0];
     const auto size = sizeof(ctx->ls_store);
     if ((matrix & 15) || matrix > size || size - matrix < 64 ||
         !count || count > maximum_planes || (cursor & 15) ||
         cursor > size || count * 16 > size - cursor) {
-        original(ctx, "matrix/plane span"); return;
+        return "matrix/plane span";
     }
     std::array<unsigned char, 64> matrix_snapshot, argument_snapshot;
     const auto entry_pc = ctx->pc;
@@ -180,7 +192,7 @@ extern "C" void motorstorm_visibility_planes(spu_context* ctx) try {
     std::memcpy(snapshot.data(), ctx->ls + cursor, count * 16);
     for (std::size_t byte = 0; byte < count * 16; byte += 4)
         if ((big_word(snapshot.data() + byte) & 0x7fffffffu) > 0x4f800000u) {
-            original(ctx, "plane numeric range"); return;
+            return "plane numeric range";
         }
     const auto point = [&](unsigned row) {
         const auto* p = matrix_snapshot.data() + row * 16;
@@ -195,26 +207,35 @@ extern "C" void motorstorm_visibility_planes(spu_context* ctx) try {
         planes[i] = {float_word(big_word(p)),float_word(big_word(p+4)),
                      float_word(big_word(p+8)),float_word(big_word(p+12))};
     }
-    Prepared prepared;
     try {
         prepared.corners = make_visibility_corners(box);
-        if (!supported_corners(prepared.corners)) { original(ctx, "corner numeric range"); return; }
+        if (!supported_corners(prepared.corners)) { return "corner numeric range"; }
         prepared.result = test_visibility_planes(planes.data(), count, prepared.corners);
-    } catch (const std::invalid_argument&) { original(ctx, "nonfinite input"); return; }
-      catch (const std::range_error&) { original(ctx, "numeric range"); return; }
+    } catch (const std::invalid_argument&) { return "nonfinite input"; }
+      catch (const std::range_error&) { return "numeric range"; }
     if (!prepared.result.tested || prepared.result.tested > count)
         throw std::runtime_error("Invalid native visibility prefix");
 #ifdef MOTORSTORM_VISIBILITY_FIXTURE
-    native_visibility_fixture_after_math(ctx);
+    native_visibility_fixture_after_math(const_cast<spu_context*>(ctx));
 #endif
-    if (const char* reason = admission(ctx)) { original(ctx, reason); return; }
+    if (const char* reason = admission(ctx)) { return reason; }
     if (ctx->pc != entry_pc || std::memcmp(argument_snapshot.data(), &ctx->gpr[0], 16) ||
         std::memcmp(argument_snapshot.data()+16, &ctx->gpr[3], 48) ||
         std::memcmp(matrix_snapshot.data(), ctx->ls + matrix, 64) ||
         std::memcmp(snapshot.data(), ctx->ls + cursor, count * 16)) {
-        original(ctx, "input changed"); return;
+        return "input changed";
     }
-    if (config.mode == Mode::shadow) compare(ctx, prepared, count);
+    prepared.count = count;
+    return nullptr;
+}
+} // namespace
+
+extern "C" void motorstorm_visibility_planes(spu_context* ctx) try {
+    auto& config = state();
+    if (config.mode == Mode::reference) { game_original_visibility_box(ctx); return; }
+    Prepared prepared;
+    if (const char* reason = prepare(ctx, prepared)) { original(ctx, reason); return; }
+    if (config.mode == Mode::shadow && !compare(ctx, prepared, prepared.count)) { original(ctx,"shadow snapshot changed");return; }
     else commit(ctx, prepared);
     const auto completed = ++config.completed;
     if (completed == 1 || completed % 1024 == 0)
@@ -227,3 +248,103 @@ extern "C" void motorstorm_visibility_planes(spu_context* ctx) try {
 } catch (...) {
     std::fputs("NATIVE_VISIBILITY_ERROR unknown exception\n", stderr); std::abort();
 }
+
+namespace {
+// Decoded closed CFG: setup 61 instructions; each plane 83, then one
+// passing-loop branch. Rejection adds two exit instructions, full pass three.
+// This accounting is validated against the retained interpreter, not time.
+std::uint64_t instructions(const Prepared& prepared) {
+    return 84 * prepared.result.tested + (prepared.result.rejected ? 62 : 63);
+}
+struct Reports {
+    std::uint64_t steps = g_spu_interp_steps;
+    std::uint32_t pc = g_spu_interp_last_pc;
+    Function queued = g_spu_trampoline_fn;
+    ~Reports() { g_spu_interp_steps=steps;g_spu_interp_last_pc=pc;g_spu_trampoline_fn=queued; }
+};
+void interpreted(spu_context* ctx, std::uint64_t count, std::uint32_t last) {
+    Reports restore;
+    const auto return_pc=ctx->gpr[0]._u32[0];
+    const auto next=spu_interp_run_until_budget(ctx,0x83a0,return_pc,count);
+    if (next!=return_pc || ctx->pc!=return_pc || ctx->status!=1 || g_spu_interp_steps!=count || g_spu_interp_last_pc!=last)
+        throw std::runtime_error("Visibility interpreter instruction/continuation mismatch");
+}
+std::uint32_t last_pc(const Prepared& prepared) { return prepared.result.rejected?0x85f0u:0x8444u; }
+void native_terminal(spu_context* ctx,const Prepared& prepared) {
+    commit(ctx,prepared);finish(ctx,1,false);
+    // The interpreter records every fetch for walk-in ownership. Admission
+    // excludes a resident boundary inside this channel-free leaf, so only its
+    // final fetched PC changes after the entry bookkeeping already ran.
+    if (ctx->policy_mode) ctx->wi_prev_pc=last_pc(prepared);
+}
+bool compare_interpreted(const spu_context* ctx,const Prepared& prepared) {
+    auto reference=std::make_unique<spu_context>();
+    auto candidate=std::make_unique<spu_context>();
+    if(!snapshot(ctx,reference.get(),candidate.get())) return false;
+    interpreted(reference.get(),instructions(prepared),last_pc(prepared));
+    native_terminal(candidate.get(),prepared);
+    candidate->ls=reference->ls;
+    if (std::memcmp(reference.get(),candidate.get(),sizeof(*ctx))) {
+        const auto* a=reinterpret_cast<const unsigned char*>(candidate.get());
+        const auto* b=reinterpret_cast<const unsigned char*>(reference.get());
+        for (std::size_t i=0;i<sizeof(*ctx);++i) if(a[i]!=b[i]) {
+            std::fprintf(stderr,"NATIVE_VISIBILITY_INTERPRETER_DIFF byte=%zu native=%02x reference=%02x\n",i,a[i],b[i]);
+            break;
+        }
+        std::fputs("NATIVE_VISIBILITY_INTERPRETER_MISMATCH\n",stderr);std::abort();
+    }
+    ++state().compared;
+    return true;
+}
+struct Cookie { Prepared prepared; const spu_context* owner; };
+thread_local Cookie pending_leaf;
+void execute_leaf(spu_context* ctx,const spu_native_leaf_plan* plan) try {
+    if (plan->cookie!=&pending_leaf || pending_leaf.owner!=ctx)
+        throw std::runtime_error("Visibility leaf plan ownership mismatch");
+    const auto& prepared=pending_leaf.prepared;
+    if (state().mode==Mode::shadow) interpreted(ctx,plan->instructions,plan->last_pc);
+    else native_terminal(ctx,prepared);
+    const auto completed=++state().completed;
+    if (completed==1 || completed%1024==0)
+        std::fprintf(stderr,"[native-visibility-leaf] completed=%llu compared=%llu fallbacks=%llu instructions=%llu\n",
+            completed,state().compared.load(),state().fallbacks.load(),static_cast<unsigned long long>(plan->instructions));
+} catch (const std::exception& error) {
+    std::fprintf(stderr,"NATIVE_VISIBILITY_ERROR %s\n",error.what());std::abort();
+} catch (...) { std::fputs("NATIVE_VISIBILITY_ERROR leaf exception\n",stderr);std::abort(); }
+int prepare_leaf(const spu_context* ctx,std::uint64_t remaining,spu_native_leaf_plan* plan) try {
+    if (state().mode==Mode::reference || remaining<146) return 0;
+    if (ctx->policy_mode) for (const auto& span:ctx->resident_code) if(span.size) {
+        const auto end=std::uint64_t(span.lsa)+span.size;
+        if ((span.lsa>0x83a0 && span.lsa<0x85f4) || (end>0x83a0 && end<0x85f4)) return 0;
+    }
+    // A nested correctness reference must stay interpreted. Use the existing
+    // admission policy; do not manufacture a span or enable broad handoff.
+    if (!std::getenv("SPU_PM_INTERP") &&
+        !(ctx->interp_span_lo<=0x83a0 && ctx->interp_span_hi>=0x85f4)) return 0;
+    const auto continuation=ctx->gpr[0]._u32[0];
+    if ((continuation&3) || continuation>=sizeof(ctx->ls_store) ||
+        (continuation>=0x83a0 && continuation<0x85f4)) return 0;
+    if (const char* reason=prepare(ctx,pending_leaf.prepared)) {
+        const auto count=++state().fallbacks;
+        if (count==1 || count%1024==0)
+            std::fprintf(stderr,"[native-visibility-leaf] INTERPRETER fallback=%llu reason=%s\n",count,reason);
+        return 0;
+    }
+    const auto used=instructions(pending_leaf.prepared);
+    if (used>remaining) return 0;
+    if (state().mode==Mode::shadow && !compare_interpreted(ctx,pending_leaf.prepared)) return 0;
+    pending_leaf.owner=ctx;
+    *plan={used,continuation,last_pc(pending_leaf.prepared),execute_leaf,&pending_leaf};
+    return 1;
+} catch (const std::exception& error) {
+    std::fprintf(stderr,"NATIVE_VISIBILITY_ERROR %s\n",error.what());std::abort();
+} catch (...) { std::fputs("NATIVE_VISIBILITY_ERROR prepare exception\n",stderr);std::abort(); }
+struct Register {
+    Register() {
+        const spu_native_leaf descriptor{0x83a0,0x85f4,prepare_leaf};
+        if (spu_native_leaf_register(&descriptor)) {
+            std::fputs("NATIVE_VISIBILITY_ERROR leaf registration failed\n",stderr);std::abort();
+        }
+    }
+} register_leaf;
+} // namespace

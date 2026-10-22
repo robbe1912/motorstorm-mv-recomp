@@ -62,6 +62,9 @@ def main():
         result = run(exe, mode)
         print(result.stdout, end='')
         result.check_returncode()
+    for mode in ['0','1']:
+        result=run(exe,mode,'leaf_only');print(result.stdout,end='');result.check_returncode()
+    result=run(exe,'shadow','snapshot_only');print(result.stdout,end='');result.check_returncode()
     for mode, command, extra in [('1', 'unsupported', None), ('1', 'instrumented', {'SPU_PCHIST': '1'})]:
         result = run(exe, mode, command, extra)
         result.check_returncode()
@@ -77,10 +80,31 @@ def main():
     assert result.returncode == 1 and 'Adapter full-context parity' in result.stderr, result.stderr
     result = run(exe, 'shadow')
     assert result.returncode != 0 and 'NATIVE_VISIBILITY_SHADOW_MISMATCH' in result.stderr, result.stderr
+    mutant=out/'racy-shadow-snapshot.cpp'
+    before='std::memcpy(candidate,reference,sizeof(*ctx));'
+    assert text.count(before)==1
+    mutant.write_text(text.replace(before,'std::memcpy(candidate,ctx,sizeof(*ctx));'))
+    exe=build('racy-shadow-snapshot',mutant)
+    result=run(exe,'shadow','snapshot_only')
+    assert result.returncode!=0 and 'NATIVE_VISIBILITY_SHADOW_MISMATCH' in result.stderr,result.stderr
+    mutant = out / 'wrong-instruction-count.cpp'
+    before='84 * prepared.result.tested + (prepared.result.rejected ? 62 : 63)'
+    assert text.count(before)==1
+    mutant.write_text(text.replace(before,before.replace('62 : 63','61 : 62')))
+    exe=build('wrong-instruction-count',mutant)
+    result=run(exe,'1','leaf_only')
+    assert result.returncode==1 and 'Exact interpreter leaf plan accounting' in result.stderr,result.stderr
+    mutant=out/'missing-policy-fetch.cpp'
+    before='if (ctx->policy_mode) ctx->wi_prev_pc=last_pc(prepared);'
+    assert text.count(before)==1
+    mutant.write_text(text.replace(before,''))
+    exe=build('missing-policy-fetch',mutant)
+    result=run(exe,'1','leaf_only')
+    assert result.returncode==1 and 'Interpreter leaf full-context parity' in result.stderr,result.stderr
     mutant = out / 'premature-write.cpp'
-    before = 'native_visibility_fixture_after_math(ctx);'
+    before = 'native_visibility_fixture_after_math(const_cast<spu_context*>(ctx));'
     assert text.count(before) == 1
-    mutant.write_text(text.replace(before, 'commit(ctx, prepared); ' + before))
+    mutant.write_text(text.replace(before, 'commit(const_cast<spu_context*>(ctx), prepared); ' + before))
     exe = build('premature-write', mutant)
     result = run(exe, '1', 'guard_only')
     assert result.returncode == 1 and 'Original fallback has no partial guest writes' in result.stderr, result.stderr
