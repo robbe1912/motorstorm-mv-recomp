@@ -62,6 +62,10 @@ def main():
         ('corners', '_mm256_movemask_ps(outside) != 0', '_mm256_movemask_ps(outside) == 255', 'any failing corner'),
         ('fusion', '_mm256_fmadd_ps(y, _mm256_set1_ps(plane.y), distance)',
          '_mm256_add_ps(_mm256_mul_ps(y, _mm256_set1_ps(plane.y)), distance)', 'Independent fused plane cancellation'),
+        ('box-axis', 'const auto diagonal = _mm_add_ps(axes[1], axes[2]);',
+         'const auto diagonal = _mm_sub_ps(axes[1], axes[2]);', 'Independent oriented box corners'),
+        ('box-zero', '_mm_store_ps(coordinates, positive);',
+         '_mm_store_ps(coordinates, vertices[i]);', 'Positive zero box corners'),
     ]
     if os.name != 'nt':
         macros = subprocess.check_output([compiler, '-dM', '-E', '-x', 'c++', '-'],
@@ -76,7 +80,7 @@ def main():
         mutant.write_text(text.replace(old, new, 1))
         result = run(label, mutant)
         assert result.returncode == 1 and error in result.stderr, result.stdout + result.stderr
-    print('PASS: wrong rounding/comparison/corner reduction/fusion mutants rejected')
+    print('PASS: wrong rounding/comparison/corner reduction/fusion/box-axis/zero mutants rejected')
 
 
 if __name__ == '__main__':

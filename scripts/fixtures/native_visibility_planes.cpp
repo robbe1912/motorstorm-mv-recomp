@@ -116,6 +116,57 @@ static void controls() {
     }
 }
 
+static void boxes() {
+    VisibilityBox box{{10,20,30}, {{{{1,0,0},2},{{0,1,0},3},{{0,0,1},4}}}};
+    const VisibilityCorners expected{{{12,23,34},{8,23,34},{12,17,34},{8,17,34},
+                                     {12,23,26},{8,23,26},{12,17,26},{8,17,26}}};
+    const auto input = box;
+    const auto actual = make_visibility_corners(box);
+    require(std::memcmp(&actual, &expected, sizeof actual) == 0, "Independent oriented box corners");
+    require(std::memcmp(&box, &input, sizeof box) == 0, "Immutable box input");
+    for (unsigned sample = 0; sample < 128; ++sample) {
+        box.center = {float(int(sample % 17)-8),float(int(sample % 13)-6),float(int(sample % 7)-3)};
+        for (unsigned i = 0; i < 3; ++i)
+            box.axes[i] = {{float(int((sample+i)%5)-2),float(int((sample+i*3)%7)-3),
+                            float(int((sample+i*5)%9)-4)},float(int((sample+i)%7)-3)};
+        const auto points = make_visibility_corners(box);
+        for (unsigned i = 0; i < 8; ++i) {
+            const int sx = (i & 1) ? -1 : 1, sy = (i & 2) ? -1 : 1, sz = (i & 4) ? -1 : 1;
+            const auto& a = box.axes;
+            const VisibilityPoint p{
+                box.center.x + sx*a[0].direction.x*a[0].extent + sy*a[1].direction.x*a[1].extent + sz*a[2].direction.x*a[2].extent,
+                box.center.y + sx*a[0].direction.y*a[0].extent + sy*a[1].direction.y*a[1].extent + sz*a[2].direction.y*a[2].extent,
+                box.center.z + sx*a[0].direction.z*a[0].extent + sy*a[1].direction.z*a[1].extent + sz*a[2].direction.z*a[2].extent};
+            require(points[i].x == p.x && points[i].y == p.y && points[i].z == p.z, "Independent integer box oracle");
+        }
+    }
+    for (const float zero : {bits(0x80000000u),bits(1u)}) {
+        box.center = {zero,zero,zero};
+        for (auto& axis : box.axes) axis = {{zero,zero,zero},1};
+        for (const auto& point : make_visibility_corners(box))
+            for (const float coordinate : {point.x,point.y,point.z}) {
+                unsigned word; std::memcpy(&word,&coordinate,4);
+                require(word == 0, "Positive zero box corners");
+            }
+    }
+    box = {{0,0,0}, {}};
+    box.axes[0] = {{1.5f,0,0},bits(0x3f800001u)};
+    require(make_visibility_corners(box)[0].x == bits(0x3fc00001u), "Independent box product rounding");
+    box.center.x = -1;
+    box.axes[0] = {{bits(0x3f800001u),0,0},bits(0x3f7ffffeu)};
+    require(make_visibility_corners(box)[0].x == -0x1p-24f, "Box scale and translation remain separate");
+    box.axes[0].extent = std::numeric_limits<float>::infinity();
+    bool rejected = false;
+    try { make_visibility_corners(box); } catch (const std::invalid_argument&) { rejected = true; }
+    require(rejected, "Non-finite box rejected");
+    for (const float value : {std::numeric_limits<float>::max(), std::numeric_limits<float>::min()}) {
+        box.axes[0] = {{value,0,0},value == std::numeric_limits<float>::max() ? 2.f : .5f};
+        rejected = false;
+        try { make_visibility_corners(box); } catch (const std::range_error&) { rejected = true; }
+        require(rejected, "Unsupported visibility box numeric range rejected");
+    }
+}
+
 int main() {
     if (!supports_native_world_transforms()) {
         std::fputs("UNSUPPORTED: requires AVX2/FMA and OS XMM/YMM state\n", stderr);
@@ -127,6 +178,7 @@ int main() {
             const auto caller = (saved & ~0x6000u) | (mode << 13);
             _mm_setcsr(caller);
             controls();
+            boxes();
             exact_cases();
             require(_mm_getcsr() == caller, "Exact caller MXCSR restored including exceptions");
         }

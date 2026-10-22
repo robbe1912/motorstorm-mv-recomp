@@ -15,6 +15,20 @@ struct VisibilityPlane {
 
 using VisibilityCorners = std::array<VisibilityPoint, 8>;
 
+struct VisibilityBoxAxis {
+    VisibilityPoint direction;
+    float extent;
+};
+
+struct VisibilityBox {
+    VisibilityPoint center;
+    std::array<VisibilityBoxAxis, 3> axes;
+};
+
+// Construct the eight oriented corners; zero coordinates use positive zero.
+// Uses the same CPU/FP admission contract as test_visibility_planes.
+VisibilityCorners make_visibility_corners(const VisibilityBox& box);
+
 struct VisibilityPlaneResult {
     std::size_t tested;
     bool rejected;
