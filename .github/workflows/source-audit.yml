@@ -38,6 +38,8 @@ jobs:
         run: python scripts/check_native_scene.py
       - name: Native job dependency wait and negative controls
         run: python scripts/check_native_job_wait.py
+      - name: Guarded native leaf interpreter dispatch
+        run: python scripts/check_native_leaf_dispatch.py
       - name: Actual indexed strip restart regression
         run: python scripts/check_rsx_restart.py
       - name: Actual indexed vertex reuse regression
@@ -125,6 +127,8 @@ jobs:
         run: python scripts/check_native_scene.py
       - name: Native job dependency wait and negative controls
         run: python scripts/check_native_job_wait.py
+      - name: Guarded native leaf interpreter dispatch
+        run: python scripts/check_native_leaf_dispatch.py
       - name: Texture snapshot regression
         run: python scripts/check_texture_capture.py
       - name: Memory capacity contract
