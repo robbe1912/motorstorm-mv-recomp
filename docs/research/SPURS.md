@@ -583,3 +583,38 @@ proof. Hooks restored byte-for-byte, diagnostic EXE/PDB retained privately,
 all61 preserved generated-source hashes unchanged. Ordinary use requires
 rebuilding restored runtime. #8 remains conditional/open; the exact failing
 bytes now advance #1/#2 and #3. No exonerated CPU span was reopened.
+
+## Running pipeline record in saved producer captures (issue155)
+
+Offline reinspection of the protected `20261021T115255.306059Z` producer
+packet resolves the earlier policy-index ambiguity. The dispatcher has three
+32-byte records at LS `0x1430`, `0x1450`, `0x1470`. It transfers the pending
+slot at `0x12D0` to the running slot at `0x12E0`, then selects the record at
+`0x1430 + 32 * running_slot`. The selected record carries the queue, flags
+and marker at offsets 0, 4 and 8. Physical lane `0x1340` is separate from
+the packed dispatch word at `0x1350`; the latter combines the 16-bit rotation
+of the workload word at `0x1400` with the selected marker. LS `0x1410` can
+already describe a newer claim and must not identify the executing job.
+
+The 168-byte dispatcher span matches the selected original ELF uniquely at
+file offset 16,548,872 and maps through its outer `PT_LOAD`; this does not
+make policy provenance offset `0xFC5E00` an embedded ELF header. All 42
+decoded dispatcher instructions match original bytes and the same span in
+28 SHA256-verified saved contexts. In all 28, the selected record marker
+matches the separately sampled physical lane counter, the queue agrees
+with captured GPR52, and the captured PVS PC window matches original module
+bytes. Two historical same-cycle main-minimum examples are cycle310,
+PC `0x858C`, running slot0/marker32 versus next index38; and cycle670,
+PC `0x8F9C`, slot0/marker32 versus next index41.
+
+The durable private verifier is
+`temp/issue155-producer-span/verify_saved_dispatch.py`, with results in
+`verified-dispatch-binding.json`. Worker suspension freezes its saved
+context; main/queue reads remain sequential, not an atomic process snapshot.
+These captures predate the native hierarchy replacement. They bind those
+historical visibility stalls, not current exclusive CPU cost or frame time.
+Together with [current native wait timing](../NATIVE_GAME.md), they select
+visibility work for a native candidate. The sampled loop contains plane-like
+float/FMA comparisons against eight coefficient triplets; inspected counts
+are five or six. Full input ownership, numerical semantics, output/ABI parity
+and current invocation still require proof before replacing that operation.
