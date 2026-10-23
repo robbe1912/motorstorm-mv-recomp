@@ -1983,6 +1983,7 @@ static void compile_vp(void)
  * hardcoded pixel shaders for draws whose FP we can translate -- e.g.
  * gcm/cube's plasma FP `c = tex2D(t0, uv).x; out = (c, 0, c, 1)`. */
 #include "rsx_fp_decompiler.h"
+#include "rsx_fp_snapshot.h"
 #include "rsx_texture_alias.h"
 
 /* Hash + compile the CURRENT rsx_state vertex program into the VS cache;
@@ -2480,17 +2481,12 @@ static u32 vp_fp_snap_for(u32 prog)
         VPFP_snap* s = &s_fp_snap[cur - 1];
         if (s->off == off && s->hash) {
             const u8* win = vm_base + off;
-            u64 wh = rsx_fp_structural_hash(win, 4096, 0);
-            if (wh == s->hash) {
-                /* Same program: honour in-place constant edits by
-                 * re-snapshotting when any byte changed. */
-                if (memcmp(win, s->bytes, s->size) != 0)
-                    return vp_fp_snap_take(off);
-                return cur;
+            int action = rsx_fp_snapshot_check(win, s->bytes, s->size, 4096, s->hash);
+            if (action == RSX_FP_SNAPSHOT_INVALID) {
+                fprintf(stderr, "[FP_SNAPSHOT_ERROR] invalid admitted snapshot metadata\n");
+                abort();
             }
-            /* Window holds a DIFFERENT program than the one the guest bound
-             * at this address: the address was recycled after the bind.
-             * Serve the bound bytes (what the RSX would have executed). */
+            if (action == RSX_FP_SNAPSHOT_REFRESH) return vp_fp_snap_take(off);
             return cur;
         }
     }

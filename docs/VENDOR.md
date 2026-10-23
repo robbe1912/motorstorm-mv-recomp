@@ -1,5 +1,44 @@
 # Vendor provenance and upstream
 
+## Exact-byte fragment snapshot reuse (issue 213)
+
+The generic `rsx_fp_snapshot.h` decision helper originates on own-fork modular
+`b6b8c348f13b07e32575c69e34c7923cc70d1c02` and combined
+`b9a4c5499267e60b92eebce084dee6e8b8722a00`. Focused Windows/Linux controls passed
+on both [modular CI](https://github.com/robbe1912/ps3recomp/actions/runs/39958447051)
+and [combined CI](https://github.com/robbe1912/ps3recomp/actions/runs/39958450484).
+No upstream PR or title-specific rule is involved.
+
+The native DX12 recorder compares the complete admitted snapshot bytes first.
+Identical bytes retain the bound snapshot without decoding its structure again;
+changed inline constants refresh it, while structurally recycled or malformed
+live code retains the originally bound bytes. The existing snapshot ring,
+address resolution and recording/replay lifetimes remain unchanged. Invalid
+host snapshot metadata reports `FP_SNAPSHOT_ERROR` and aborts visibly.
+
+The actual production helper and original decision agree on authored programs,
+every-byte mutations, inline constants, structural changes, malformed live code
+and program extents. Separately compiled historical eager-hash, blind-reuse and
+refresh-recycled mutants must fail their specific behavioral/work assertions.
+Both consumer CI platforms run these controls using their actual FP parser.
+
+Five alternating checked-O2/Ob2/DebugCRT helper pairs, one million calls each,
+measured identical 4096-byte authored snapshots at median 1884.164 ns before
+(range 1878.084-1890.281) versus 92.9998 ns after (92.1099-94.2805). Verified
+checksums and real function calls remain inside timing; count instrumentation
+is absent. Structural decoding is replaced by exact byte comparison. The
+4096-byte constant-edit paths overlap in timing; the 32-byte edit path instead
+costs about 0.8 ns more. Private commands/source hashes/CPU times/results reside
+under the fork's `build/fp-snapshot-tests`; the first short-window trial is
+preserved separately. These are isolated helper measurements, not draw/frame
+cost or gameplay FPS.
+
+The archived issue209 renderer has three recovered
+`structural_hash -> vp_fp_snap_for -> indexed draw` observations among 57 saved
+stacks. This selected point evidence motivates the change without establishing
+exclusive cost. Native build/menu/PLAY observation for this integration remains
+pending; #26/#27/#137 and the larger typed game-workload rewrite remain open.
+
 ## Bounded policy admission integration (issue 209)
 
 The previous joined-round consumer fails an authored actual-runtime test:

@@ -72,6 +72,16 @@ jobs:
         run: python scripts/check_spurs_guest_fields.py
       - name: Scalar-u64 SPURS policy arguments
         run: python scripts/check_spurs_policy_arguments.py
+      - name: Fragment snapshot decisions and historical controls
+        run: python scripts/check_fp_snapshot.py --mutants
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fp-snapshot-logs-${{ runner.os }}
+          retention-days: 5
+          path: |
+            build/self-tests/fp-snapshot/**/*.log
+            build/self-tests/fp-snapshot/**/*.json
       - name: Bounded native policy admission and actual negative controls
         run: python scripts/check_spurs_scheduler.py --mutants
       - uses: actions/upload-artifact@v4
@@ -189,6 +199,16 @@ jobs:
         run: python scripts/check_spurs_guest_fields.py
       - name: Scalar-u64 SPURS policy arguments
         run: python scripts/check_spurs_policy_arguments.py
+      - name: Fragment snapshot decisions and historical controls
+        run: python scripts/check_fp_snapshot.py --mutants
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fp-snapshot-logs-${{ runner.os }}
+          retention-days: 5
+          path: |
+            build/self-tests/fp-snapshot/**/*.log
+            build/self-tests/fp-snapshot/**/*.json
       - name: Bounded native policy admission and actual negative controls
         run: python scripts/check_spurs_scheduler.py --mutants
       - uses: actions/upload-artifact@v4
