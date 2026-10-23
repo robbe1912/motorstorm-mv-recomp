@@ -115,6 +115,16 @@ jobs:
       - run: python scripts/check_bike_observer.py
       - name: Vertex homogeneous clipping pixel regression (WARP)
         run: python scripts/check_rsx_clip.py
+      - name: Offline native stack replay and actual metadata negative control
+        run: python scripts/check_native_stacks.py --mutants
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-stack-logs-${{ runner.os }}
+          retention-days: 5
+          path: |
+            build/self-tests/native-stacks/**/*.log
+            build/self-tests/native-stacks/**/*.json
       - name: Packed XY16F render-target sampling (WARP)
         run: python scripts/check_rsx_texture_alias.py
       - name: Screen-gated menu replay regression

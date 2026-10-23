@@ -222,3 +222,41 @@ Native event/manifest evidence is required in addition to selector tests.
 and event latch with an authored game-free fixture, then checks launch
 preflight. It runs on Ubuntu and Windows. Capture readback perturbs timing;
 these runs do not prove normal frame rates or correct vehicle rendering.
+
+
+## Offline native stack attribution
+
+Issue [211](https://github.com/robbe1912/motorstorm-mv-recomp/issues/211)
+reuses the Win64 contexts and bounded native stacks already saved by the owned
+observer. Run `python scripts/check_native_stacks.py --mutants` on Windows x64
+first: the authored optimized executable must recover leaf/middle/top/main,
+while the separately compiled missing-unwind-metadata control loses those
+callers. Missing stack bytes, wrong bases, context disagreement and bad
+EXE/PDB/blob identities remain visible failures.
+
+`scripts/analyze_native_stacks.py --help` documents the private packet,
+EXE/hash/PDB-hash and output arguments. Output must be outside the protected
+packet. The reader uses Windows StackWalk64 with the PE runtime-function table,
+read-only non-executable image mappings and only the saved stack memory; it
+never opens a target process, launches the game or uses desktop input. Symbols
+use the admitted local PDB and local DLLs; symbol-server auto-detection and the
+environment symbol path are disabled. Missing memory/metadata and unresolved
+symbols are retained. A plausible return-address scan is not an unwind.
+
+The protected issue209 packet produced 285 saved walks across the renderer,
+async worker and three policy workers (57 each), with explicit partial-walk
+reasons. Native worker callers include the interpreter, guarded native
+visibility routines and SIMD helpers. Renderer callers include vertex fetch,
+fragment-program hashing and texture upload. Async callers include the real
+taskset signal wait and lifted job dispatch. This resolves some callers hidden
+by earlier CRT/OS instruction-pointer observations, using no new native run.
+
+These are selected later suspending point observations, not CPU-event samples,
+exclusive CPU percentages, complete inline/tail-call histories or causal frame
+time. Exact EXE/PDB/blob identities and the actually loaded PDB hash/CodeView GUID+age are verified; DLL bytes were not archived
+at capture time, so current local DLL extents/hashes are reported separately
+and walks through them lose historical-identity qualification. Every incomplete
+walk remains explicit. #155 full critical-path cost, #27 stable30 and #137
+rendering remain open; the next native rewrite still requires original/native
+parity and matched gameplay timing. All memory, binaries, symbols and captures
+remain private; CI uploads authored-test logs/JSON only.
