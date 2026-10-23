@@ -840,5 +840,49 @@ windows use20million vertices/side; Windows self CPU/wall time, compiler/source
 hashes and commands are retained privately under fork build/vertex-prepared-tests.
 Earlier short/instrumented trials remain separately identified. Host12logical
 CPUs had11.98% total load before and23.57% after the final series; no game ran.
-Native build/original menu/normal-PLAY acceptance is pending. #155/#26/#27/#137
+Native integration used checked EXE
+`9a6b1977906bae5acf99708dd5638645198f832a76dd2637d174890358002ac4`
+and PDB `af938a8ef2a5c0dbc3675ad2f6196f766e3e7fd26317324f8ff7922045ffb0ef`.
+The five-step build restored configuration/preserved all prior binaries;
+source preimages match measured213, and the inverse patch reproduces every
+unrelated private RHI byte. Existing capacity/cache user work remains intact.
+
+Run `20261023T171441.594042Z`, owned PID3004, used the existing screen-gated
+PAD_FILE route and one observed Sony-caption skip. Original menu11 and race119
+were personally viewed: bike/rider/opponents/HUD progress, with geometry/shadow
+issues remaining. Explicit owned guard stop400.219s/native1/controller0 is
+not natural-success termination. The private protected packet contains5709files,
+3,500,906,437bytes plus complete hashes; latest-five rotation kept5/removed1.
+Full stderr error/assert/fatal/failed/unhandled/unexpected/overflow scan is empty;
+assertions/DX12 validation remain enabled and16original world fallbacks visible.
+
+Unsuspended43CPU samples span44.6114993s; process median4.924logical CPUs,
+async38.9375CPU seconds, frame_clock30.59375 and five main workers18.94-21.11each.
+GPU30valid3D samples median17.7989%, max23.4546%, with no collector error.
+All37683completed native waits validate; contained main visibility3264waits/
+9.5135458s and vehicle380/4.477326s.95contained two-byte surface requests take
+7.5613673s (queue6.1034666/prior-fence1.3939703); one crossing request is excluded.
+These wall intervals include scheduling/cooperation/synchronization, and process
+transfer growth262144bytes includes cached/non-disk I/O.
+
+A separately admitted own-PID PresentMon2.6.0 trace has83rows/one swapchain;
+82adjacent intervals lie wholly inside the unsuspended CPU window: API present
+median446.3919ms (373.3846-711.6708), display-change465.227ms, GPU busy101.1931ms
+and GPU wait293.05985ms. Original114-row intro trace is separately labelled:
+its first wrapper falsely matched parent-shell script text. The corrected
+wrapper requires exact cpu_window.py argv and owned run; no game restart,
+existing-session stop, UI or privilege request occurred. Console-stats and
+process-query privilege warnings are retained, with exact PID/application
+validated. ETW cadence is not semantic frame identity, exclusive cost or a
+controlled before/after improvement; it plainly does not establish stable30.
+
+After those windows,276separately suspending cycles retain no reported context
+errors and a132.546ms maximum pause. Exact-PDB/original-code analysis validates
+515register-bound associations and91unfinished-wait register correlations.
+280native stack walks remain partial/current-DLL-qualified; no missing local
+modules. Of276FIFO declaration observations,239identical epoch/byte rereads
+have0-8active arrays (89zero;150nonzero),37changed, no read errors. Raw bytes,
+SHA256, exact PDB field extents and active lists revalidate offline. These
+sequential declarations establish plausible sparse eligibility, not draw-weighted
+usage, ABA-proof snapshots, function costs or frame savings. #155/#26/#27/#137
 and complete typed game-workload replacement remain open.
