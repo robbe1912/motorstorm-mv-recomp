@@ -8,7 +8,7 @@
 #include <time.h>
 #define VP_VERT_STRIDE 256u
 #define MAX_VERTICES 4096u
-typedef struct { float v[4]; } VPSlot;
+typedef rsx_vertex_value VPSlot;
 static struct { void* vp_vb_mapped; u32 vp_vb_offset, vp_parity; } s_d3d;
 static u8 guest[16*1024*1024];
 uint8_t* vm_base=guest;
@@ -20,8 +20,9 @@ static u32 read_guest_index(const rsx_state* s,u32 k)
 { return ((s->index_array_dma>>4)&15)==1?indices[k]&65535u:indices[k]; }
 static void reference_vertex(const rsx_state* s,u32 i,VPSlot* out)
 { for(int a=0;a<16;++a)rsx_fetch_attrib(s,a,i,out[a].v); }
-static void read_vp_vertex(const rsx_state* s,u32 i,VPSlot* out)
-{ ++fetches;reference_vertex(s,i,out); }
+static void rsx_vtx_pos_dbg(const rsx_state* s,const float* v,u32 n)
+{ (void)s;(void)v;(void)n;++fetches; }
+@FETCH_VERTEX_FUNCTION@
 @INDEXED_STRIP_FUNCTION@
 #define CHECK(x) do{if(!(x)){fprintf(stderr,"FAIL line%d: %s\n",__LINE__,#x);return 1;}}while(0)
 static void be32(u8* p,u32 w)

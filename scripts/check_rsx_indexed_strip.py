@@ -27,7 +27,10 @@ def main():
     out = ROOT / 'temp/checks' / ('rsx-indexed-strip-' + stamp)
     out.mkdir(parents=True)
     c, exe = out / 'check.c', out / ('check.exe' if os.name == 'nt' else 'check')
-    c.write_text(template.replace('@INDEXED_STRIP_FUNCTION@', text[start:end]), encoding='utf-8')
+    fetch_start = text.index('static void read_vp_vertex(')
+    fetch_end = text.index('\n/* VTX_POS=', fetch_start)
+    assert template.count('@FETCH_VERTEX_FUNCTION@') == 1
+    c.write_text(template.replace('@INDEXED_STRIP_FUNCTION@', text[start:end]).replace('@FETCH_VERTEX_FUNCTION@', text[fetch_start:fetch_end]), encoding='utf-8')
     fetch = VIDEO / 'rsx_vertex_fetch.c'
     include = ROOT / 'vendor/ps3recomp/include'
     env = os.environ.copy()
@@ -44,7 +47,7 @@ def main():
     inputs = [source, fixture, fetch, VIDEO / 'rsx_vertex_fetch.h', VIDEO / 'rsx_commands.h',
               VIDEO / 'rsx_index_strip.h', Path(__file__)]
     result = dict(command=cmd, build_returncode=build.returncode, game_inputs=False,
-                  production_functions=['upload_strip_vp_indexed', 'rsx_fetch_attrib'],
+                  production_functions=['upload_strip_vp_indexed', 'read_vp_vertex', 'rsx_vertex_fetch_prepare', 'rsx_fetch_vertex_prepared', 'rsx_fetch_attrib'],
                   source_hashes={str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs})
     if build.returncode:
         print((out / 'build.log').read_text(encoding='utf-8', errors='replace'))
