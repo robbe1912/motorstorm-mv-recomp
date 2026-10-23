@@ -7,37 +7,36 @@
 
 namespace motorstorm::game {
 namespace {
-void require_number(float value) {
+bool supported_number(float value) noexcept {
     std::uint32_t bits;
     static_assert(sizeof(bits) == sizeof(value));
     std::memcpy(&bits, &value, sizeof(bits));
     const auto exponent = bits & 0x7f800000u;
     const auto fraction = bits & 0x007fffffu;
-    if (exponent == 0x7f800000u || (exponent == 0 && fraction != 0))
-        throw std::invalid_argument("Unsupported threshold numeric range");
+    return exponent != 0x7f800000u && (exponent != 0 || fraction == 0);
 }
 bool complete(const ThresholdFlags& flags) {
     return flags[0] == 1 && flags[1] == 1 && flags[2] == 1 && flags[3] == 1;
 }
 } // namespace
 
-ThresholdFlags accumulate_threshold_failures(
+std::optional<ThresholdFlags> try_accumulate_threshold_failures(
     const ThresholdRecord* records, std::size_t record_count,
     unsigned first_component, std::size_t sample_count,
-    const std::array<float, 4>& thresholds, ThresholdFlags flags) {
+    const std::array<float, 4>& thresholds, ThresholdFlags flags) noexcept {
     if (sample_count == 0) return flags;
     if (!records || first_component >= 4 ||
         record_count > std::numeric_limits<std::size_t>::max() / 4 ||
         record_count * 4 < first_component ||
         sample_count > record_count * 4 - first_component)
-        throw std::invalid_argument("Invalid threshold sample extent");
+        return std::nullopt;
 
     const auto used = (sample_count + first_component - 1) / 4 + 1;
     // Validate the same records even if the accumulated result is saturated.
     // Integer classification avoids NaN/denormal side effects during admission.
-    for (float threshold : thresholds) require_number(threshold);
+    for (float threshold : thresholds) if (!supported_number(threshold)) return std::nullopt;
     for (std::size_t r = 0; r < used; ++r)
-        for (float value : records[r].samples) require_number(value);
+        for (float value : records[r].samples) if (!supported_number(value)) return std::nullopt;
 
     std::size_t remaining = sample_count;
     for (std::size_t r = 0; remaining && !complete(flags); ++r) {
@@ -64,6 +63,16 @@ ThresholdFlags accumulate_threshold_failures(
         first_component = 0;
     }
     return flags;
+}
+
+ThresholdFlags accumulate_threshold_failures(
+    const ThresholdRecord* records, std::size_t record_count,
+    unsigned first_component, std::size_t sample_count,
+    const std::array<float, 4>& thresholds, ThresholdFlags flags) {
+    const auto result = try_accumulate_threshold_failures(
+        records, record_count, first_component, sample_count, thresholds, flags);
+    if (!result) throw std::invalid_argument("Unsupported threshold input");
+    return *result;
 }
 
 } // namespace motorstorm::game

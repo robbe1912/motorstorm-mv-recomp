@@ -85,8 +85,9 @@ const char* prepare_inputs(const spu_context* ctx,std::uint64_t remaining,Prepar
     for (unsigned lane=0;lane<4;++lane) {
         thresholds[lane]=real(inputs[3]._u32[lane]); flags[lane]=inputs[4]._u32[lane];
     }
-    try { flags=accumulate_threshold_failures(records.data(),used,first,count,thresholds,flags); }
-    catch (const std::invalid_argument&) { return "unsupported numeric range"; }
+    const auto result=try_accumulate_threshold_failures(records.data(),used,first,count,thresholds,flags);
+    if (!result) return "unsupported numeric range";
+    flags=*result;
     const auto last=end+40,rotation=(last&15)/4;
     const auto* last_record=snapshot.data()+(last&~15u)-base;
     for (unsigned lane=0;lane<4;++lane) {

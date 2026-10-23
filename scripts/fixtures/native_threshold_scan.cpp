@@ -32,6 +32,9 @@ void compare(const std::vector<ThresholdRecord>& records, unsigned first,
     assert(accumulate_threshold_failures(records.data(), records.size(), first,
                                         count, thresholds, initial) == expected);
     assert(_mm_getcsr() == before);
+    const auto admitted = try_accumulate_threshold_failures(records.data(), records.size(), first,
+                                                           count, thresholds, initial);
+    assert(admitted && *admitted == expected && _mm_getcsr() == before);
     assert(std::memcmp(records.data(), saved.data(), records.size() * sizeof(ThresholdRecord)) == 0);
 }
 template<class Function> void rejected(Function run) {
@@ -54,7 +57,14 @@ int main() {
     const ThresholdFlags initial{0, 0x12345678u, 0xffffffffu, 1};
     const std::array<float, 4> thresholds{0.0f, -0.0f, 1.0f, -1.0f};
     assert(accumulate_threshold_failures(nullptr, 0, 99, 0, thresholds, initial) == initial);
+    static_assert(noexcept(try_accumulate_threshold_failures(nullptr,0,0,0,thresholds,initial)));
+    assert(!try_accumulate_threshold_failures(nullptr, 1, 0, 1, thresholds, initial));
     std::vector<ThresholdRecord> records(64);
+    assert(!try_accumulate_threshold_failures(records.data(), 0, 0, 1, thresholds, initial));
+    assert(!try_accumulate_threshold_failures(records.data(), 1, 4, 1, thresholds, initial));
+    assert(!try_accumulate_threshold_failures(records.data(), 1, 3, 2, thresholds, initial));
+    assert(!try_accumulate_threshold_failures(records.data(), std::numeric_limits<std::size_t>::max(),
+                                              0, 1, thresholds, initial));
     for (unsigned round = 0; round < 4; ++round) {
         const auto saved = _mm_getcsr();
         _mm_setcsr((saved & ~0x6000u) | (round << 13) | 0x20u);
@@ -81,8 +91,12 @@ int main() {
         std::numeric_limits<std::size_t>::max(), 0, 1, thresholds, initial); });
     for (auto bits : {1u, 0x807fffffu, 0x7f800000u, 0xff800000u, 0x7fc00000u, 0x7f800001u}) {
         auto limits = thresholds; limits[2] = number(bits);
+        const auto before = _mm_getcsr();
+        assert(!try_accumulate_threshold_failures(records.data(), records.size(), 0, 8, limits, initial));
         rejected([&] { accumulate_threshold_failures(records.data(), records.size(), 0, 8, limits, initial); });
         auto bad = records; bad[0].samples[3] = number(bits);
+        assert(!try_accumulate_threshold_failures(bad.data(), bad.size(), 0, 8, thresholds, {1,1,1,1}));
+        assert(_mm_getcsr() == before);
         rejected([&] { accumulate_threshold_failures(bad.data(), bad.size(), 0, 8, thresholds, {1,1,1,1}); });
     }
     // Unselected records are outside the memory/numeric contract.

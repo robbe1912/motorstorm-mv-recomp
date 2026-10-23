@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 
 namespace motorstorm::game {
 
@@ -22,5 +23,12 @@ ThresholdFlags accumulate_threshold_failures(
     const ThresholdRecord* records, std::size_t record_count,
     unsigned first_component, std::size_t sample_count,
     const std::array<float, 4>& thresholds, ThresholdFlags initial);
+
+// Admission variant for expected unsupported inputs: the same validation and
+// computation, returning no result without allocating or throwing.
+std::optional<ThresholdFlags> try_accumulate_threshold_failures(
+    const ThresholdRecord* records, std::size_t record_count,
+    unsigned first_component, std::size_t sample_count,
+    const std::array<float, 4>& thresholds, ThresholdFlags initial) noexcept;
 
 } // namespace motorstorm::game
