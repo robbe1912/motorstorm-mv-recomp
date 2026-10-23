@@ -806,3 +806,11 @@ estimates. These are static investigation regions, not proven complete
 function boundaries, exclusive costs or accepted native replacements. Their
 private listings, source hashes and observation identities are retained so
 input/output recovery can proceed without another game session.
+
+The serialized admission described above belongs to that historical capture.
+Issue 209 subsequently introduced bounded persistent workers and removed the
+join-all-workloads barrier. The [current scheduling comparison](NATIVE_SCHEDULING.md)
+pins the later source, separates policy execution from typed native game tasks,
+and identifies the remaining publication/completion attribution gap. Historical
+queue point counts are not evidence that the current scheduler still serializes
+all workloads or that changing its requested sleep interval fixes frame time.

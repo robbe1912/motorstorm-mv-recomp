@@ -4,6 +4,12 @@
 
 The main goal is stable 30 FPS on Windows DX12 at normal game start, while progressively replacing interpreted game workloads with native x86 game code. Performance has the highest priority. Use [the measured job producer (#155)](https://github.com/robbe1912/motorstorm-mv-recomp/issues/155) to select the next bounded replacement and [native acceptance (#27)](https://github.com/robbe1912/motorstorm-mv-recomp/issues/27) to judge the result. Vulkan and retail mstream remain parked.
 
+The [modern-engine scheduling comparison](research/NATIVE_SCHEDULING.md) maps
+the current persistent workers, policy execution, marker waits and renderer
+handoffs to Unreal/Godot task mechanisms. It selects a visibility-job
+publication-to-completion timeline before choosing between admission changes
+and a complete typed native batch; adding workers alone is not that migration.
+
 For each replacement, bind the actual workload and its inputs, outputs, ownership and completion ordering; implement the game operation directly with native data and execution; compare against the retained original behavior; then validate normal PLAY and frame times. Keep the interpreter as a migration bridge and correctness reference for work that has not yet been replaced. Interpreter optimization alone does not establish progress toward the native source architecture. Reusable toolkit corrections still follow the fork-first modular and combined workflow in [vendor provenance](VENDOR.md); game implementations belong in this repository.
 
 Each issue has a bounded work unit, a completion test, dependencies, target and priority. Read its canonical evidence before changing code, including [the original native Havok failure (#1)](https://github.com/robbe1912/motorstorm-mv-recomp/issues/1) when following that dependency. A successful build, reference gameplay or unrelated control capture cannot close a native acceptance issue.
