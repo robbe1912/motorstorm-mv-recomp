@@ -16,9 +16,7 @@ Native-build include follow-up `cc0bf49780e39f15588526e6569d71c0c5ebc8d7`
 resolves the naming header relative to its production module. It requires no
 additional native consumer include path. [Follow-up fork CI](https://github.com/robbe1912/ps3recomp/actions/runs/39945465094)
 passes on Windows, Linux and macOS; [consumer CI](https://github.com/robbe1912/motorstorm-mv-recomp/actions/runs/39945545271)
-passes the actual scheduler/counter controls on Linux and Windows. Native game
-acceptance and a controlled performance comparison remain pending.
-
+passes the actual scheduler/counter controls on Linux and Windows.
 
 One coordinator admits work fairly across one to six persistent owned workers
 per instance, with stable physical lanes and bounded contention. Only an actual
@@ -53,9 +51,41 @@ productive lane and all-idle case with the persistent workers. Its three
 historical controls still require the specific behavioral failures.
 Windows and Linux CI retain source-only command/hash/diagnostic logs for five days.
 
-Native integration acceptance and performance measurement remain pending.
-These authored regressions establish scheduler behavior, not displayed FPS,
-original-asset rendering correctness or completion of the native rewrite.
+Checked-O2 Windows DX12 run `20261023T114208.076688Z` uses EXE
+`0ffcfaaaa0c4ae7ae69d4df46feb54492ef1ae55d430469627626da2c0d3acb2` and PDB
+`4e88d028fd683b48e17ecb05e7d7a436a0a11ba02d603c322dc3a615c1fcbd57`.
+Saved native frames 11 and 81 show the original main menu and race through the
+existing screen-gated normal PLAY route. No desktop input was used. The owned
+controller stopped explicitly after 315.922 seconds; native return 1 is guard
+termination, not a natural successful process exit. Five rotating runs remain;
+the source/hash-bound evidence packet is protected separately.
+
+Before suspending diagnostics, 43 samples cover 44.6459943 seconds. Process CPU
+is a median 5.0 logical CPUs; GPU 3D is a median 10.3537% across 30 samples.
+Five named workers on the main instance each use 18.16-20.17 CPU seconds;
+`spu_async` uses 39.015625 and native renderer thread `frame_clock` 33.3125.
+Main-thread fully contained vehicle waits total 4.4079405 seconds; visibility
+waits total 12.8062919. Ninety-five synchronous two-byte surface requests total
+3.110211 seconds, including 2.3046809 queued and 0.7436323 prior-fence seconds.
+These are wall intervals including scheduling and overlapping work, not exclusive
+CPU/GPU costs. CPU read-transfer growth is 262,144 bytes; cached/non-disk I/O
+prevents a preloading claim. This is an optimized Debug configuration with the
+debug CRT, assertions and DX12 validation retained, not a Release baseline.
+
+Subsequent separate diagnostics cover 284 cycles in 45.0544 seconds, with no
+suspension errors and maximum pause 27.330 ms. Exact new-PDB schemas replace the
+obsolete flat resident table; sequential worker/resident/register/original-code
+checks yield 443 executing-context associations and 92 selected-record
+correlations within unfinished waits. Offline raw-record validation additionally
+checks every busy worker's native entry against its resident entry. The next
+observer includes that check directly. Stable rereads cannot exclude ABA.
+The existing checks and an additional diagnostic scan find no fatal/assert,
+failed/unhandled or DX12-error reports; original fallback paths remain visible.
+
+This accepts the bounded scheduler integration. Rendering defects (#137),
+controlled performance comparison (#26), stable 30 FPS (#27) and the larger typed
+native rewrite remain incomplete. These unmatched scene windows and diagnostic
+point IPs do not establish a speedup, displayed FPS or exclusive frame cost.
 
 ## Concurrent policy counter isolation (issue 202)
 
