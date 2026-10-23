@@ -96,8 +96,12 @@ def main():
         else:
             images=ROOT/'build/extracted/spu'; out=c['generated']/'spu'
             if out.exists() and any(out.iterdir()): raise SystemExit('Existing SPU tree preserved. Move it to temp/ before regeneration.')
+            named=ROOT/'build/extracted/named'
             run([sys.executable,TOOLS/'extract_spu_images.py',c['elf'],'--output',images])
+            # Symtab-named inputs: policy module id 3 joins the class-A images; job binaries 210-219.
+            run([sys.executable,ROOT/'scripts/spu/extract_ms1_named.py','--elf',c['elf'],'--out',named,'--images',images])
             run([sys.executable,TOOLS/'build_spu_workloads.py','--images',images,'--lifted',out,'--out',out/'spu_workloads.c','--title','MotorStorm MV','--constructor'])
+            run([sys.executable,ROOT/'scripts/spu/lift_ms1_jobmods.py','--jobmods',named/'jobmods','--out',out])
         print('Generated output is private and ignored. See docs/BUILDING.md for additional module requirements.'); return
     if args.cmd=='build':
         if not 1<=args.jobs<=8: raise SystemExit('Use 1..8 jobs to bound compiler memory')
