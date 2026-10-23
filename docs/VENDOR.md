@@ -36,8 +36,45 @@ cost or gameplay FPS.
 The archived issue209 renderer has three recovered
 `structural_hash -> vp_fp_snap_for -> indexed draw` observations among 57 saved
 stacks. This selected point evidence motivates the change without establishing
-exclusive cost. Native build/menu/PLAY observation for this integration remains
-pending; #26/#27/#137 and the larger typed game-workload rewrite remain open.
+exclusive cost.
+
+Native integration was checked in owned run `20261023T131716.848930Z`,
+PID 15456, using original assets and the existing screen-gated PAD_FILE PLAY
+route, with one observed Sony-caption skip. Original menu frame 11 and race
+frame 73 (bike/opponents/HUD) were visually observed; geometry/shadow defects
+remain. EXE `37e3483ca368443cbc61e1abc6a7354eea9587605a6e959dfd6fc22c767488df`,
+PDB `17a3c4d0f3d139e5551e2520ab851e2c3b8d03dc5fee85680189827615b525b4`.
+The five-step checked-O2/DebugCRT build restored configuration and preserved
+all previous binaries. The controller exited 0 after an explicit owned stop
+at 315.750 seconds; native return 1 is guard termination, not a natural-success
+exit. The protected private packet has 4,461 files / 2,581,036,045 bytes;
+rotation kept the latest five runs.
+
+The unsuspended CPU window has 43 samples over 44.3471711 seconds. Process
+median: 5.3905 logical CPU equivalents; `spu_async`: 39.0625 CPU seconds,
+`frame_clock`: 33.21875, five main policy workers: 20.90625-22.25 each.
+Thirty GPU 3D samples have median 23.0141%, maximum 30.4600%, no collector
+error. Common-thread counters omit transient lifetimes, and utilization is
+not causal frame-cost attribution. Fully contained main waits: 3,740 visibility
+waits / 11.4229636 seconds (two crossing waits excluded), 440 vehicle waits /
+4.9211536 seconds. The 110 two-byte CPU-surface reads total 5.8773668 seconds,
+including 4.3211376 queued and 1.4712387 prior-fence seconds. These intervals
+include scheduling/cooperation/synchronization, not exclusive CPU/GPU cost.
+
+Separate later diagnostics have 301 cycles, one recorded suspend failure,
+maximum 12.727 ms pause, 396 register-bound resident observations and 59
+unfinished-wait register correlations. Archived PE-unwind replay recovered
+305 partial walks with exact loaded PDB/CodeView identity; missing memory,
+stopped walks and current-only DLL qualification remain explicit. Full stderr
+scan found no error/fatal/failed/unhandled/unexpected/assert/overflow findings;
+assertions and DX12 validation remained enabled. Native world retained 21
+visible original fallbacks. Source/identity-bound analyses and hashes remain
+private under `temp/issue213-fp-snapshot-equality/analysis`.
+
+This is one unmatched native correctness run, not a controlled game speedup,
+displayed-FPS result or stable 30 FPS proof. No frame-time or FPS gain follows
+from the isolated helper result. #26/#27/#137 and the larger typed native game
+rewrite remain open.
 
 ## Bounded policy admission integration (issue 209)
 
