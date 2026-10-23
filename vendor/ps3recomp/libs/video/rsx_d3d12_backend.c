@@ -44,7 +44,7 @@
 #include <dxgi1_6.h>
 #include <d3dcompiler.h>
 
-/* We need these GUIDs â€” define them here to avoid uuid.lib dependency */
+/* We need these GUIDs — define them here to avoid uuid.lib dependency */
 #include <initguid.h>
 
 /* Link libraries */
@@ -327,7 +327,7 @@ typedef struct {
 
     /* Pipeline */
     ID3D12RootSignature*  root_signature;
-    ID3D12PipelineState*  pipeline_state;         /* triangle class â€” default */
+    ID3D12PipelineState*  pipeline_state;         /* triangle class — default */
     ID3D12PipelineState*  pipeline_state_lines;   /* line class */
     ID3D12PipelineState*  pipeline_state_points;  /* point class */
 
@@ -997,7 +997,7 @@ static int init_d3d12(u32 width, u32 height)
 
     /* ---------------------------------------------------------------
      * Create root signature with 16 root constants (one mat4 MVP at b0).
-     * Visible only to the vertex shader â€” pixel shader doesn't need it.
+     * Visible only to the vertex shader — pixel shader doesn't need it.
      * ---------------------------------------------------------------*/
     {
         /* param 0: mat4 MVP as 16 root constants at b0 (vertex shader).
@@ -1070,7 +1070,7 @@ static int init_d3d12(u32 width, u32 height)
         /* Basic vertex-colored shader.
          * The MVP matrix arrives via root constants as 4 vec4 columns
          * (PS3/OpenGL column-major convention). We multiply explicitly so
-         * we don't depend on HLSL's matrix packing â€” matches PS3 semantics
+         * we don't depend on HLSL's matrix packing — matches PS3 semantics
          * `gl_Position = MVP * vec4(pos, 1.0)`. */
         static const char vs_hlsl[] =
             "cbuffer cb0 : register(b0) {\n"
@@ -1140,8 +1140,8 @@ static int init_d3d12(u32 width, u32 height)
             pso_desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
             pso_desc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
             /* Depth test enabled, write enabled, LESS func.
-             * Games with depth_test_enable=0 in RSX state can still render â€”
-             * LESS just means new-z must be less than existing â€” but future
+             * Games with depth_test_enable=0 in RSX state can still render —
+             * LESS just means new-z must be less than existing — but future
              * work should mirror RSX depth state into a PSO cache. */
             pso_desc.DepthStencilState.DepthEnable    = TRUE;
             pso_desc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
@@ -1159,7 +1159,7 @@ static int init_d3d12(u32 width, u32 height)
                 printf("[D3D12] PSO TRIANGLE creation failed (0x%08lX)\n", hr);
             }
 
-            /* Line-class PSO â€” same shader, LINE topology type. */
+            /* Line-class PSO — same shader, LINE topology type. */
             pso_desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE;
             hr = s_d3d.device->lpVtbl->CreateGraphicsPipelineState(
                 s_d3d.device, &pso_desc,
@@ -7671,7 +7671,7 @@ static void d3d12_draw_arrays(void* ud, u32 primitive, u32 first, u32 count)
     u32 topo = (u32)rsx_primitive_topology(primitive);
     if (topo == RSX_TOPOLOGY_UNSUPPORTED) {
         /* Other primitives still needing index-buffer conversion
-         * (line loops, triangle fans) â€” skip rather than draw wrong. */
+         * (line loops, triangle fans) — skip rather than draw wrong. */
         static int s_skipped_nontri = 0;
         if (s_skipped_nontri < 3) {
             printf("[D3D12] draw_arrays: skipping prim=%u (needs index conversion)\n",
@@ -8300,7 +8300,7 @@ void rsx_d3d12_backend_present(void)
 #include <ps3emu/ps3types.h>   /* u32 (header includes above are inside the _WIN32 guard) */
 #include <stdio.h>
 
-/* Stub for non-Windows â€” D3D12 is Windows-only */
+/* Stub for non-Windows — D3D12 is Windows-only */
 int rsx_d3d12_backend_init(u32 w, u32 h, const char* t)
 {
     (void)w; (void)h; (void)t;

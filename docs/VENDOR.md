@@ -503,7 +503,7 @@ unmodified operand. The preserved baseline fails; the candidate passes.
 Both Windows and Linux CI run this contract. No external PR was opened.
 The native menu remains malformed; this is a repaired instruction contract.
 
-### Upstream recheck â€” October 12, 2026
+### Upstream recheck — October 12, 2026
 
 Rechecked all 230 upstream PRs and 14 issues, including open and closed entries.
 Upstream master remains `5244db92669b54831c6d3ebb7a96d58c4dbfa6df`
@@ -676,7 +676,7 @@ buffer against an owned snapshot. Pointer reuse alone never establishes a hit.
 Misses hash that snapshot with the unchanged legacy FNV basis and multiplier;
 allocation failure visibly falls back to the original calculation. Buffers must
 remain stable during the call, as before; this does not make concurrent writes
-atomic. Eligible sizes are 4â€“256 KiB, with 32 entries and at most 4 MiB retained
+atomic. Eligible sizes are 4–256 KiB, with 32 entries and at most 4 MiB retained
 per thread. Windows FLS and POSIX key destructors release the snapshots.
 
 `SPU_FINGERPRINT_CACHE=1` enables the cache; the default makes no snapshot

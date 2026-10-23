@@ -47,7 +47,7 @@ def main():
     ap.add_argument('--source', type=Path, default=ROOT / 'vendor/ps3recomp/libs/video/rsx_d3d12_backend.c')
     args = ap.parse_args()
     source = args.source.resolve()
-    text = source.read_text()
+    text = source.read_text(encoding="utf-8")
     a = text.index('static u32 upload_strip_vp_indexed(')
     b = text.index('\nstatic void d3d12_draw_arrays(', a)
     body = text[a:b]
@@ -57,17 +57,30 @@ def main():
     out = ROOT / 'temp/checks' / ('rsx-restart-' + stamp)
     out.mkdir(parents=True)
     c, exe = out / 'check.c', out / ('check.exe' if os.name == 'nt' else 'check')
-    c.write_text(PREFIX + include + body + CHECK)
+    prefix = PREFIX
+    vertex_source = source.with_name('rsx_vertex_fetch.c')
+    prepared = 'rsx_vertex_fetch_prepare' in body
+    if prepared:
+        vertex_header = source.with_name('rsx_vertex_fetch.h')
+        prefix = prefix.replace('#include <string.h>', '#include <string.h>\n#include <stdlib.h>\n#include "' + vertex_header.as_posix() + '"')
+        prefix = prefix.replace('typedef struct {float v[4];} VPSlot;', 'typedef rsx_vertex_value VPSlot;')
+        prefix = prefix.replace('typedef struct {struct {int enabled;} vertex_attribs[16];u32 index_array_dma,begin_epoch,restart_index_enable,restart_index;} rsx_state;', '')
+        prefix = prefix.replace('const rsx_state*s,u32 i,VPSlot*out', 'const rsx_state*s,const rsx_vertex_fetch_batch*b,u32 i,VPSlot*out')
+        prefix = prefix.replace('out[0].v[0]=(float)i;', 'if(b->state!=s)abort();out[0].v[0]=(float)i;')
+        prefix += '\nu32 cellGcmResolveOffset(u32 o){(void)o;abort();}\nu32 cellGcmResolveLocated(int l,u32 o){(void)l;(void)o;abort();}\n'
+    c.write_text(prefix + include + body + CHECK, encoding='utf-8')
     env = os.environ.copy()
     if os.name == 'nt':
         from project import build_environment
         env = build_environment()
-        cmd = [env['MV_CLANG'], '/nologo', str(c), '/Fe' + str(exe), '/Fo' + str(out / 'check.obj')]
+        cmd = [env['MV_CLANG'], '/nologo', str(c), '/Fe' + str(exe), '/Fo' + str(out) + os.sep]
     else:
         cmd = [env.get('CC', 'cc'), '-std=c11', '-o', str(exe), str(c)]
+    if prepared:
+        cmd += [str(vertex_source), ('/I' if os.name == 'nt' else '-I') + str(vertex_source.parents[2] / 'include')]
     with (out / 'build.log').open('wb') as log:
         build = subprocess.run(cmd, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=120)
-    inputs = [source] + ([header] if include else [])
+    inputs = [source] + ([header] if include else []) + ([vertex_source, vertex_header, source.with_name('rsx_commands.h')] if prepared else [])
     result = dict(source_hashes={str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs},
                   build_returncode=build.returncode, game_inputs=False,
                   production_function='upload_strip_vp_indexed', synthetic_adapters=True)
