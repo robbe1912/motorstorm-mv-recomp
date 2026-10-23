@@ -74,6 +74,14 @@ jobs:
         run: python scripts/check_spurs_policy_arguments.py
       - name: Concurrent policy counters and joined productivity
         run: python scripts/check_spurs_policy_counters.py --mutants
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: policy-counter-logs-${{ runner.os }}
+          retention-days: 5
+          path: |
+            build/self-tests/spurs-policy-counters/**/*.log
+            build/self-tests/spurs-policy-counters/**/*.json
       - name: Productive SPU interrupt returns
         run: python scripts/check_spu_iret_progress.py
       - name: Interpreter thread reporting isolation
@@ -163,6 +171,14 @@ jobs:
         run: python scripts/check_spurs_policy_arguments.py
       - name: Concurrent policy counters and joined productivity
         run: python scripts/check_spurs_policy_counters.py --mutants
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: policy-counter-logs-${{ runner.os }}
+          retention-days: 5
+          path: |
+            build/self-tests/spurs-policy-counters/**/*.log
+            build/self-tests/spurs-policy-counters/**/*.json
       - name: Productive SPU interrupt returns
         run: python scripts/check_spu_iret_progress.py
       - name: Interpreter thread reporting isolation

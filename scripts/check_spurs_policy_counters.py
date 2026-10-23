@@ -33,7 +33,7 @@ def build_and_run(runtime, out, expected_failure=None):
         cmd=[env.get('MV_CLANG','clang-cl'),'/nologo','/std:c17','/O2','/UNDEBUG','/Gy','/Gw','/D_CRT_SECURE_NO_WARNINGS',
              *['/I'+str(p) for p in includes],*map(str,inputs),'/Fo'+str(out)+os.sep,'/Fe'+str(exe),'/link','/OPT:REF']
     else:
-        cmd=[env.get('CC','cc'),'-std=gnu17','-O2','-UNDEBUG','-ffunction-sections','-fdata-sections',
+        cmd=[env.get('CC','cc'),'-std=gnu17','-D_GNU_SOURCE','-O2','-UNDEBUG','-ffunction-sections','-fdata-sections',
              '-Wl,-dead_strip' if sys.platform=='darwin' else '-Wl,--gc-sections',
              *['-I'+str(p) for p in includes],*map(str,inputs),'-pthread','-lm','-o',str(exe)]
     (out/'command.json').write_text(json.dumps(cmd,indent=2))

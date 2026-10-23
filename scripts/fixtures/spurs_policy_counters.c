@@ -1,4 +1,5 @@
 /* Authored policies exercise actual runner/kernel intercepts, never game code. */
+#include "thread_name.h"
 #include "cellSpurs.c"
 #include "spu_dma.h"
 #include <stdatomic.h>
@@ -19,7 +20,7 @@ static void require(int ok,const char* what) {
 /* Unreachable SDK linkage on COFF: abort, never manufacture task completion. */
 static void unexpected(void) { fprintf(stderr,"FAIL out-of-scope SDK API\n");abort(); }
 void ppu_resv_break_store(uint64_t ea) { (void)ea;unexpected(); }
-void ps3_ww_report_inline(uint32_t a,uint64_t v,int w) { (void)a;(void)v;(void)w;unexpected(); }
+void ps3_ww_report_inline(uint32_t a,unsigned long long v,int w) { (void)a;(void)v;(void)w;unexpected(); }
 void spurs_taskset_init(uint32_t a,uint32_t b,uint64_t c,uint32_t d,uint32_t e,uint32_t f,uint32_t g) { unexpected(); }
 void spurs_taskset_add_task(uint32_t a,uint32_t b,uint64_t c,uint64_t d,const uint32_t e[4],const uint32_t f[4]) { unexpected(); }
 int sys_event_queue_push_by_id(uint32_t a,uint64_t b,uint64_t c,uint64_t d,uint64_t e) { unexpected();return -1; }
