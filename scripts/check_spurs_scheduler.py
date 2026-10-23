@@ -15,11 +15,14 @@ fixture = ROOT/'scripts/fixtures/spurs_scheduler.c'
 build_env = build_environment()
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--mutants', action='store_true', help='Reject serialized-admission regression')
+parser.add_argument('--runtime',type=Path,default=root,help='Selected consumer runtime')
+parser.add_argument('--output',type=Path,default=ROOT/'build/self-tests/spurs-scheduler')
 parser.add_argument('--compiler', default=os.environ.get('CC') or
                     (build_env.get('MV_CLANG','clang-cl') if os.name=='nt' else build_env.get('CC','cc')))
 args = parser.parse_args()
 assert args.compiler, 'Set CC or --compiler to a C17 compiler'
-out = ROOT / 'build/self-tests/spurs-scheduler'
+root = args.runtime.resolve()
+out = args.output.resolve()
 out.mkdir(parents=True, exist_ok=True)
 units = ['spu_drain','spu_lockstep','spu_coherency','spu_workload',
          'spurs_policy','spurs_job','spu_tsp_weak','spu_vm_pagemap',

@@ -55,7 +55,7 @@ def main():
     if b'spu_task_publish_locked' in source_bytes:
         inputs.append(repo/'runtime/spu/spu_task_lifecycle.c')
     env = build_environment()
-    includes = [repo/'include', repo/'libs/spurs', repo/'runtime/spu']
+    includes = [repo/'include', repo/'libs/spurs', repo/'runtime/spu', repo/'runtime/platform']
     signature = re.search(r'int spu_workload_dispatch_async\([^;]+;',
                           (repo/'runtime/spu/spu_workload.h').read_text())
     if not signature:
