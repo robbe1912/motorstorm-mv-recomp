@@ -11,6 +11,15 @@ at `bddee4c078cb55022545655a9493363f9b238bcc`, integrated into `combined` at
 passes the actual scheduler and negative controls on Windows, Linux and macOS.
 Fork master remains separate from this curated integration.
 
+Native-build include follow-up `cc0bf49780e39f15588526e6569d71c0c5ebc8d7`
+(modular) / `754dd6cfb138b7aff0b9bbce5c191f43ff0e503e` (combined)
+resolves the naming header relative to its production module. It requires no
+additional native consumer include path. [Follow-up fork CI](https://github.com/robbe1912/ps3recomp/actions/runs/39945465094)
+passes on Windows, Linux and macOS; [consumer CI](https://github.com/robbe1912/motorstorm-mv-recomp/actions/runs/39945545271)
+passes the actual scheduler/counter controls on Linux and Windows. Native game
+acceptance and a controlled performance comparison remain pending.
+
+
 One coordinator admits work fairly across one to six persistent owned workers
 per instance, with stable physical lanes and bounded contention. Only an actual
 policy return releases admission. Guest execution and the existing periodic
