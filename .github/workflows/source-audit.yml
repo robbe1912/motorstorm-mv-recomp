@@ -92,6 +92,16 @@ jobs:
           path: |
             build/self-tests/fp-snapshot/**/*.log
             build/self-tests/fp-snapshot/**/*.json
+      - name: SPU execution observations and native admission controls
+        run: python scripts/check_spu_execution_observer.py --mutants --syntax
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: spu-execution-observers-${{ runner.os }}
+          retention-days: 5
+          path: |
+            build/self-tests/spu-execution-observers/**/*.log
+            build/self-tests/spu-execution-observers/**/*.json
       - name: Actual atomic observations and specific negative controls
         run: python scripts/check_native_atomic_observer.py --mutants --syntax
       - uses: actions/upload-artifact@v4
@@ -249,6 +259,16 @@ jobs:
           path: |
             build/self-tests/fp-snapshot/**/*.log
             build/self-tests/fp-snapshot/**/*.json
+      - name: SPU execution observations and native admission controls
+        run: python scripts/check_spu_execution_observer.py --mutants --syntax
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: spu-execution-observers-${{ runner.os }}
+          retention-days: 5
+          path: |
+            build/self-tests/spu-execution-observers/**/*.log
+            build/self-tests/spu-execution-observers/**/*.json
       - name: Actual atomic observations and specific negative controls
         run: python scripts/check_native_atomic_observer.py --mutants --syntax
       - uses: actions/upload-artifact@v4

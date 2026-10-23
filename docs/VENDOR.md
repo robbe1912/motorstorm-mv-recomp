@@ -970,3 +970,40 @@ overhead or an FPS improvement. Both public audit jobs run the checks and retain
 their authored logs for five days. The
 [timeline report](research/NATIVE_JOB_TIMELINE.md) states remaining #219 gates;
 no observer is installed by the game, and the ordinary build has no probe code.
+
+## SPU execution observations (#219)
+
+Fork-first modular `codex/issue-219-execution-observers` and `combined` contain
+`a0c6ad2d61dc65df3b1f25b15eb09d8b84536ada`, followed by ownership-test include
+correction `2f3a2be0e81431ea6f90238af94cb0c99a245573`. The latter changes only
+the ownership runner's selected-source include path. Modular
+[execution 40017995537](https://github.com/robbe1912/ps3recomp/actions/runs/40017995537),
+[native regressions 40017995516](https://github.com/robbe1912/ps3recomp/actions/runs/40017995516)
+and [atomic 40017995439](https://github.com/robbe1912/ps3recomp/actions/runs/40017995439)
+checks pass Windows/Linux/macOS. Combined
+[execution 40018258577](https://github.com/robbe1912/ps3recomp/actions/runs/40018258577),
+[native regressions 40018258662](https://github.com/robbe1912/ps3recomp/actions/runs/40018258662)
+and [atomic 40018258611](https://github.com/robbe1912/ps3recomp/actions/runs/40018258611)
+checks pass those platforms. The original ownership include failure remains in
+40018258528; corrected [40018554741](https://github.com/robbe1912/ps3recomp/actions/runs/40018554741)
+passes, with no ownership assertion removed.
+
+The authored execution header/core are copied from the fork Git blobs. Selected
+runtime deltas reverse to the pre-curation modules after newline normalization;
+unchanged lines retain their original bytes. Existing public policy routing,
+diagnostics, relocation and floating-point helpers remain intact. The default-OFF
+CMake option preserves the curated tests guard. No generated guest input is
+included or modified.
+
+The public runner adapts source paths and authored aborting dependencies. It
+tests the curated drain's exact selection/call slice in an authored loop, not
+the different fork scoped body. Full production translation units and a C++
+consumer are syntax checked in both modes. Both public CI jobs run eight specific
+negative controls and retain authored logs/JSON for five days. The existing
+native-leaf reference reconstruction removes only observer additions before its
+unchanged original hash check; state/IRQ/FP/TLS/stop/budget equivalence and six
+unsafe-dispatch/environment controls plus the faulty-TLS control pass locally.
+Public ownership checks retain the visible cross-image wildcard diagnostic.
+The [timeline report](research/NATIVE_JOB_TIMELINE.md) distinguishes these
+observations from missing lifetime bindings, capture overhead and game-level
+performance proof. No game observer is installed; #219 remains open.

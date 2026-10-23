@@ -1,5 +1,10 @@
 # Work tracking
 
+The [job timeline checkpoint](research/NATIVE_JOB_TIMELINE.md) now includes
+default-OFF atomic and SPU execution observations. Admission/worker identities,
+the game binding, analyzer and measured capture overhead remain required before
+the next coordinated run; these hooks alone establish no FPS improvement.
+
 [GitHub issues](https://github.com/robbe1912/motorstorm-mv-recomp/issues) are the authoritative atomic todo list. This page describes how to use it; it does not maintain a second backlog.
 
 The main goal is stable 30 FPS on Windows DX12 at normal game start, while progressively replacing interpreted game workloads with native x86 game code. Performance has the highest priority. Use [the measured job producer (#155)](https://github.com/robbe1912/motorstorm-mv-recomp/issues/155) to select the next bounded replacement and [native acceptance (#27)](https://github.com/robbe1912/motorstorm-mv-recomp/issues/27) to judge the result. Vulkan and retail mstream remain parked.

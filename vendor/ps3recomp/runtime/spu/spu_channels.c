@@ -3781,6 +3781,7 @@ void spu_indirect_branch(spu_context* ctx)
       } }
     if (fn) {
         spu_check_stack_reset(ctx, fn);
+        PS3_SPU_RESOLVED(ctx, fn);
         /* MUSTTAIL: a guest loop that iterates through an indirect branch (the
          * Bink decoder's per-command dispatch does) must not grow the host
          * stack -- a plain call here leaked a resolver+callee frame per

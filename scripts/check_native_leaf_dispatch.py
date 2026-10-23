@@ -82,6 +82,13 @@ source=(spu/'spu_interp.c').read_text(encoding='utf-8')
 # Recover the exact pre-port public implementation, not a second model of its
 # behavior. The pinned digest prevents the reconstruction from hiding drift.
 reference=source
+# Undo only observer additions in this hash-pinned reference. Production retains them.
+assert reference.count('#if PS3_EXECUTION_OBSERVATION\n    switch (d.op) {\n    case SPU_br: case SPU_bra: case SPU_brsl: case SPU_brasl:\n    case SPU_brz: case SPU_brnz: case SPU_brhz: case SPU_brhnz:\n    case SPU_bi: case SPU_bisl: case SPU_bisled: case SPU_iret:\n    case SPU_biz: case SPU_binz: case SPU_bihz: case SPU_bihnz:\n        PS3_SPU_EXECUTION(PS3_SPU_INTERPRETED_CONTROL, ctx, pc, next,\n            (uint64_t)d.op, PS3_SPU_SOURCE_INSTRUCTION, 0);\n        break;\n    default: break;\n    }\n#endif\n')==1
+reference=reference.replace('#if PS3_EXECUTION_OBSERVATION\n    switch (d.op) {\n    case SPU_br: case SPU_bra: case SPU_brsl: case SPU_brasl:\n    case SPU_brz: case SPU_brnz: case SPU_brhz: case SPU_brhnz:\n    case SPU_bi: case SPU_bisl: case SPU_bisled: case SPU_iret:\n    case SPU_biz: case SPU_binz: case SPU_bihz: case SPU_bihnz:\n        PS3_SPU_EXECUTION(PS3_SPU_INTERPRETED_CONTROL, ctx, pc, next,\n            (uint64_t)d.op, PS3_SPU_SOURCE_INSTRUCTION, 0);\n        break;\n    default: break;\n    }\n#endif\n','',1)
+assert reference.count('    PS3_SPU_EXECUTION(PS3_SPU_INTERPRETER_INVOKE, ctx, 0, ctx->pc, 0,\n        PS3_SPU_SOURCE_UNAVAILABLE | PS3_SPU_TARGET_CONTEXT_PC, 0);\n')==1
+reference=reference.replace('    PS3_SPU_EXECUTION(PS3_SPU_INTERPRETER_INVOKE, ctx, 0, ctx->pc, 0,\n        PS3_SPU_SOURCE_UNAVAILABLE | PS3_SPU_TARGET_CONTEXT_PC, 0);\n','',1)
+assert reference.count('        if (fn) {\n            ctx->pc = target;\n            PS3_SPU_RESOLVED(ctx, fn);\n            fn(ctx); return;\n        }\n')==1
+reference=reference.replace('        if (fn) {\n            ctx->pc = target;\n            PS3_SPU_RESOLVED(ctx, fn);\n            fn(ctx); return;\n        }\n','        if (fn) { ctx->pc = target; fn(ctx); return; }\n',1)
 # The option cache changes only the trace gate outside the registry/hook.
 trace_begin=reference.index('    /* A direct dump before any interpreter run')
 trace_end=reference.index('\n    fprintf(stderr, "[SPU-TRACE]',trace_begin)

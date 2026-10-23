@@ -161,10 +161,61 @@ independent taskset notification. Selective runtime patches invert exactly to
 the original public modules. Fork provenance and cross-platform checks are in
 [VENDOR](../VENDOR.md).
 
+## Execution observation checkpoint
+
+The fork-first `PS3RECOMP_EXECUTION_OBSERVATION` option defaults OFF. Its public
+runtime definition also reaches generated units compiled in the linked CMake
+target; separately compiled units must use the same setting. The ordinary
+build discards probe arguments, branches and clock calls. No game owner installs
+an observer or captures a timeline yet.
+
+Enabled observations cover actual interpreted control transfers and conditional
+fallthrough, interpreter invocation, accepted native operation begin/end,
+compiled return macros, selected dispatch after interrupt routing, and final
+resolved indirect calls. The final resolver retains its required Clang
+`musttail` call. Native admission and existing instrumentation guards remain
+unchanged. A native END follows a valid continuation; faults/unwind do not
+receive a fabricated completion event.
+
+These boundaries have different meanings. Interpreter invocation can admit a
+native operation before interpreting anything. A dispatch event precedes the
+selected call, rather than proving its first instruction executed. Interpreted
+control events identify the executed source instruction and resulting PC;
+compiled returns lack precise source attribution. Raw pointers, image IDs,
+saved PCs and accepted native logical PCs are not job/lifetime identities.
+Uninstrumented units, direct calls and missing events remain coverage gaps.
+
+Install/clear requires synchronized producer quiescence and immutable callback
+lifetime. Callbacks must be concurrent-safe and must not mutate guest state,
+reenter execution, allocate, format, perform I/O or take application locks.
+Filtering runs before clocks and event construction; exclusions require explicit
+coverage accounting. The owner supplies one clock domain and accounts for
+invalid clocks, ordering, dropped data and capture windows.
+
+`python scripts/check_spu_execution_observer.py --mutants --syntax` compiles the
+actual public interpreter, observer core and return/dispatch macros with authored
+streams and dependencies in both build modes. The curated drain differs from
+the fork: its exact interrupt-selection/call slice runs inside an authored loop,
+and the actual final resolver slice retains `musttail`. This is not full IRQ or
+coherence equivalence. Unexpected channel/VM recovery services abort.
+The public runtime uses its existing inline float helpers; the fixture does not
+import the fork's separate floating-point implementation.
+
+Eight compiled mutants must fail specific assertions: missing interpreted
+control, forced interpretation, missing dispatch, missing return, wrong
+interrupt-selected function, missing resolved call, repeated return-register
+expression and hidden invalid clock. LLVM-MinGW functional and Windows SDK
+functional/full-production syntax checks pass, including a C++ header consumer.
+The existing hash-pinned pre-port equivalence, native-leaf state/FP/TLS/IRQ tests
+and their negative controls also pass. Only observer additions are undone in
+that reference reconstruction; its original digest is unchanged. The ownership
+fixture passes 18 checks with its existing cross-image wildcard diagnostic
+visible. These checks measure neither capture overhead nor game frame times.
+
 ## Remaining integration gates
 
-1. Connect the atomic observations above and add generic opt-in admission/worker
-   boundaries and real transfers on the fork. Preserve native-leaf admission
+1. Connect the atomic and execution observations above and add generic opt-in
+   admission/worker boundaries on the fork. Preserve native-leaf admission
    and all original failures. Event
    capture must not run guest work, allocate, format or take application locks.
    Qualify precise source attribution in interpreted and lifted paths: a lifted

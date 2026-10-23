@@ -116,11 +116,15 @@ static uint64_t native_try(spu_context* ctx,uint32_t stop,uint64_t remaining,
     }
     if (accepted && !native_ready(ctx)) accepted=0;
     if (accepted) {
+        PS3_SPU_EXECUTION(PS3_SPU_NATIVE_BEGIN, ctx, pc, pc,
+            chosen.instructions, PS3_SPU_NATIVE_LOGICAL_PC, (uintptr_t)chosen.execute);
         chosen.execute(ctx,&chosen);
         if (ctx->pc!=chosen.resume_pc || ctx->status!=SPU_STATUS_RUNNING ||
             ctx->ls!=ctx->ls_store || ctx->list_stall_mask || ctx->host_depth!=depth ||
             ctx->int_enable!=interrupt_enable || ctx->event_mask!=event_mask)
             native_error("continuation/status");
+        PS3_SPU_EXECUTION(PS3_SPU_NATIVE_END, ctx, chosen.last_pc, ctx->pc,
+            chosen.instructions, PS3_SPU_NATIVE_LOGICAL_PC, (uintptr_t)chosen.execute);
         *last=chosen.last_pc;
     }
     native_busy=0;
@@ -453,6 +457,18 @@ static int spu_step(spu_context* ctx) {
         ctx->pc = pc; ctx->status = SPU_STATUS_STOPPED_BY_HALT; return 1;
     }
     ctx->pc = next;
+#if PS3_EXECUTION_OBSERVATION
+    switch (d.op) {
+    case SPU_br: case SPU_bra: case SPU_brsl: case SPU_brasl:
+    case SPU_brz: case SPU_brnz: case SPU_brhz: case SPU_brhnz:
+    case SPU_bi: case SPU_bisl: case SPU_bisled: case SPU_iret:
+    case SPU_biz: case SPU_binz: case SPU_bihz: case SPU_bihnz:
+        PS3_SPU_EXECUTION(PS3_SPU_INTERPRETED_CONTROL, ctx, pc, next,
+            (uint64_t)d.op, PS3_SPU_SOURCE_INSTRUCTION, 0);
+        break;
+    default: break;
+    }
+#endif
     return 0;
 }
 
@@ -499,6 +515,8 @@ static uint32_t interp_run_until_impl(spu_context* ctx, uint32_t start_lsa, uint
     ctx->pc = start_lsa & 0x3FFFC;
     ctx->status = SPU_STATUS_RUNNING;
     uint64_t steps = 0;
+    PS3_SPU_EXECUTION(PS3_SPU_INTERPRETER_INVOKE, ctx, 0, ctx->pc, 0,
+        PS3_SPU_SOURCE_UNAVAILABLE | PS3_SPU_TARGET_CONTEXT_PC, 0);
     /* YDKJ_SPU_TRACE=N: log the last N PCs into a ring buffer and dump them when the
      * interp halts -- shows the path to a branch-to-0 (the cri task/policy wall). */
     static int _tr=-1; if(_tr<0){const char*e=getenv("YDKJ_SPU_TRACE");_tr=e?atoi(e):0;}
@@ -1318,7 +1336,11 @@ void spu_dispatch(spu_context* ctx, uint32_t target) {
     for (;;) {
         target &= 0x3FFFC;
         spu_lifted_fn fn = spu_lifted_lookup(ctx, target);
-        if (fn) { ctx->pc = target; fn(ctx); return; }
+        if (fn) {
+            ctx->pc = target;
+            PS3_SPU_RESOLVED(ctx, fn);
+            fn(ctx); return;
+        }
         uint32_t next = spu_interp_run(ctx, target);
         if (ctx->status & (SPU_STATUS_STOPPED_BY_STOP | SPU_STATUS_STOPPED_BY_HALT))
             return;

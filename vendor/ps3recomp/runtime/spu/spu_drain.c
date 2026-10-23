@@ -449,6 +449,7 @@ void spu_drain_call(spu_context* ctx, uint32_t return_pc)
             }
             void (*fn)(spu_context*) = g_spu_trampoline_fn;
             g_spu_trampoline_fn = 0;
+            PS3_SPU_DISPATCH_BASE(fn);
             ctx->drain_ret_pc = return_pc & SPU_LS_MASK;   /* re-set: a nested drain changed it */
             yz_lockstep_tick(ctx);
             /* M12 [pm-clm]: explicit-trampoline probe. The pm-op probe in
@@ -658,6 +659,7 @@ void spu_drain_call(spu_context* ctx, uint32_t return_pc)
                         ctx->irq_frame = &f;
                     }
                     if (setjmp(f.env) == 0) {
+                        PS3_SPU_DISPATCH(ctx, vf);
                     vf(ctx);
                     { static int _vt = 0; if (ctx->policy_mode && ctx->image_id == 200 && _vt++ < 24) fprintf(stderr, "[vfret] post-take pc=0x%05X tramp=%d r0=0x%05X\n", ctx->pc & SPU_LS_MASK, g_spu_trampoline_fn != 0, ctx->gpr[0]._u32[0] & SPU_LS_MASK); }
                     } else {
@@ -675,6 +677,7 @@ void spu_drain_call(spu_context* ctx, uint32_t return_pc)
                     continue;
                 }
             }
+            PS3_SPU_DISPATCH(ctx, fn);
             fn(ctx);
         }
         if ((ctx->pc & SPU_LS_MASK) == (return_pc & SPU_LS_MASK)) {

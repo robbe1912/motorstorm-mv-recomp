@@ -82,9 +82,9 @@ int main(void){
     assert compiler, 'Set MV_CLANG/CC or install a C compiler'
     exe=out/('fixture.exe' if os.name=='nt' else 'fixture')
     if os.name=='nt':
-        command=[compiler,'/nologo','/TC','/O2','/UNDEBUG','/D_CRT_SECURE_NO_WARNINGS','/I'+str(source.parent),str(out/'fixture.c'),'/Fo'+str(out/'fixture.obj'),'/Fe:'+str(exe)]
+        command=[compiler,'/nologo','/TC','/O2','/UNDEBUG','/D_CRT_SECURE_NO_WARNINGS','/I'+str(source.parent),'/I'+str(source.parents[2]/'include'),str(out/'fixture.c'),'/Fo'+str(out/'fixture.obj'),'/Fe:'+str(exe)]
     else:
-        command=[compiler,'-std=c11','-O2','-UNDEBUG','-Wall','-Wextra','-Werror','-I'+str(source.parent),str(out/'fixture.c'),'-o',str(exe)]
+        command=[compiler,'-std=c11','-O2','-UNDEBUG','-Wall','-Wextra','-Werror','-I'+str(source.parent),'-I'+str(source.parents[2]/'include'),str(out/'fixture.c'),'-o',str(exe)]
     result=subprocess.run(command,text=True,capture_output=True)
     (out/'build.log').write_text(result.stdout+result.stderr)
     assert result.returncode==0,result.stdout+result.stderr
