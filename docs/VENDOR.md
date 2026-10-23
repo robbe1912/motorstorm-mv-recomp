@@ -927,6 +927,41 @@ whole-job tracing, exclusive frame cost or a performance improvement.
 The [original publication/marker checkpoint](research/NATIVE_JOB_TIMELINE.md)
 records independently checked original bytes, partial Ghidra coverage and a
 private production-interpreter arithmetic replay. Original inputs and generated
-instructions remain private. Actual commit/worker/job hooks, generation-aware
-analysis and a coordinated native run remain required by #219; stable30 and
+instructions remain private. At that initial checkpoint, actual commit/worker/job
+hooks, generation-aware analysis and a native run remained required; stable30 and
 the full typed native game migration remain open.
+
+### Actual atomic observation hooks (#219)
+
+Fork-first modular branch `codex/issue-219-atomic-observers` contains
+[`60bb1ae1`](https://github.com/robbe1912/ps3recomp/commit/60bb1ae10c81ffe8e2e8085e18377f0381ac8a44),
+layered on the prior combined branch. `combined` fast-forwarded to the same
+commit; master remains separate. No upstream push or outside-game PR was made.
+Modular [atomic CI 40009267498](https://github.com/robbe1912/ps3recomp/actions/runs/40009267498)
+and [native regressions 40009267311](https://github.com/robbe1912/ps3recomp/actions/runs/40009267311)
+pass Windows/Linux/macOS. Combined
+[atomic CI 40010599712](https://github.com/robbe1912/ps3recomp/actions/runs/40010599712)
+and [native regressions 40010599761](https://github.com/robbe1912/ps3recomp/actions/runs/40010599761)
+also pass all three platforms.
+
+The authored observer header is byte-identical to the fork Git blob, SHA256
+`df7081a1582f3a384b94b0ac3ef1c77d450ffc27b7be459ce3d8d8e13495c64b`.
+Only selected function deltas, installer blocks and includes were curated into
+the PPU/SPU modules; inverse edits recover their original bytes exactly.
+Existing public alias normalization, diagnostics, two-word PPU watch reporting
+and line-hook notification remain intact. CMake receives only the default-OFF
+diagnostic option and its compile definition, preserving the curated tests guard.
+Runner paths and authored fixture dependencies account for these existing
+public differences, including the absence of the fork's independent taskset
+notification. No original program stream or guest capture is included.
+
+`python scripts/check_native_atomic_observer.py --mutants --syntax` exercises
+actual extracted production atomic functions with authored VM/lock/coherence
+dependencies, checks full SPU translation-unit syntax, and rejects five mutants
+at specific assertions. Local LLVM-MinGW and Windows SDK checks pass. These
+checks establish observation behavior within that fixture, not full runtime
+coherence, bounded recorder integration, job identity, live timing, capture
+overhead or an FPS improvement. Both public audit jobs run the checks and retain
+their authored logs for five days. The
+[timeline report](research/NATIVE_JOB_TIMELINE.md) states remaining #219 gates;
+no observer is installed by the game, and the ordinary build has no probe code.

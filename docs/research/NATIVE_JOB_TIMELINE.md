@@ -116,11 +116,56 @@ Fork-first commits and focused cross-platform CI are recorded in
 [vendor provenance](../VENDOR.md). The production C/header are byte-identical
 to the fork; only test/runner paths are adapted for this repository.
 
+## Actual atomic-store observation hooks
+
+The follow-up adds generic PPU32/PPU64 CAS and SPU conditional/unconditional
+line-store observations. `PS3RECOMP_ATOMIC_OBSERVATION` defaults OFF; ordinary
+builds preprocess out probe branches, buffers and clocks. An enabled build
+still requires an owner to install immutable observers while producers are
+quiescent. Installation failure must be reported. No game owner is installed
+in this checkpoint.
+
+PPU payloads use the actual CAS operands and returned observed value, in guest
+byte order. Early reservation rejection remains distinct from a valid-memory
+attempt and successful commit. SPU before/after payloads are copied under the
+existing coherency lock; delivery follows unlock. A subsequent writer can
+change shared memory without changing the retained observation. GETLLAR and
+ordinary DMA are excluded from these store hooks. Existing notifications,
+watch diagnostics, error reporting and reservation outcomes are preserved.
+
+The owner supplies a monotonic clock and optional pre-copy filter. Clock and
+delivery callbacks run outside reservation/coherency locks. Timestamp endpoints
+bound the operation; they are **not exact commit instants or a total commit
+order**. Raw saved PC/LR and context addresses do not establish instruction or
+job lifetime identity. Filters must expose uncovered/excluded paths. These
+constraints still apply when callbacks append to the bounded recorder.
+
+`python scripts/check_native_atomic_observer.py --mutants --syntax` extracts
+the actual production CAS/store functions and compiles them with authored
+VM/reservation/diagnostic dependencies, in both build modes. It also syntax
+checks the complete production SPU translation unit in both modes. Tests cover
+success/failure, lost reservations, both scalar widths, all three SPU store
+commands, invalid ranges/context/clock, rejected filters, lock release,
+preserved peer notifications and a deliberate later writer. Five compiled
+mutants must fail their specific assertions: false scalar completion, late
+payload reread, hidden clock failure, false SPU completion and delivery under
+lock. LLVM-MinGW functional checks and Windows SDK checks pass locally; this
+is not full reservation-coherence, live timeline or capture-overhead proof.
+Separately, the complete public PPU translation unit passes Windows SDK syntax
+checks in both modes with the actual selected generated header read-only.
+This is not a full target link or native run.
+
+The public fixture explicitly retains curated-only watch/alias dependencies
+and the existing line-hook notification path; it does not import the fork's
+independent taskset notification. Selective runtime patches invert exactly to
+the original public modules. Fork provenance and cross-platform checks are in
+[VENDOR](../VENDOR.md).
+
 ## Remaining integration gates
 
-1. Add generic opt-in observations on the fork for successful PPU conditional
-   stores, actual SPU atomic publication, admission/worker boundaries and real
-   transfers. Preserve native-leaf admission and all original failures. Event
+1. Connect the atomic observations above and add generic opt-in admission/worker
+   boundaries and real transfers on the fork. Preserve native-leaf admission
+   and all original failures. Event
    capture must not run guest work, allocate, format or take application locks.
    Qualify precise source attribution in interpreted and lifted paths: a lifted
    block's saved PC alone does not identify every channel instruction inside it.

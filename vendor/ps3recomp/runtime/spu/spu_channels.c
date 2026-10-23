@@ -13,6 +13,7 @@
  */
 
 #include "spu_dma.h"
+#include "ps3emu/native_atomic_observer.h"
 #include "spu_coherency.h" /* lock-line lock + PPU-write coherence bitmap */
 #include "spu_helpers.h"   /* spu_splat_u32 / spu_ls_read128 (SMC microstep) */
 #include "spu_lockstep.h"
@@ -909,6 +910,22 @@ void spu_pm_store_note(spu_context* ctx, uint32_t ea, uint32_t lsa, const char* 
 }
 
 /* Returns 1 if `cmd` is an atomic line op and was handled here, else 0. */
+/* PS3_ATOMIC_OBSERVER_SPU_BEGIN */
+#if PS3_ATOMIC_OBSERVATION
+static const ps3_atomic_observer* s_spu_atomic_observer;
+#endif
+int ps3_atomic_observer_install_spu(const ps3_atomic_observer* o)
+{
+    if (o && (!o->clock || !o->observe)) return 0;
+#if PS3_ATOMIC_OBSERVATION
+    s_spu_atomic_observer = o;
+    return 1;
+#else
+    return o == NULL;
+#endif
+}
+/* PS3_ATOMIC_OBSERVER_SPU_END */
+
 static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
 {
     /* Classify FIRST. Every MFC_Cmd write lands here, and only the switch at
@@ -928,6 +945,12 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
       ea = sysmem_spu_alias_fixup(ea); }
     uint8_t* ls  = &ctx->ls[lsa];
     uint8_t* mem = vm_base + ea;
+#if PS3_ATOMIC_OBSERVATION
+    const ps3_atomic_observer* observer = cmd == MFC_GETLLAR_CMD ? NULL :
+        ps3_atomic_observer_select(s_spu_atomic_observer, PS3_ATOMIC_SPU_STORE,
+            (uintptr_t)ctx, ea, MFC_ATOMIC_LINE);
+    ps3_atomic_observation observation;
+#endif
     /* Round 21(b): final-EA truth for policy atomics. bg_276 killed the
      * 0x7FFFFFFF rule (0x00440440 holds EBOOT .text, not the queue); the
      * container-arena rule 0x40000000|(ea&0x3FFFFFFF) puts 0x80440440 at
@@ -1008,6 +1031,15 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
         } else {
             ctx->atomic_stat = 1;   /* PUTLLC failure (line "moved") */
         }
+        #if PS3_ATOMIC_OBSERVATION
+        if (observer) {
+            ps3_atomic_observation_begin(&observation, observer,
+                PS3_ATOMIC_SPU_STORE, cmd, ea, MFC_ATOMIC_LINE, (uintptr_t)ctx,
+                (uint32_t)ctx->pc & SPU_LS_MASK, ctx->gpr[0]._u32[0] & SPU_LS_MASK);
+            ps3_atomic_observation_end(&observation, observer,
+                PS3_ATOMIC_INVALID_RANGE | PS3_ATOMIC_DATA_UNAVAILABLE);
+        }
+        #endif
         return 1;
     }
 
@@ -1193,7 +1225,15 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
         { extern uint32_t g_barrier_sync_watch;
           uint32_t b = g_barrier_sync_watch;
           if (b && (ea & ~127u) == (b & ~127u)) g_spu_putllc_sync_hit++; }
+        #if PS3_ATOMIC_OBSERVATION
+        if (observer) ps3_atomic_observation_begin(&observation, observer,
+            PS3_ATOMIC_SPU_STORE, cmd, ea, MFC_ATOMIC_LINE, (uintptr_t)ctx,
+            (uint32_t)ctx->pc & SPU_LS_MASK, ctx->gpr[0]._u32[0] & SPU_LS_MASK);
+        #endif
         spu_lockline_lock();
+        #if PS3_ATOMIC_OBSERVATION
+        if (observer) memcpy(observation.before, mem, MFC_ATOMIC_LINE);
+        #endif
         if (ctx->resv_valid && ctx->resv_ea == ea &&
             memcmp(mem, ctx->resv_line, MFC_ATOMIC_LINE) == 0) {
             { extern void spu_lockguard_check(spu_context*, uint32_t, const uint8_t*, uint32_t, const char*);
@@ -1301,13 +1341,28 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
                       ctx->atomic_stat ? "FAIL" : "OK",
                       ctx->gpr[0]._u32[0] & SPU_LS_MASK, ea); }
         ctx->resv_valid = 0;                           /* reservation consumed */
+        #if PS3_ATOMIC_OBSERVATION
+        if (observer) memcpy(observation.after, mem, MFC_ATOMIC_LINE);
+        #endif
         spu_lockline_unlock();
+        #if PS3_ATOMIC_OBSERVATION
+        if (observer) ps3_atomic_observation_end(&observation, observer,
+            PS3_ATOMIC_ATTEMPTED | (ctx->atomic_stat == 0 ? PS3_ATOMIC_COMMITTED : 0));
+        #endif
         if (ctx->atomic_stat == 0 && g_spu_line_commit_hook) g_spu_line_commit_hook(ea & ~127u);
         return 1;
 
     case MFC_PUTLLUC_CMD:
     case MFC_PUTQLLUC_CMD:
+        #if PS3_ATOMIC_OBSERVATION
+        if (observer) ps3_atomic_observation_begin(&observation, observer,
+            PS3_ATOMIC_SPU_STORE, cmd, ea, MFC_ATOMIC_LINE, (uintptr_t)ctx,
+            (uint32_t)ctx->pc & SPU_LS_MASK, ctx->gpr[0]._u32[0] & SPU_LS_MASK);
+        #endif
         spu_lockline_lock();
+        #if PS3_ATOMIC_OBSERVATION
+        if (observer) memcpy(observation.before, mem, MFC_ATOMIC_LINE);
+        #endif
         { extern void spu_lockguard_check(spu_context*, uint32_t, const uint8_t*, uint32_t, const char*);
           spu_lockguard_check(ctx, ea, ls, MFC_ATOMIC_LINE, "PUTLLUC"); }
         spu_pm_store_note(ctx, ea, lsa, "PUTLLUC");
@@ -1320,7 +1375,14 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
          * has already overwritten. */
         spu_coh_notify_write(ea);
         ctx->resv_valid = 0; ctx->atomic_stat = 2;   /* PUTLLUC complete */
+        #if PS3_ATOMIC_OBSERVATION
+        if (observer) memcpy(observation.after, mem, MFC_ATOMIC_LINE);
+        #endif
         spu_lockline_unlock();
+        #if PS3_ATOMIC_OBSERVATION
+        if (observer) ps3_atomic_observation_end(&observation, observer,
+            PS3_ATOMIC_ATTEMPTED | PS3_ATOMIC_COMMITTED);
+        #endif
         if (g_spu_line_commit_hook) g_spu_line_commit_hook(ea & ~127u);
         return 1;
 

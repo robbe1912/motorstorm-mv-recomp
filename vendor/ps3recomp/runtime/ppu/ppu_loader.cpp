@@ -1,4 +1,5 @@
 #include "ps3emu/guest_read_sync.h"
+#include "ps3emu/native_atomic_observer.h"
 /*
  * ps3recomp - PPU runtime loader
  *
@@ -933,18 +934,54 @@ static inline int resv_off() { static int v = -1; if (v < 0) v = getenv("PPU_RES
 extern "C" void ppu_ww_note_atomic(uint32_t ea, uint32_t val, int width, void* ra);
 extern "C" uint32_t g_ww_lo, g_ww_hi;
 
+/* PS3_ATOMIC_OBSERVER_PPU_BEGIN */
+#if PS3_ATOMIC_OBSERVATION
+static const ps3_atomic_observer* s_ppu_atomic_observer;
+#endif
+extern "C" int ps3_atomic_observer_install_ppu(const ps3_atomic_observer* o)
+{
+    if (o && (!o->clock || !o->observe)) return 0;
+#if PS3_ATOMIC_OBSERVATION
+    s_ppu_atomic_observer = o;
+    return 1;
+#else
+    return o == NULL;
+#endif
+}
+/* PS3_ATOMIC_OBSERVER_PPU_END */
+
 extern "C" int ppu_stwcx32(uint64_t ea, uint32_t expected, uint32_t val)
 {
     uint32_t exp_raw = __builtin_bswap32(expected);
     uint32_t new_raw = __builtin_bswap32(val);
-    if (resv_off())
-        return __atomic_compare_exchange_n((uint32_t*)(vm_base + ea), &exp_raw, new_raw,
+#if PS3_ATOMIC_OBSERVATION
+    const ps3_atomic_observer* observer = ps3_atomic_observer_select(s_ppu_atomic_observer,
+        PS3_ATOMIC_PPU32, (uintptr_t)g_active_ctx, ea, 4);
+    ps3_atomic_observation observation;
+    if (observer) ps3_atomic_observation_begin(&observation, observer,
+        PS3_ATOMIC_PPU32, 0, ea, 4, (uintptr_t)g_active_ctx, 0,
+        g_active_ctx ? (uint32_t)g_active_ctx->lr : 0);
+#endif
+    if (resv_off()) {
+        int ok = __atomic_compare_exchange_n((uint32_t*)(vm_base + ea), &exp_raw, new_raw,
                                            0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST) ? 1 : 0;
+#if PS3_ATOMIC_OBSERVATION
+        if (observer) ps3_atomic_scalar_end(&observation, observer, &exp_raw, &new_raw, ok);
+#endif
+        return ok;
+    }
     ppu_context* self = g_active_ctx;
     if (resv_diag() && self) resv_check_reg(self);
     volatile LONG* L = resv_slot(ea);
     resv_lock(L);
-    if (self && self->reserve_addr != (uint32_t)ea) { resv_unlock(L); return 0; }   /* reservation lost */
+    if (self && self->reserve_addr != (uint32_t)ea) {
+        resv_unlock(L);
+#if PS3_ATOMIC_OBSERVATION
+        if (observer) ps3_atomic_observation_end(&observation, observer,
+            PS3_ATOMIC_RESERVATION_LOST | PS3_ATOMIC_DATA_UNAVAILABLE);
+#endif
+        return 0;
+    }   /* reservation lost */
     /* On a line an SPU has reserved, take the lock-line lock around the CAS and
      * notify: the same serialization the coherent stores use, so a PPU commit
      * cannot land inside an SPU PUTLLC's compare/commit window (nor the
@@ -969,6 +1006,9 @@ extern "C" int ppu_stwcx32(uint64_t ea, uint32_t expected, uint32_t val)
     }
     if (ok) ppu_resv_break(ea);
     resv_unlock(L);
+#if PS3_ATOMIC_OBSERVATION
+    if (observer) ps3_atomic_scalar_end(&observation, observer, &exp_raw, &new_raw, ok);
+#endif
     /* PPU_CASWATCH=<hex ea>: log successful stwcx. on that 128-byte line.
      * PPU_WWATCH hooks plain stores only; an atomic counter (a semaphore an SPU
      * spins on) is written exclusively through here and looked untouched. */
@@ -1025,14 +1065,34 @@ extern "C" int ppu_stdcx64(uint64_t ea, uint64_t expected, uint64_t val)
 {
     uint64_t exp_raw = __builtin_bswap64(expected);
     uint64_t new_raw = __builtin_bswap64(val);
-    if (resv_off())
-        return __atomic_compare_exchange_n((uint64_t*)(vm_base + ea), &exp_raw, new_raw,
+#if PS3_ATOMIC_OBSERVATION
+    const ps3_atomic_observer* observer = ps3_atomic_observer_select(s_ppu_atomic_observer,
+        PS3_ATOMIC_PPU64, (uintptr_t)g_active_ctx, ea, 8);
+    ps3_atomic_observation observation;
+    if (observer) ps3_atomic_observation_begin(&observation, observer,
+        PS3_ATOMIC_PPU64, 0, ea, 8, (uintptr_t)g_active_ctx, 0,
+        g_active_ctx ? (uint32_t)g_active_ctx->lr : 0);
+#endif
+    if (resv_off()) {
+        int ok = __atomic_compare_exchange_n((uint64_t*)(vm_base + ea), &exp_raw, new_raw,
                                            0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST) ? 1 : 0;
+#if PS3_ATOMIC_OBSERVATION
+        if (observer) ps3_atomic_scalar_end(&observation, observer, &exp_raw, &new_raw, ok);
+#endif
+        return ok;
+    }
     ppu_context* self = g_active_ctx;
     if (resv_diag() && self) resv_check_reg(self);
     volatile LONG* L = resv_slot(ea);   /* ea and ea+4 share a 16-byte-block slot */
     resv_lock(L);
-    if (self && self->reserve_addr != (uint32_t)ea) { resv_unlock(L); return 0; }
+    if (self && self->reserve_addr != (uint32_t)ea) {
+        resv_unlock(L);
+#if PS3_ATOMIC_OBSERVATION
+        if (observer) ps3_atomic_observation_end(&observation, observer,
+            PS3_ATOMIC_RESERVATION_LOST | PS3_ATOMIC_DATA_UNAVAILABLE);
+#endif
+        return 0;
+    }
     int coh = spu_coh_is_reserved((uint32_t)ea);
     if (coh) spu_lockline_lock();
     int ok = __atomic_compare_exchange_n((uint64_t*)(vm_base + ea), &exp_raw, new_raw, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST) ? 1 : 0;
@@ -1042,6 +1102,9 @@ extern "C" int ppu_stdcx64(uint64_t ea, uint64_t expected, uint64_t val)
     }
     if (ok) { ppu_resv_break(ea); ppu_resv_break(ea + 4); }  /* 8-byte store spans two words */
     resv_unlock(L);
+#if PS3_ATOMIC_OBSERVATION
+    if (observer) ps3_atomic_scalar_end(&observation, observer, &exp_raw, &new_raw, ok);
+#endif
     if (ok) {   /* round 27 [wp]: report as two words, like the ww window below */
         wp_hit((uint32_t)ea,     4, (uint32_t)(val >> 32), "stdcx",
                __builtin_return_address(0));

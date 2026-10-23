@@ -10,8 +10,9 @@ handoffs to Unreal/Godot task mechanisms. It selects a visibility-job
 publication-to-completion timeline before choosing between admission changes
 and a complete typed native batch; adding workers alone is not that migration.
 The [job-timeline checkpoint](research/NATIVE_JOB_TIMELINE.md) records the
-bounded recorder and verified original descriptor/hint/marker bindings; actual
-hooks, job identities and a live timeline remain issue 219's next gates.
+bounded recorder, verified original descriptor/hint/marker bindings and opt-in
+actual atomic observations. Admission/job hooks, lifetime-qualified identities
+and a live timeline remain issue 219's next gates.
 
 For each replacement, bind the actual workload and its inputs, outputs, ownership and completion ordering; implement the game operation directly with native data and execution; compare against the retained original behavior; then validate normal PLAY and frame times. Keep the interpreter as a migration bridge and correctness reference for work that has not yet been replaced. Interpreter optimization alone does not establish progress toward the native source architecture. Reusable toolkit corrections still follow the fork-first modular and combined workflow in [vendor provenance](VENDOR.md); game implementations belong in this repository.
 

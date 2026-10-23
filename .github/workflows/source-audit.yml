@@ -92,6 +92,16 @@ jobs:
           path: |
             build/self-tests/fp-snapshot/**/*.log
             build/self-tests/fp-snapshot/**/*.json
+      - name: Actual atomic observations and specific negative controls
+        run: python scripts/check_native_atomic_observer.py --mutants --syntax
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-atomic-observers-${{ runner.os }}
+          retention-days: 5
+          path: |
+            build/self-tests/native-atomic-observers/**/*.log
+            build/self-tests/native-atomic-observers/**/*.json
       - name: Bounded native job trace and actual negative controls
         run: python scripts/check_native_job_trace.py --mutants
       - uses: actions/upload-artifact@v4
@@ -239,6 +249,16 @@ jobs:
           path: |
             build/self-tests/fp-snapshot/**/*.log
             build/self-tests/fp-snapshot/**/*.json
+      - name: Actual atomic observations and specific negative controls
+        run: python scripts/check_native_atomic_observer.py --mutants --syntax
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-atomic-observers-${{ runner.os }}
+          retention-days: 5
+          path: |
+            build/self-tests/native-atomic-observers/**/*.log
+            build/self-tests/native-atomic-observers/**/*.json
       - name: Bounded native job trace and actual negative controls
         run: python scripts/check_native_job_trace.py --mutants
       - uses: actions/upload-artifact@v4
