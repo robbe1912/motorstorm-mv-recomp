@@ -64,6 +64,8 @@ def main():
                    help='Bind verified native cooperative dependency waits (default on)')
     b.add_argument('--native-visibility',action=argparse.BooleanOptionalAction,default=False,
                    help='Bind verified visibility prototype (default off; reference execution remains the runtime default)')
+    b.add_argument('--native-particle-thresholds',action=argparse.BooleanOptionalAction,default=False,
+                   help='Bind the verified particle scan (default off; runtime reference/shadow/native policy remains explicit)')
     g=sub.add_parser('generate'); g.add_argument('--stage',choices=['ppu','spu'],required=True); g.add_argument('--jobs',type=int,default=8)
     sub.add_parser('check')
     args=ap.parse_args()
@@ -109,6 +111,7 @@ def main():
         command.extend([f'-DPORT_NATIVE_WORLD_TRANSFORMS={"ON" if args.native_world_transforms else "OFF"}',
                         f'-DPORT_NATIVE_JOB_WAIT={"ON" if args.native_job_wait else "OFF"}',
                         f'-DPORT_NATIVE_VISIBILITY={"ON" if args.native_visibility else "OFF"}',
+                        f'-DPORT_NATIVE_PARTICLE_THRESHOLDS={"ON" if args.native_particle_thresholds else "OFF"}',
                         f'-DPORT_TARGET_ELF={c["elf"]}'])
         logs=ROOT/'temp/builds'/datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
         logged_run(command,logs/'configure.log',env=env)
@@ -119,8 +122,15 @@ def main():
         identity.update(build_type='Debug',optimized_checked=args.optimize,native_world_transforms=args.native_world_transforms,
                         native_job_wait=args.native_job_wait)
         identity['native_visibility']=args.native_visibility
+        identity['native_particle_thresholds']=args.native_particle_thresholds
+        if args.native_particle_thresholds:
+            identity['native_particle_binding']=json.loads((binary/'native-particle-input/identity.json').read_text())
+            identity['native_particle_binding_generator_sha256']=hashlib.sha256((ROOT/'scripts/native_particle_binding.py').read_bytes()).hexdigest()
         if args.native_world_transforms or args.native_job_wait or args.native_visibility:
             identity['native_world_binding']=json.loads((binary/'native-world-binding.json').read_text())
+            identity['native_world_sources_sha256']={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
+                for p in sorted((ROOT/'src/motorstorm').glob('*')) if p.is_file()}
+        elif args.native_particle_thresholds:
             identity['native_world_sources_sha256']={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in sorted((ROOT/'src/motorstorm').glob('*')) if p.is_file()}
         (binary/'build_identity.json').write_text(json.dumps(identity,indent=2)); print('Build identity:',identity['sha256'])
