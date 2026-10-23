@@ -1,5 +1,46 @@
 # Vendor provenance and upstream
 
+## Concurrent policy counter isolation (issue 202)
+
+The curated joined-lane consumer still used shared `g_spurs_pm_exited`,
+`g_spurs_pm_polls` and `g_wws_batch_gets` state. An authored two-thread reproduction
+using its actual policy runner and kernel intercepts failed: a second lane's
+kernel exit made the first lane's unexpected stop return success. This is a
+behavioral race, not merely inaccurate telemetry.
+
+The existing own-fork TLS correction is selectively ported with its shared
+declaration header from modular `codex/issue-202-policy-counter-declarations`
+at `8b17ab7`, integrated into `combined` at `7e6bf70`. The fork's actual Windows
+scheduler fixture and compiled serialized-admission control pass, as does
+[combined CI 39934434638](https://github.com/robbe1912/ps3recomp/actions/runs/39934434638).
+The game retains its joined-round scheduling: each worker records whether it
+polled; the coordinator combines those results after owned joins for the existing
+idle/burst decisions. Reading coordinator TLS alone would lose productive work
+from other lanes. Counters clear before admission so rejected runs cannot report
+previous productivity. Thread creation/join/close failures remain visible fatal
+failures; no work is synthesized.
+
+`python scripts/check_spurs_policy_counters.py --mutants` compiles the actual
+consumer runner, scheduler round, channels, interpreter, MFC, coherency and drain
+paths with assertions enabled. It tests compiled and interpreted kernel-service
+intercepts, actual command GETs, independent stop/exit/poll/DMA state, all one-to-six
+lane rounds with each lane separately productive, idle rounds and rejected-run
+reset. Compiled mutants restoring shared counters, dropping worker productivity
+or delaying admission reset must fail their specific behavioral assertion in
+both intercept modes; compilation failures, unrelated crashes and timeouts are
+not accepted. Exact commands, source hashes and complete diagnostics remain in
+ignored `build/self-tests/spurs-policy-counters`. The same fixture passes against
+the private consumer with its separate SIMD scope implementation linked, retaining
+the original boundary/MFC safeguards and its unrelated source edits.
+
+This removes a prerequisite race for selective scheduling work. It does not
+change workload admission/order, interpreter policy or tuning, replace a game
+operation, or demonstrate an FPS gain. Native correctness and frame-time evidence
+remain required; [issue 202](https://github.com/robbe1912/motorstorm-mv-recomp/issues/202)
+tracks this correction, [155](https://github.com/robbe1912/motorstorm-mv-recomp/issues/155)
+tracks producer attribution and [27](https://github.com/robbe1912/motorstorm-mv-recomp/issues/27)
+tracks stable 30 FPS.
+
 ## Native Windows scheduler validation (issue 206)
 
 Issue [206](https://github.com/robbe1912/motorstorm-mv-recomp/issues/206)

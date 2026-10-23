@@ -267,14 +267,14 @@ static void spu_pm_interp_trampoline(spu_context* ctx)
                           v0[0], v0[1], v0[2], v0[3],
                           ctx->list_stall_mask);
                   fflush(stderr); } }
-            extern volatile unsigned g_spurs_pm_exited;
+
             g_spurs_pm_exited = 1;
             ctx->status = SPU_STATUS_STOPPED_BY_STOP;
             spu_halt(ctx);
             return;
         }
         if (pc == SPURS_PM_SELECT_WORKLOAD_LS) {
-            extern volatile unsigned g_spurs_pm_polls;
+
             ++g_spurs_pm_polls;
             ctx->gpr[3] = spu_make_preferred_u32(spu_pm_current_workload(ctx));
             ctx->pc = ctx->gpr[0]._u32[0] & SPU_LS_MASK;
@@ -2959,7 +2959,7 @@ void spu_indirect_branch(spu_context* ctx)
      * these two reserved addresses as exitToKernelAddr / selectWorkloadAddr in
      * the SpursKernelContext (spurs_policy.c). */
     if (ctx->policy_mode) {
-        extern volatile unsigned g_spurs_pm_polls, g_spurs_pm_exited;
+
         if (ctx->pc == SPURS_PM_EXIT_TO_KERNEL_LS) {
             /* Module exit: the workload returned to the kernel (drained/yield).
              * Print gated: fires once per policy run = thousands/sec. */

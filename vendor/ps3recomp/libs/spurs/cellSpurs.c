@@ -1597,6 +1597,7 @@ struct spurs_pm_worker_arg {
     spu_lifted_entry_fn fn; int image_id;
     const uint8_t* pm; uint32_t pm_size;
     uint64_t arg; uint32_t wid, ea, spu_num;
+    unsigned polled;
 };
 static DWORD WINAPI spurs_pm_worker(LPVOID p)
 {
@@ -1606,7 +1607,44 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
     struct spurs_pm_worker_arg* a = (struct spurs_pm_worker_arg*)p;
     spu_run_policy_module(a->fn, a->image_id, a->pm, a->pm_size,
                           a->arg, a->wid, a->ea, a->spu_num);
+    a->polled = g_spurs_pm_polls != 0;
     return 0;
+}
+
+/* Preserve the joined-round scheduler, but collect each runner's own result.
+ * Reading coordinator TLS after a join would discard nonzero worker polls. */
+static unsigned spurs_pm_run_lanes(struct spurs_pm_worker_arg base, unsigned lanes)
+{
+    HANDLE threads[5];
+    struct spurs_pm_worker_arg workers[5];
+    if (lanes < 1 || lanes > 6) {
+        fprintf(stderr, "[spurs-pm] invalid lane count %u\n", lanes); abort();
+    }
+    for (unsigned sn = 1; sn < lanes; sn++) {
+        workers[sn - 1] = base;
+        workers[sn - 1].spu_num = sn;
+        workers[sn - 1].polled = 0;
+        threads[sn - 1] = CreateThread(NULL, 1u << 20, spurs_pm_worker,
+                                       &workers[sn - 1], 0, NULL);
+        if (!threads[sn - 1]) {
+            fprintf(stderr, "[spurs-pm] failed to start lane %u\n", sn); abort();
+        }
+        char name[32]; snprintf(name, sizeof name, "spurs_pm%u", sn);
+        ps3_thread_setname((uintptr_t)threads[sn - 1], name);
+    }
+    base.spu_num = 0;
+    spurs_pm_worker(&base);
+    unsigned productive = base.polled;
+    for (unsigned sn = 1; sn < lanes; sn++) {
+        if (WaitForSingleObject(threads[sn - 1], INFINITE) != WAIT_OBJECT_0) {
+            fprintf(stderr, "[spurs-pm] failed to join lane %u\n", sn); abort();
+        }
+        productive |= workers[sn - 1].polled;
+        if (!CloseHandle(threads[sn - 1])) {
+            fprintf(stderr, "[spurs-pm] failed to close lane %u\n", sn); abort();
+        }
+    }
+    return productive;
 }
 
 static DWORD WINAPI spurs_kernel_thread(LPVOID p)
@@ -1800,7 +1838,7 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
                 if (kicked) s_idle[wid] = 0;
                 u32 cad = 1u << (s_idle[wid] > (u32)s_icap ? (u32)s_icap : s_idle[wid]);
                 if (!kicked && (s_pass_no & (cad - 1)) != 0) continue;
-                extern volatile unsigned g_spurs_pm_polls;
+
                 /* Did-work restored to the round-3 signal (polls>0, kernel
                  * service bumps it every quantum): the round-4 PUTLLC-delta
                  * re-keying correlated with the nondeterministic t~20s
@@ -1861,44 +1899,23 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
                     s_fs = e ? atoi(e) : -1; }
                   if (s_fs > 0) maxcont = (u8)(s_fs > 6 ? 6 : s_fs); }
                 *(vm_base + ea + SPURS_WKL_CURCONT + wid) = maxcont;
+                unsigned productive;
                 {
                     const uint8_t* pm = (const uint8_t*)vm_base + (u32)(uintptr_t)s_workloads[wid].pm;
                     uint32_t sz = s_workloads[wid].sizePm;
-                    if (maxcont <= 1) {
-                        spu_run_policy_module(r->fn, r->image_id, pm, sz, arg, wid, ea, 0);
-                    } else {
-                        /* Run the workload's virtual SPUs CONCURRENTLY (see
-                         * spurs_pm_worker): each lane advances in parallel so the
-                         * cross-SPU barrier resolves. Spawn maxcont-1 workers for
-                         * lanes 1..N-1 and run lane 0 on this thread, then join. */
-                        HANDLE th[8]; struct spurs_pm_worker_arg wa[8];
-                        unsigned nth = 0;
-                        for (u32 sn = 1; sn < maxcont && nth < 7; sn++, nth++) {
-                            wa[nth].fn = r->fn; wa[nth].image_id = r->image_id;
-                            wa[nth].pm = pm; wa[nth].pm_size = sz;
-                            wa[nth].arg = arg; wa[nth].wid = wid; wa[nth].ea = ea;
-                            wa[nth].spu_num = sn;
-                            th[nth] = CreateThread(NULL, 1u << 20, spurs_pm_worker, &wa[nth], 0, NULL);
-                            if (th[nth]) { char _tn[32]; snprintf(_tn, sizeof _tn, "spurs_pm%u", sn); ps3_thread_setname((uintptr_t)th[nth], _tn); }
-                        }
-                        { static int _n = 0; if (_n++ < 8) {
-                            fprintf(stderr, "[spurs-pm] wid=%u contention=%u -> %u lane worker(s) (ea=0x%08X)\n",
-                                    wid, maxcont, nth, ea); fflush(stderr); } }
-                        spu_run_policy_module(r->fn, r->image_id, pm, sz, arg, wid, ea, 0);
-                        if (nth) {
-                            WaitForMultipleObjects(nth, th, TRUE, INFINITE);
-                            for (unsigned k = 0; k < nth; k++) CloseHandle(th[k]);
-                        }
-                    }
+                    struct spurs_pm_worker_arg round = {
+                        r->fn, r->image_id, pm, sz, arg, wid, ea, 0, 0
+                    };
+                    productive = spurs_pm_run_lanes(round, maxcont > 1 ? maxcont : 1);
                 }
                 *(vm_base + ea + SPURS_WKL_CURCONT + wid) = 0;
                 /* Round-3 did-work: polls>0 (the kernel service bumps it
                  * every quantum that ran). The PUTLLC-delta keying was the
                  * round-4 experiment -- reverted with its block above. */
-                if (g_spurs_pm_polls == 0) { if (s_idle[wid] < 8) s_idle[wid]++; }
+                if (!productive) { if (s_idle[wid] < 8) s_idle[wid]++; }
                 else s_idle[wid] = 0;
                 /* Burst only while the module keeps polling, under the cap. */
-                if (g_spurs_pm_polls == 0 || burst + 1 >= (u32)s_burst) break;
+                if (!productive || burst + 1 >= (u32)s_burst) break;
             }
         }
     }

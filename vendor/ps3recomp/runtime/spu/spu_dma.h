@@ -16,6 +16,7 @@
 #define SPU_DMA_H
 
 #include "spu_context.h"
+#include "spu_policy_counters.h"
 #include "spu_coherency.h"
 #include <stdint.h>
 #include <string.h>
@@ -1888,10 +1889,10 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
      * to LS 0xC00; if this arrives empty/garbage the interrupt handler has
      * nothing to stage and the pipeline idles forever. Dump the first words. */
     if (spu->image_id == 2 && lsa == 0xC00 && cmd == 0x40 && rc == 0) {
-        /* Global count of loadCommands fetches: the per-run claim-vs-stage
+        /* Runner-local count of loadCommands fetches: the per-run claim-vs-stage
          * summary in spurs_policy.c diffs this across a PM run to catch the
          * dispatch that CLAIMS a ticket but never stages its job. */
-        { extern volatile unsigned g_wws_batch_gets; g_wws_batch_gets++; }
+        g_wws_batch_gets++;
         static int _n = 0;
         if (_n++ < 8) {
             const uint8_t* p = spu->ls + 0xC00;

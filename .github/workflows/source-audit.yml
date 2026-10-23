@@ -72,6 +72,8 @@ jobs:
         run: python scripts/check_spurs_guest_fields.py
       - name: Scalar-u64 SPURS policy arguments
         run: python scripts/check_spurs_policy_arguments.py
+      - name: Concurrent policy counters and joined productivity
+        run: python scripts/check_spurs_policy_counters.py --mutants
       - name: Productive SPU interrupt returns
         run: python scripts/check_spu_iret_progress.py
       - name: Interpreter thread reporting isolation
@@ -159,6 +161,8 @@ jobs:
         run: python scripts/check_spurs_guest_fields.py
       - name: Scalar-u64 SPURS policy arguments
         run: python scripts/check_spurs_policy_arguments.py
+      - name: Concurrent policy counters and joined productivity
+        run: python scripts/check_spurs_policy_counters.py --mutants
       - name: Productive SPU interrupt returns
         run: python scripts/check_spu_iret_progress.py
       - name: Interpreter thread reporting isolation

@@ -25,6 +25,7 @@
 #define SPU_WORKLOAD_H
 
 #include "spu_context.h"
+#include "spu_policy_counters.h"
 #include "spu_task_lifecycle.h"
 #include <stddef.h>
 #include <stdint.h>
