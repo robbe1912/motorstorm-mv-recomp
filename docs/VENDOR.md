@@ -937,6 +937,11 @@ Fork-first modular branch `codex/issue-219-atomic-observers` contains
 [`60bb1ae1`](https://github.com/robbe1912/ps3recomp/commit/60bb1ae10c81ffe8e2e8085e18377f0381ac8a44),
 layered on the prior combined branch. `combined` fast-forwarded to the same
 commit; master remains separate. No upstream push or outside-game PR was made.
+Follow-up [`7aa4e904`](https://github.com/robbe1912/ps3recomp/commit/7aa4e904049f87a900d3de0b297a8186ae119711)
+is integrated on both branches. The new complete-source Linux check exposed
+a missing forward declaration before the curated policy trampoline calls
+`spu_halt`; this declares the existing function without changing halt behavior,
+disabling diagnostics or relaxing the compiler gate.
 Modular [atomic CI 40009267498](https://github.com/robbe1912/ps3recomp/actions/runs/40009267498)
 and [native regressions 40009267311](https://github.com/robbe1912/ps3recomp/actions/runs/40009267311)
 pass Windows/Linux/macOS. Combined

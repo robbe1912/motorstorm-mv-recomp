@@ -14,6 +14,7 @@
 
 #include "spu_dma.h"
 #include "ps3emu/native_atomic_observer.h"
+void spu_halt(spu_context*); /* Policy trampolines can precede its definition. */
 #include "spu_coherency.h" /* lock-line lock + PPU-write coherence bitmap */
 #include "spu_helpers.h"   /* spu_splat_u32 / spu_ls_read128 (SMC microstep) */
 #include "spu_lockstep.h"
