@@ -616,5 +616,64 @@ historical visibility stalls, not current exclusive CPU cost or frame time.
 Together with [current native wait timing](../NATIVE_GAME.md), they select
 visibility work for a native candidate. The sampled loop contains plane-like
 float/FMA comparisons against eight coefficient triplets; inspected counts
-are five or six. Full input ownership, numerical semantics, output/ABI parity
-and current invocation still require proof before replacing that operation.
+are five or six. The later ownership, numerical, complete-state and current
+invocation proof for the merged replacement is recorded in
+[Native game code](../NATIVE_GAME.md).
+
+### Vehicle wait coverage after native visibility replacement (issue 155)
+
+Two further owned, muted checked DX12 runs used the same validated native
+visibility build (EXE SHA256 `125ad91588215c7e4ba8b68ff3d23763209b0a4c3a5031e4c3e7927f81e532d6`,
+PDB `092c68b756aadc2c14dd287174eee0bca5cdba2fd59f9170c8008a0c9bf703b6`).
+Original menu artwork/normal PLAY and advancing race HUD/rider/opponents were
+observed. PM interpretation, assertions and D3D12 validation remained enabled;
+no runtime rebuild, desktop input or completion bypass was used. Run
+`20261022T233135.684233Z` ended by explicit owned stop at 393.609 seconds.
+The 440-cycle diagnostic bound 33 unfinished visibility waits to selected
+running PVS records, but MFC-registry/register-only discovery missed the busy
+async context and vehicle queue. This did not establish absence of vehicle work.
+
+Run `20261022T234903.394908Z` expanded read-only discovery using existing startup
+context diagnostics, register hits and committed owner-stack ranges. Context
+logs supply candidates, not lifetime proof. Every queue owner in completed
+native-wait records was sampled, independently of discovered worker images.
+After the 44.406-second unsuspended CPU/GPU window, the separate 45.065-second
+observer recorded 432 cycles/535 worker observations, including 22 further
+unfinished PVS bindings. Individual suspension reached 28.729 ms and 132
+failed suspend attempts were retained; this diagnostic perturbs execution.
+The run ended by explicit owned stop at 317.250 seconds, with 12,019,712
+printed native completions, 4,298 retained fallbacks, 14 visible hierarchy
+fallbacks and no fatal/error/mismatch diagnostic. Original HUD frame 84
+showed 1:51.45. No game FPS or comparative gain is inferred.
+
+Whole queue-read intervals were intersected with actual unfinished native
+waits, rather than counting idle queue samples. Vehicle caller `8AC670`
+had 170 matching observations across 113 distinct waits: 148 showed taken
+equal to minimum with all six active counters `FFFF`; 22 showed an active
+minimum lane. One published-hint/request example was 15 while taken/minimum
+were zero and all lanes inactive. Visibility caller `87D2D4` had 77 matching
+active-minimum observations across 76 waits. These sequential reads are
+non-atomic point observations, not duration fractions, exclusive CPU cost
+or proof of the reason work was unclaimed. They direct the next investigation
+toward vehicle eligibility/dispatch before selecting its arithmetic for a
+native rewrite. The unsuspended vehicle/visibility wait overlaps were
+14.902/5.694 seconds; overlap is latency, not producer execution time.
+
+The persistent async worker consumed 37.875 CPU seconds in the unsuspended
+window. In the later diagnostic, 279 of its 432 sampled PC windows matched
+the original embedded `libmstreamSPURS` ELF through exact PT_LOAD mappings;
+153 were unmatched or not file-backed and remain explicitly unclassified.
+This identifies debug audio code at those observations, not the vehicle
+producer or an exclusive critical-path share. It does not unpark retail
+mstream or authorize an audio replacement. Two busy kernel workers still
+lack equivalent context coverage. Their next read-only probe has a verified
+PDB/PE layout for `s_spu_threads` (256 slots of 232 bytes), including allocated
+and published context pointers; live ownership/lifetime must still be checked.
+
+Private evidence lives under `temp/issue155-context-coverage` in the native
+checkout. The correlation manifest verifies 891 files/24,254,051 bytes,
+including all 870 bounded native-stack/context files, selected SPU contexts,
+raw timeline, queue classifications and original-byte identity findings.
+The original run evidence is separately protected outside latest-five rotation.
+Issue [155](https://github.com/robbe1912/motorstorm-mv-recomp/issues/155) and
+stable-30 acceptance remain open; Vulkan and retail mstream remain parked.
