@@ -276,7 +276,6 @@ static inline u16 ef_r16(uint32_t a) { const uint8_t* p = vm_base + a; return (u
  * nothing while the flag was being set and cleared -- the hook here closes
  * that hole. Two compares against zeros when the watch is unset. */
 extern unsigned int g_ww_lo, g_ww_hi;
-extern void ps3_ww_report_inline(unsigned int addr, unsigned long long val, int width);
 static inline void ef_w16(uint32_t a, u16 v)
 { if (a >= g_ww_lo && a < g_ww_hi) ps3_ww_report_inline(a, v, 2);
   uint8_t* p = vm_base + a; p[0] = (uint8_t)(v >> 8); p[1] = (uint8_t)v; }

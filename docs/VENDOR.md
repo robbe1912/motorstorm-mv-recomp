@@ -37,6 +37,8 @@ The Linux fixture uses the declared GNU pthread naming API and exact diagnostic
 integer signatures. Its included production units receive explicit prototypes;
 no compiler errors are disabled. The diagnostic implementation's self-contained
 `<stdint.h>` include is selectively retained from own-fork `d0ac0d4`.
+The curated watch hook uses the fork's existing `ppu_memory.h` declaration;
+a conflicting redundant declaration of its 64-bit argument is removed.
 CI retains only source-fixture logs and command/hash JSON for five days,
 including failed builds; executable or game inputs are not uploaded.
 
