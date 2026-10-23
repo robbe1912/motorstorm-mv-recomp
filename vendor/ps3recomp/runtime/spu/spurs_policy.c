@@ -23,6 +23,8 @@
  * kernel side: select = "no contention, keep running", exit = end of run.
  */
 #include "spu_context.h"
+#include "spu_coherency.h"
+#include "../platform/win32_compat.h"
 #include "spu_workload.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,129 +38,117 @@ SPU_THREAD_LOCAL volatile unsigned g_spurs_pm_polls = 0;   /* selectWorkload cal
 SPU_THREAD_LOCAL volatile unsigned g_spurs_pm_exited = 0;  /* set when exitToKernel was taken */
 SPU_THREAD_LOCAL volatile unsigned g_wws_batch_gets = 0;   /* loadCommands (LS 0xC00) fetch count, spu_dma.h */
 
-/* ---- persistent PM context table ---------------------------------------
- * One slot per (spurs_ea, wid, spu_num) triple. Scan and free-slot claim run
- * under s_pm_claim, a LEAF spinlock held only for the table walk plus the
- * first-contact malloc/init/publish -- never across a module run, and it
- * never adopts a context: dispatch stays serialized per triple (one
- * spurs_kernel_thread per instance, workers joined before the next pass),
- * so the lock only stops two first-contact lanes taking the SAME free slot.
- *
- * That double-claim was NOT benign, and it is the MotorStorm attract wedge:
- * lane 0 and the fresh spurs_pm%u workers of a NEW workload's first pass all
- * scan concurrently, and between reading a slot empty and publishing into it
- * sits a malloc plus a 260 KB memset -- tens of microseconds. The loser's
- * publish overwrites the winner's triple, and the loser triple then misses
- * on every later lookup: each dispatch allocates a FRESH context, its PM
- * loses the claim->stage pipeline between quanta (LS 0x12A0/0x12C0/0x12F0),
- * and a ticket it already claimed is never staged. That job never runs, the
- * batch's completion counter never reaches the gate, and the PVS/VideoStream
- * post gate spins forever (wedge at t~11-32 s and t~125 s, attract
- * boundaries, 5/6 runs; the window is timing-sensitive, which is why one run
- * ran clean). The 2026-10-09 lock+ADOPT variant failed because it ADOPTED a
- * context another lane was still executing; this lock fixes only the table.
- * SPURS_PM_CLAIMLOCK=0 restores the unlocked scan for A/B. */
-#if !defined(_MSC_VER)
-#include <stdatomic.h>   /* atomic_int in pm_slot.busy below */
-#endif
-enum { SPURS_PM_CTX_MAX = 96, SPURS_PM_MAX_WKL = 16 };
-struct pm_slot { uint32_t ea; uint32_t wid; uint32_t spu; spu_context* ctx; uint64_t data;
-#if defined(_MSC_VER)
-                 volatile long busy;   /* run-owner flag: one runner per triple */
-#else
-                 atomic_int busy;
-#endif
-};
-static struct pm_slot s_pm_slot[SPURS_PM_CTX_MAX];
-
-/* Claim spinlock for s_pm_slot (same idiom as spu_coherency.c's lock-line
- * lock). Leaf: acquire, walk/claim, release -- nothing under it calls out
- * to code that can take another lock. */
-#if defined(_MSC_VER)
-#include <intrin.h>
-static volatile long s_pm_claim_l = 0;
-static int pm_claim_on(void)
+/* Resident contexts remain exclusive to an instance/workload/lane triple.
+ * The fork directory owns incarnation references and quiescent retirement;
+ * no table or instance lock spans actual guest work. */
+#define SPURS_PM_INSTANCES 4
+struct PmInstance;
+struct PmSlot { SRWLOCK lock; spu_context* ctx; uint64_t data; struct PmInstance* owner;
+    const uint8_t* pm; uint32_t size, wid; spu_lifted_entry_fn entry; int image_id; };
+static struct PmInstance {
+    int used, retiring;
+    unsigned users, workload_users[16];
+    uint32_t ea;
+    struct PmSlot slots[16][6];
+} s_pm_instances[SPURS_PM_INSTANCES];
+static SRWLOCK s_pm_directory_lock = SRWLOCK_INIT;
+static CONDITION_VARIABLE s_pm_directory_wake;
+static struct PmSlot* policy_slot(uint32_t ea, uint32_t wid, uint32_t lane)
 {
-    static int s_on = -1;
-    if (s_on < 0) { const char* e = getenv("SPURS_PM_CLAIMLOCK");
-                    s_on = (e && atoi(e) == 0) ? 0 : 1; }
-    return s_on;
-}
-static void pm_claim_lock(void)
-{
-    if (!pm_claim_on()) return;
-    while (_InterlockedExchange(&s_pm_claim_l, 1)) {
-        do { _mm_pause(); } while (s_pm_claim_l);
+    struct PmInstance* free_slot = NULL;
+    struct PmSlot* slot = NULL;
+    AcquireSRWLockExclusive(&s_pm_directory_lock);
+    for (unsigned i = 0; i < SPURS_PM_INSTANCES; i++) {
+        struct PmInstance* pi = &s_pm_instances[i];
+        if (pi->used && pi->ea == ea) {
+            if (!pi->retiring) slot = &pi->slots[wid][lane];
+            free_slot = NULL; break;
+        }
+        if (!pi->used && !free_slot) free_slot = pi;
     }
+    if (!slot && free_slot) {
+        free_slot->used = 1; free_slot->ea = ea;
+        slot = &free_slot->slots[wid][lane];
+    }
+    if (slot) {
+        for (unsigned i = 0; i < SPURS_PM_INSTANCES; i++)
+            if (s_pm_instances[i].used && s_pm_instances[i].ea == ea) {
+                slot->owner = &s_pm_instances[i]; slot->wid = wid;
+                slot->owner->users++;slot->owner->workload_users[wid]++; break;
+            }
+    }
+    ReleaseSRWLockExclusive(&s_pm_directory_lock);
+    if (slot) AcquireSRWLockExclusive(&slot->lock);
+    return slot;
 }
-static void pm_claim_unlock(void)
-{
-    if (!pm_claim_on()) return;
-    _InterlockedExchange(&s_pm_claim_l, 0);
-}
-#else
-#include <stdatomic.h>
-static atomic_flag s_pm_claim = ATOMIC_FLAG_INIT;
-static int pm_claim_on(void)
-{
-    static int s_on = -1;
-    if (s_on < 0) { const char* e = getenv("SPURS_PM_CLAIMLOCK");
-                    s_on = (e && atoi(e) == 0) ? 0 : 1; }
-    return s_on;
-}
-static void pm_claim_lock(void)
-{
-    if (!pm_claim_on()) return;
-    while (atomic_flag_test_and_set_explicit(&s_pm_claim, memory_order_acquire)) { }
-}
-static void pm_claim_unlock(void)
-{
-    if (!pm_claim_on()) return;
-    atomic_flag_clear_explicit(&s_pm_claim, memory_order_release);
-}
-#endif
 
-/* RUN EXCLUSIVITY (round 4): the claim lock above serializes the table
- * scan/publish only -- it is never held across a module run. But a slot's
- * spu_context (its 256KB LS) admits exactly ONE runner: a second runner on
- * the same (spurs_ea, wid, spu_num) triple interleaves its GPR/LS mutations
- * with the first (entry re-init, the data-change memset, the interpreter),
- * derails the PM mid-pipeline and strands its claimed job tickets (the
- * 174ms pathological quanta and the attract-boundary gate wedge both fit
- * two runners on one context). Skip-if-busy, not block: both dispatchers
- * are pass-based, so the loser simply yields this quantum and the next pass
- * re-runs the workload -- no work is lost, no deadlock is possible.
- * SPURS_PM_RUNLOCK=0 disables (A/B). */
-static int pm_runlock_on(void)
+static void policy_slot_release(struct PmSlot* slot)
 {
-    static int s_on = -1;
-    if (s_on < 0) { const char* e = getenv("SPURS_PM_RUNLOCK");
-                    s_on = (e && atoi(e) == 0) ? 0 : 1; }
-    return s_on;
+    ReleaseSRWLockExclusive(&slot->lock);
+    AcquireSRWLockExclusive(&s_pm_directory_lock);
+    slot->owner->users--;slot->owner->workload_users[slot->wid]--;
+    WakeAllConditionVariable(&s_pm_directory_wake);
+    ReleaseSRWLockExclusive(&s_pm_directory_lock);
 }
-#if defined(_MSC_VER)
-static int pm_slot_run_try(struct pm_slot* s)
+
+/* Quiescent workload removal must retire its incarnation even when the next
+ * registration has identical image and data. Never wait under admission locks:
+ * a direct caller that still owns a reference makes removal BUSY instead. */
+int spurs_policy_release_workload(uint32_t ea, uint32_t wid)
 {
-    if (!pm_runlock_on()) return 1;
-    return _InterlockedCompareExchange(&s->busy, 1, 0) == 0;
+    if (wid >= 16) return -1;
+    AcquireSRWLockExclusive(&s_pm_directory_lock);
+    for (unsigned i = 0; i < SPURS_PM_INSTANCES; i++) {
+        struct PmInstance* pi = &s_pm_instances[i];
+        if (!pi->used || pi->ea != ea) continue;
+        if (pi->retiring || pi->workload_users[wid]) {
+            ReleaseSRWLockExclusive(&s_pm_directory_lock); return -1;
+        }
+        for (unsigned n = 0; n < 6; n++) {
+            struct PmSlot* slot = &pi->slots[wid][n];
+            if (slot->ctx) {
+                spu_coh_unregister(slot->ctx);spu_mfc_release(slot->ctx);
+                free(slot->ctx);slot->ctx = NULL;
+            }
+            slot->data = 0;slot->pm = NULL;slot->size = 0;
+            slot->entry = NULL;slot->image_id = 0;
+        }
+        break;
+    }
+    ReleaseSRWLockExclusive(&s_pm_directory_lock);
+    return 0;
 }
-static void pm_slot_run_end(struct pm_slot* s)
+
+/* Caller must have joined the instance's scheduler workers. Direct policy
+ * callers are serialized by their slot locks before resident resources retire.
+ * Keep the zero-initialized lock objects valid when the directory slot recurs. */
+void spurs_policy_release_instance(uint32_t ea)
 {
-    if (!pm_runlock_on()) return;
-    _InterlockedExchange(&s->busy, 0);
+    AcquireSRWLockExclusive(&s_pm_directory_lock);
+    for (unsigned i = 0; i < SPURS_PM_INSTANCES; i++) {
+        struct PmInstance* pi = &s_pm_instances[i];
+        if (!pi->used || pi->ea != ea) continue;
+        if (pi->retiring) break;
+        pi->retiring = 1;
+        while (pi->users)
+            SleepConditionVariableSRW(&s_pm_directory_wake, &s_pm_directory_lock, INFINITE, 0);
+        for (unsigned w = 0; w < 16; w++) for (unsigned n = 0; n < 6; n++) {
+            struct PmSlot* slot = &pi->slots[w][n];
+            AcquireSRWLockExclusive(&slot->lock);
+            if (slot->ctx) {
+                spu_coh_unregister(slot->ctx);
+                spu_mfc_release(slot->ctx);
+                free(slot->ctx);
+                slot->ctx = NULL;
+            }
+            slot->data = 0; slot->pm = NULL; slot->size = 0; slot->entry = NULL; slot->image_id = 0;
+            ReleaseSRWLockExclusive(&slot->lock);
+        }
+        pi->used = 0; pi->retiring = 0; pi->ea = 0;
+        break;
+    }
+    ReleaseSRWLockExclusive(&s_pm_directory_lock);
 }
-#else
-static int pm_slot_run_try(struct pm_slot* s)
-{
-    if (!pm_runlock_on()) return 1;
-    return !atomic_exchange_explicit(&s->busy, 1, memory_order_acquire);
-}
-static void pm_slot_run_end(struct pm_slot* s)
-{
-    if (!pm_runlock_on()) return;
-    atomic_store_explicit(&s->busy, 0, memory_order_release);
-}
-#endif
 
 int spu_run_policy_module(spu_lifted_entry_fn entry, int image_id,
                           const uint8_t* pm_host, uint32_t pm_size,
@@ -184,41 +174,11 @@ int spu_run_policy_module(spu_lifted_entry_fn entry, int image_id,
      * never progress its claim/stage pipeline). Image + context init happen
      * once; re-entries keep LS and only refresh the entry registers and the
      * (possibly game-updated) kernel-context fields. */
-    /* M13: the cache was keyed [wid][spu_num] only. MS1 runs TWO spurs
-     * instances whose workloads both resolve to this same wwsjob PM image --
-     * instance A's wid1 and instance B's wid1 SHARED one context: each side's
-     * dispatch re-staged the other's spurs EA into LS 0x1C0/0x1C4 and the
-     * data-change reset (their queue EAs differ) flipped the context fresh
-     * on every handoff, so the PM always claimed whichever instance staged
-     * last (boot-5: 170 wid1 claims on B's zeroed line, 0 on A, while the
-     * game kicked A). Key the slot by (spurs_ea, wid, spu_num). */
+    enum { SPURS_PM_MAX_WKL = 16 };
     if (wid >= SPURS_PM_MAX_WKL || spu_num >= 6) return -1;
-    /* Claim under s_pm_claim (leaf spinlock, table walk + first-contact
-     * publish only -- never held across a module run): lane 0 and the fresh
-     * spurs_pm%u workers of a new workload's first pass hit this together,
-     * and must not take the same free slot. */
-    pm_claim_lock();
-    struct pm_slot* slot = NULL;
-    for (int i = 0; i < SPURS_PM_CTX_MAX; i++) {
-        if (s_pm_slot[i].ctx && s_pm_slot[i].ea == spurs_ea &&
-            s_pm_slot[i].wid == wid && s_pm_slot[i].spu == spu_num) {
-            slot = &s_pm_slot[i]; break;
-        }
-        if (!s_pm_slot[i].ctx && !slot) slot = &s_pm_slot[i];
-    }
-    if (!slot) { pm_claim_unlock(); return -1; } /* full: 96 live (instance,wid,spu) triples */
-    /* Single runner per triple (see pm_slot_run_try). Acquired under the
-     * claim lock so the busy bit itself cannot race first-contact publish;
-     * covers everything below that touches ctx (entry setup, the data-change
- * reset, the interpreter) through the single return at the end. */
-    if (!pm_slot_run_try(slot)) {
-        pm_claim_unlock();
-        { static int _n = 0; if (_n++ < 8) {
-            fprintf(stderr, "[spurs-pm] slot busy (ea=0x%08X,wid=%u,spu=%u) -- skipping quantum\n",
-                    spurs_ea, wid, spu_num); fflush(stderr); } }
-        return 0;
-    }
-    spu_context* ctx = slot->ctx;
+    struct PmSlot* resident = policy_slot(spurs_ea, wid, spu_num);
+    if (!resident) return -1;
+    spu_context* ctx = resident->ctx;
     int first = 0;
     /* SPURS_PM_FRESH=1: treat EVERY dispatch as first contact (zeroed LS, image
      * reloaded). A/B against the persistent default: with persistence, the wwsjob
@@ -229,7 +189,7 @@ int spu_run_policy_module(spu_lifted_entry_fn entry, int image_id,
      * each dispatch run the full attach->claim->yield cycle, so repeated kernel
      * dispatches drain the queue one ticket at a time (the persistent-LS claim
      * that motivated the cache predates the r4 word0/word1 layout fix). */
-    static int s_fresh = -1;
+    static SPU_THREAD_LOCAL int s_fresh = -1;
     if (s_fresh < 0) s_fresh = getenv("SPURS_PM_FRESH") ? 1 : 0;
     /* Reset the persistent context when the workload's DATA (queue EA)
      * changes: the game re-points a wid at a NEW job queue once the old one
@@ -239,45 +199,42 @@ int spu_run_policy_module(spu_lifted_entry_fn entry, int image_id,
      * state and claim nothing (observed: LBP's second loading queue sat at
      * lanes {0,...} while the first drained fine). */
     if (!ctx) {
-        /* Allocate, init, publish under the claim lock: a scanner held out
-         * by the lock sees either an empty slot or a fully published triple,
-         * so two first-contact lanes can no longer take the same free slot
-         * and orphan one triple's PM state (see the table comment above --
-         * the orphaned lane eats its claimed ticket and the batch gate never
-         * opens; the attract wedge). The lock is released before anything
-         * executes: it serializes the claim, never the run. */
         ctx = (spu_context*)malloc(sizeof(spu_context));
-        if (!ctx) { pm_claim_unlock(); return -1; }
+        if (!ctx) { policy_slot_release(resident); return -1; }
+        resident->ctx = ctx;
+        first = 1;
         /* SPU_CTX_LOG=1: policy-module contexts are PERSISTENT and there is one
-         * per (instance, workload, spu_num) -- a workload with readyCount 8
-         * legitimately runs on several simulated SPUs, which then contend its
-         * lock lines exactly as real SPUs would. Counting only the job contexts
-         * in spu_lifted_job.h reports "two contexts" for a run that has five,
-         * and makes correct multi-SPU execution look like duplicated state. */
-        { static int s_cl = -1;
+         * per (workload, spu_num) -- a workload with readyCount 8 legitimately
+         * runs on several simulated SPUs, which then contend its lock lines
+         * exactly as real SPUs would. Counting only the job contexts in
+         * spu_lifted_job.h reports "two contexts" for a run that has five, and
+         * makes correct multi-SPU execution look like duplicated state. */
+        { static SPU_THREAD_LOCAL int s_cl = -1;
           if (s_cl < 0) s_cl = getenv("SPU_CTX_LOG") ? 1 : 0;
-          if (s_cl) fprintf(stderr, "[spu-ctx] new POLICY context %p ea=0x%08X wid=%u spu_num=%u\n",
-                            (void*)ctx, spurs_ea, wid, spu_num); }
+          if (s_cl) fprintf(stderr, "[spu-ctx] new POLICY context %p wid=%u spu_num=%u\n",
+                            (void*)ctx, wid, spu_num); }
         memset(ctx, 0, sizeof(*ctx));
         spu_context_init(ctx, 0);
-        slot->ctx = ctx; slot->ea = spurs_ea; slot->wid = wid; slot->spu = spu_num;
-        first = 1;
-    }
-    pm_claim_unlock();
-    if (!first && (s_fresh || slot->data != wkl_data)) {
+    } else if (s_fresh || resident->data != wkl_data ||
+               resident->pm != pm_host || resident->size != pm_size ||
+               resident->entry != entry || resident->image_id != image_id) {
         if (!s_fresh) {
-            static int _n = 0;
+            static SPU_THREAD_LOCAL int _n = 0;
             if (_n++ < 8)
-                fprintf(stderr, "[spurs-pm] ea=0x%08X wid=%u spu=%u workload data changed "
-                        "0x%llX -> 0x%llX: fresh PM context\n", spurs_ea, wid, spu_num,
-                        (unsigned long long)slot->data,
+                fprintf(stderr, "[spurs-pm] wid=%u spu=%u workload data changed "
+                        "0x%llX -> 0x%llX: fresh PM context\n", wid, spu_num,
+                        (unsigned long long)resident->data,
                         (unsigned long long)wkl_data);
         }
         first = 1;
+        spu_coh_unregister(ctx);
+        spu_mfc_release(ctx);
         memset(ctx, 0, sizeof(*ctx));
         spu_context_init(ctx, 0);
     }
-    slot->data = wkl_data;
+    resident->data = wkl_data;
+    resident->pm = pm_host; resident->size = pm_size;
+    resident->entry = entry; resident->image_id = image_id;
     ctx->image_id    = image_id;
     ctx->policy_mode = 1;      /* arm kernel stubs + img_ls_base dual-space lookups */
     ctx->img_ls_base = 0xA00;   /* SPURS PM load base; lift labels are image-relative */
@@ -722,8 +679,9 @@ int spu_run_policy_module(spu_lifted_entry_fn entry, int image_id,
         fflush(stderr);
     }
 
-    pm_slot_run_end(slot);
-    return g_spurs_pm_exited ? 0 : -2;
+    int result = g_spurs_pm_exited ? 0 : -2;
+    policy_slot_release(resident);
+    return result;
 }
 
 /* ---------------------------------------------------------------------------

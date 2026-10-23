@@ -72,7 +72,17 @@ jobs:
         run: python scripts/check_spurs_guest_fields.py
       - name: Scalar-u64 SPURS policy arguments
         run: python scripts/check_spurs_policy_arguments.py
-      - name: Concurrent policy counters and joined productivity
+      - name: Bounded native policy admission and actual negative controls
+        run: python scripts/check_spurs_scheduler.py --mutants
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scheduler-logs-${{ runner.os }}
+          retention-days: 5
+          path: |
+            build/self-tests/spurs-scheduler/**/*.log
+            build/self-tests/spurs-scheduler/**/*.json
+      - name: Concurrent policy counters and persistent productivity
         run: python scripts/check_spurs_policy_counters.py --mutants
       - uses: actions/upload-artifact@v4
         if: always()
@@ -169,7 +179,17 @@ jobs:
         run: python scripts/check_spurs_guest_fields.py
       - name: Scalar-u64 SPURS policy arguments
         run: python scripts/check_spurs_policy_arguments.py
-      - name: Concurrent policy counters and joined productivity
+      - name: Bounded native policy admission and actual negative controls
+        run: python scripts/check_spurs_scheduler.py --mutants
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scheduler-logs-${{ runner.os }}
+          retention-days: 5
+          path: |
+            build/self-tests/spurs-scheduler/**/*.log
+            build/self-tests/spurs-scheduler/**/*.json
+      - name: Concurrent policy counters and persistent productivity
         run: python scripts/check_spurs_policy_counters.py --mutants
       - uses: actions/upload-artifact@v4
         if: always()

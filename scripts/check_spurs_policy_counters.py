@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Execute real concurrent policy runners and joined-lane productivity checks."""
+"""Execute real concurrent policy runners and persistent-worker productivity checks."""
 import argparse
 import json
 import os
@@ -25,7 +25,7 @@ def build_and_run(runtime, out, expected_failure=None):
             *[runtime/'runtime'/p for p in ['platform/win32_compat.c','memory/guest_read_sync.c',
               'syscalls/spu_ea_alias.c','platform/thread_name.c','diag/loadtime_trace.c']]]
     includes=[runtime/'include',spu,runtime/'runtime/platform',runtime/'libs/spurs']
-    tracked=inputs+[runtime/'libs/spurs/cellSpurs.c',spu/'spu_context.h',
+    tracked=inputs+[spu/'spu_channels.c',runtime/'libs/spurs/cellSpurs.c',spu/'spu_context.h',
                     spu/'spu_dma.h',spu/'spu_workload.h',spu/'spu_policy_counters.h']
     (out/'source-hashes.json').write_text(json.dumps({str(path):hashlib.sha256(path.read_bytes()).hexdigest()
                                                    for path in tracked},indent=2))
@@ -55,7 +55,7 @@ def build_and_run(runtime, out, expected_failure=None):
         if ran.returncode:
             print(ran.stdout+ran.stderr);return ran.returncode
         for marker in ['PASS actual concurrent policy exit/poll/DMA isolation',
-                       'PASS actual joined scheduler worker productivity and idle rounds',
+                       'PASS actual persistent scheduler worker productivity and idle rounds',
                        f'PASS actual {mode} kernel intercepts']:
             if marker not in ran.stdout:raise RuntimeError(f'Missing execution marker: {marker}')
             print(marker)
@@ -83,7 +83,7 @@ def main():
     if result or not args.mutants:return result
     for name,failure in [
         ('global-counters','per-run stop versus kernel-exit classification'),
-        ('dropped-worker-polls','joined worker productivity aggregation'),
+        ('dropped-worker-polls','persistent worker productivity accounting'),
         ('stale-rejected-run','rejected run inherited stale productivity')]:
         mutant_out=out/name
         mutant=mutant_out/'runtime-copy'
@@ -100,7 +100,7 @@ def main():
                 path.write_text(source.replace(before,'volatile unsigned g_'))
         elif name=='dropped-worker-polls':
             replace_once(mutant/'libs/spurs/cellSpurs.c',
-                         'productive |= workers[sn - 1].polled;','productive |= 0;')
+                         'unsigned polls = g_spurs_pm_polls;','unsigned polls = 0;')
         else:
             path=mutant/'runtime/spu/spurs_policy.c'
             replace_once(path,RESET,'')

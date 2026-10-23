@@ -1,5 +1,53 @@
 # Vendor provenance and upstream
 
+## Bounded policy admission integration (issue 209)
+
+The previous joined-round consumer fails an authored actual-runtime test:
+a blocked policy prevents an independent runnable producer from being admitted.
+The selective port uses own-fork modular `codex/issue-209-native-admission-contracts`
+at `bddee4c078cb55022545655a9493363f9b238bcc`, integrated into `combined` at
+`09c97cc29eba90bbb12321f18082f75ac4ae8a0a`.
+[Focused fork CI](https://github.com/robbe1912/ps3recomp/actions/runs/39941863558)
+passes the actual scheduler and negative controls on Windows, Linux and macOS.
+Fork master remains separate from this curated integration.
+
+One coordinator admits work fairly across one to six persistent owned workers
+per instance, with stable physical lanes and bounded contention. Only an actual
+policy return releases admission. Guest execution and the existing periodic
+publication delay occur outside scheduler locks. Ready counts remain policy-owned
+requested demand; admission changes contention without consuming that demand.
+This agrees with the public RPCS3 SPURS scheduler's requested-lane model
+(`cellSpursSpu.cpp`, inspected blob `4be245810ffd118d7478b36cd8fd849ebc9390b6`),
+without importing its implementation.
+
+Per-instance resident-context references protect full workload incarnations.
+BUSY teardown leaves live state unchanged; quiescent removal and instance
+finalization retire contexts after owned joins. Exclusivity is unconditional;
+the historical diagnostic switches that disabled context claim/run locking
+are removed. Counter resets precede admission, including rejected runs.
+
+The consumer's LF-normalized 25,399-byte execution region remains identical: FP/SIMD,
+MFC/IRQ, boundary and native-leaf handling, ABI, budget and diagnostics stay in
+place. Eighty-eight other function bodies, including taskset creation and
+unrelated SDK implementations, remain identical. This is a selective scheduler
+and ownership port, not wholesale replacement of the toolkit or game workloads.
+
+`python scripts/check_spurs_scheduler.py --mutants` executes the real consumer
+scheduler/policy/coherency code with authored modules. It covers producer
+progress, capacity/contention, fairness, priorities, independent instances,
+LS/TLS ownership, BUSY immutability, actual stop classification and retirement.
+Three separately compiled negative controls must fail their intended behavior:
+serialized admission, host consumption of demand, and stale rejected-run state.
+`python scripts/check_spurs_policy_counters.py --mutants` retains actual
+concurrent exit/poll/DMA checks in both intercept modes and checks every sole
+productive lane and all-idle case with the persistent workers. Its three
+historical controls still require the specific behavioral failures.
+Windows and Linux CI retain source-only command/hash/diagnostic logs for five days.
+
+Native integration acceptance and performance measurement remain pending.
+These authored regressions establish scheduler behavior, not displayed FPS,
+original-asset rendering correctness or completion of the native rewrite.
+
 ## Concurrent policy counter isolation (issue 202)
 
 The curated joined-lane consumer still used shared `g_spurs_pm_exited`,

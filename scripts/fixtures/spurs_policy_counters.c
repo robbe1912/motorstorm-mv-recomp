@@ -68,6 +68,7 @@ static void fetch_commands(spu_context* c) {
     require(memcmp(c->ls+0xC00,vm_base+0x10000,16)==0,"actual command bytes");
     c->image_id=image_id;
 }
+static struct SpursInst* round_instance;
 static void policy(spu_context* c) {
     unsigned lane=spu_ls_read32(c,0x1C8);
     if (phase==3) {
@@ -78,7 +79,21 @@ static void policy(spu_context* c) {
         while (atomic_load(&entered)!=expected_lanes) {
             require(ps3_ms_now()<deadline,"round lanes did not overlap");Sleep(1);
         }
-        if (lane==poll_lane) poll_kernel(c);
+        /* Stop further admissions only after all configured lanes really
+         * overlap. Let the sole productive worker return last, so its actual
+         * TLS result must reset the scheduler's idle streak. */
+        vm_write8(spu_ls_read32(c,0x1C4)+SPURS_WKL_STATE1+spu_ls_read32(c,0x1DC),3);
+        if (lane==poll_lane) {
+            unsigned active;
+            do {
+                AcquireSRWLockExclusive(&round_instance->lock);
+                active=round_instance->active[0];
+                ReleaseSRWLockExclusive(&round_instance->lock);
+                if (active>1) Sleep(1);
+                require(ps3_ms_now()<deadline,"idle workers did not return");
+            } while (active>1);
+            poll_kernel(c);
+        }
         kernel_exit(c);
     }
     if (!lane) {
@@ -117,23 +132,39 @@ static void paired(unsigned which) {
         require(batches[0]==7 && batches[1]==0,"per-run DMA diagnostic isolation");
     }
 }
-static void joined_rounds(void) {
+static void persistent_rounds(void) {
     phase=3;
+    memcpy(vm_base+0x9000,image,sizeof image);
+    spu_workload_register_img(spu_workload_fingerprint(vm_base+0x9000,sizeof image),policy,79,"authored policy counters");
     for (unsigned lanes=1;lanes<=6;lanes++) {
         expected_lanes=lanes;
         for (poll_lane=0;poll_lane<=lanes;poll_lane++) {
             atomic_store(&entered,0);atomic_store(&visited,0);
-            struct spurs_pm_worker_arg round={policy,79,image,sizeof image,0,3,0x1000,0,0};
-            require(spurs_pm_run_lanes(round,lanes)==(poll_lane<lanes),"joined worker productivity aggregation");
-            require(atomic_load(&visited)==(1u<<lanes)-1,"joined round visited all physical lanes");
+            require(cellSpursInitialize((CellSpurs*)0x1000,lanes,0,0,0)==0,"initialize actual persistent workers");
+            round_instance=spurs_inst_find(0x1000);
+            require(round_instance!=NULL,"owned test instance");
+            require(cellSpursAddWorkload((CellSpurs*)0x1000,(u32*)0x8000,(void*)0x9000,sizeof image,0,NULL,lanes,lanes)==0,"register actual policy round");
+            unsigned long long deadline=ps3_ms_now()+3000;
+            for (;;) {
+                AcquireSRWLockExclusive(&round_instance->lock);
+                int done=atomic_load(&entered)==lanes && !round_instance->active[0];
+                unsigned idle=round_instance->idle[0];
+                ReleaseSRWLockExclusive(&round_instance->lock);
+                if (done) {
+                    unsigned expected_idle=poll_lane<lanes?0:(lanes<4?lanes:4);
+                    require(idle==expected_idle,"persistent worker productivity accounting");
+                    break;
+                }
+                require(ps3_ms_now()<deadline,"persistent round did not finish");Sleep(1);
+            }
+            require(atomic_load(&visited)==(1u<<lanes)-1,"persistent round visited all physical lanes");
+            require(cellSpursFinalize((CellSpurs*)0x1000)==0,"join and retire actual workers");
         }
     }
-    /* Admission rejection must clear old state before a worker records it. */
     g_spurs_pm_polls=9;g_spurs_pm_exited=1;g_wws_batch_gets=8;
-    struct spurs_pm_worker_arg rejected={NULL,79,image,sizeof image,0,3,0x1000,0,0};
-    require(spurs_pm_run_lanes(rejected,1)==0,"rejected run inherited stale productivity");
-    require(!g_spurs_pm_polls && !g_spurs_pm_exited && !g_wws_batch_gets,"rejected run stale counters");
-    puts("PASS actual joined scheduler worker productivity and idle rounds");
+    require(spu_run_policy_module(NULL,79,image,sizeof image,0,3,0x1000,0)==-1,"rejected runner result");
+    require(!g_spurs_pm_polls && !g_spurs_pm_exited && !g_wws_batch_gets,"rejected run inherited stale productivity");
+    puts("PASS actual persistent scheduler worker productivity and idle rounds");
 }
 int main(int argc,char** argv) {
     interpreted=argc>1 && !strcmp(argv[1],"--interpreted");
@@ -146,7 +177,7 @@ int main(int argc,char** argv) {
     phase=2;atomic_store(&other_done,1);
     require(spu_run_policy_module(policy,79,image,sizeof image,0,3,0x1000,1)==0,"warm policy");
     paired(0);paired(1);
-    joined_rounds();
+    persistent_rounds();
     puts("PASS actual concurrent policy exit/poll/DMA isolation");
     printf("PASS actual %s kernel intercepts\n",interpreted?"interpreted":"compiled");
     return 0;

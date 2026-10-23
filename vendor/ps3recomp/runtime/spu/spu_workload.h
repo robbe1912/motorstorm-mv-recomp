@@ -150,6 +150,10 @@ int spu_workload_stage_probe(const uint8_t* ls, uint32_t pc,
  * the workload sync header) and its command lists contain cross-lane barrier
  * commands, so a workload configured for N SPUs must be dispatched once per
  * spu_num or the un-run lanes deadlock every barrier. */
+/* Owned policy contexts retire only after admitted work has returned. */
+void spurs_policy_release_instance(uint32_t spurs_ea);
+int spurs_policy_release_workload(uint32_t spurs_ea, uint32_t wid);
+
 int spu_run_policy_module(spu_lifted_entry_fn entry, int image_id,
                           const uint8_t* pm_host, uint32_t pm_size,
                           uint64_t wkl_data, uint32_t wid, uint32_t spurs_ea,
