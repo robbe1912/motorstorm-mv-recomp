@@ -666,9 +666,8 @@ the original embedded `libmstreamSPURS` ELF through exact PT_LOAD mappings;
 This identifies debug audio code at those observations, not the vehicle
 producer or an exclusive critical-path share. It does not unpark retail
 mstream or authorize an audio replacement. Two busy kernel workers still
-lack equivalent context coverage. Their next read-only probe has a verified
-PDB/PE layout for `s_spu_threads` (256 slots of 232 bytes), including allocated
-and published context pointers; live ownership/lifetime must still be checked.
+lacked equivalent context coverage. The subsequent LV2 probe below establishes
+why that registry alone cannot cover them.
 
 Private evidence lives under `temp/issue155-context-coverage` in the native
 checkout. The correlation manifest verifies 891 files/24,254,051 bytes,
@@ -677,3 +676,124 @@ raw timeline, queue classifications and original-byte identity findings.
 The original run evidence is separately protected outside latest-five rotation.
 Issue [155](https://github.com/robbe1912/motorstorm-mv-recomp/issues/155) and
 stable-30 acceptance remain open; Vulkan and retail mstream remain parked.
+
+### Correcting policy-context coverage (issue 155, 2026-10-23)
+
+Run `20261023T001113.419199Z` used the same checked EXE/PDB and original
+normal-PLAY route. Its 44.439-second unsuspended window contains 347 vehicle
+waits totaling 14.615 seconds, with 14.745 seconds of clipped wait overlap;
+2,958 visibility waits total 4.974 seconds. These are request wall times,
+not exclusive CPU costs or mutually exclusive frame phases. The busiest
+persistent async thread used 39.266 CPU seconds; two kernel threads used
+22.859 and 14.172. Thirty GPU 3D samples had 18.299% median activity and
+36.587% maximum. These diagnostics favor further CPU investigation but do
+not establish the entire critical path, a controlled gain or stable 30 FPS.
+
+The separate 45.098-second diagnostic recorded 432 cycles, 526 worker
+observations and 21 unfinished PVS correlations. Its valid LV2 table reads
+contained no live slots. Source inspection explains the coverage limit:
+`cellSpurs.c` creates its kernel threads directly with `CreateThread`, outside
+the LV2 `s_spu_threads` registry. Empty LV2 slots therefore say nothing about
+whether policy work is running. The complete private manifest verifies 929
+files / 32,167,157 bytes, including 870 native stack/context files and the
+source/layout identities; selected native menu/race evidence is separately
+protected from latest-five rotation.
+
+Offline reuse of those saved registers found 569 exact context or inline
+local-store matches to 21 logged policy-context initializations. The earlier
+parser recognized only job-context diagnostics, and discovery tested only
+the context pointer. Initializations and register matches are candidates:
+they do not supply current busy/data state, selected executing job, native
+IP classification or proof against pointer reuse. No new game launch was
+needed for this recovery.
+
+The corrected private probe pins the actual 96-slot policy registry and the
+host instance/workload arrays to the checked PE/PDB and source hashes. It
+retains raw tables, scalar scheduling controls and exactly 4,096 bytes per
+ordinary guest CellSpurs instance, with individual read intervals and hashes.
+Busy slots require exact context/inline-store register matches and slot
+rereads around context capture; equal readings cannot exclude ABA. Separate
+unsuspended context snapshots are explicitly potentially torn or stale, not
+thread ownership or execution evidence. Offline tests execute the observer's
+real table/root readers with authored remote memory, reject invalid/changed
+slots and wrong extents, exercise read failures and budgets, and revalidate
+46 historical context observations against the original bytes.
+
+Do not tune sleep/backoff or add workers based on comments or point counts.
+Microsoft's [Sleep contract](https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-sleep)
+does not guarantee immediate scheduling after expiry or establish a measured
+15.6 ms delay for this process. The next distinction is unclaimed runnable
+vehicle work versus a selected executing vehicle operation, including whether
+another workload occupies the same instance. Exact admission latency needs
+scheduler events or sufficiently resolved timing, beyond these point reads.
+
+The checked consumer also retains process-global policy poll/exit counters;
+the fork already isolates them in inherited upstream commit `dbff6e0`.
+[Issue 202](https://github.com/robbe1912/motorstorm-mv-recomp/issues/202)
+tracks a bounded selective port and concurrent regression independently of
+this capture. Changing declarations to TLS alone would lose other lanes'
+productivity results in the older joining scheduler. The complete upstream
+worker scheduler is a larger semantic change, not an incidental counter fix.
+
+### First current vehicle execution binding (issue 155, 2026-10-23)
+
+The prepared probe ran once on the unchanged executable in
+`20261023T053057.141939Z`. The original main menu was visually inspected at
+frame 11, normal PLAY reached the original race, and frame 73 was visually
+inspected with original vehicles and HUD. The user's remaining vehicle-underbody
+boxes remain a rendering failure under [issue 137](https://github.com/robbe1912/motorstorm-mv-recomp/issues/137).
+The owned run ended through its explicit stop marker; there was no desktop
+input, renderer substitution, scheduler tuning or new game build.
+
+The separate unsuspended window lasted 44.508 seconds. Vehicle requests
+contained 308 waits totaling 14.611 seconds, with 14.754 seconds of clipped
+overlap; visibility contained 2,618 waits totaling 5.620 seconds. GPU 3D
+activity had a 10.462% median over 30 samples and a 17.047% maximum. Resource
+samples had a median 4.516 logical CPUs and about 1.905 GB private memory;
+process read-transfer growth was 270,336 bytes, including cached/non-disk
+I/O. These observations do not support assigning the poor frame rate to
+sustained asset reads or GPU saturation, but they are not exclusive bottleneck
+proof, proof of sufficient preloading or a controlled frame-time comparison.
+
+The later diagnostic captured 416 cycles / 45.012 seconds, zero guest-root
+read errors, 456 exact busy/register matches and 54 unfinished-wait
+correlations. Native suspension peaked at 66.208 ms and 162 suspension
+failures were retained; this phase is unsuitable for FPS measurement.
+Among 1,764 passive context observations, 126 changed slot identity across
+the reads and must not be treated as stable ownership. Context dumping reached
+its 64 MiB budget; later unsaved context observations remain distinguished.
+
+Main instance `0x4003f380` binds workload 1 to the visibility queue
+`0x40044480`, workload 2 to particle/vertex-buffer queue `0x40048500`, and
+workload 3 to vehicle queue `0x4004c580`. Four current vehicle observations
+match original vehicle instruction windows, the selected running record,
+physical lane 0, unchanged busy registry brackets and an actual unfinished
+vehicle wait. Their original PCs are `0x141A8`, `0x8C30`, `0x1CA9C` and
+`0x8A24`; the checked host PDB places their native IPs in `spu_step`,
+`spu_dec_ri10` (two observations) and `spu_decode1`. This establishes actual
+interpreter execution on the vehicle dependency, not a synthesized module
+name or merely its next claimed ticket. It does not assign a CPU share to
+those four instruction sites or prove a safe typed replacement boundary.
+
+Sequential queue reads provide the other part of the dependency: 343
+observations lie wholly inside 119 real unfinished vehicle waits. Of those,
+301 have the requested work unclaimed with all physical lanes inactive;
+42 have an active minimum. In 236 of the unclaimed observations, the same
+whole wait also contains a busy/register match to workload 2. These paired
+before/after point counts are not durations, independent samples or proof of
+simultaneous ownership. Nevertheless, the checked source does serialize each
+workload behind all of the previous workload's lane joins. Earlier particle
+or vertex-buffer work and admission therefore remain concrete candidates;
+the 14.611 seconds cannot simply be called vehicle arithmetic cost. Exact
+cross-workload delay and a complete frame-cost attribution remain unresolved.
+
+All three offline analyzers passed, including root hashes/endian decoding,
+original selected-record/instruction comparisons and read-interval containment.
+The complete private packet retains contexts, native stacks, raw host tables,
+guest roots, source identities and protected native menu/race evidence outside
+latest-five rotation. REA's connected Windows Ghidra provider is unconfigured
+and does not admit this SPU target; the installed Ghidra tree has no Cell SPU
+language. Existing original-byte-verified PPU Ghidra exports remain reusable,
+but no SPU function decompilation or new typed vehicle operation is claimed.
+The next implementation must distinguish an isolated native operation from
+the broader fork scheduler port and validate its actual input/output contract.
