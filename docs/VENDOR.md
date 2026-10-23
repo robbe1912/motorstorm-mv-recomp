@@ -1,5 +1,44 @@
 # Vendor provenance and upstream
 
+## Native Windows scheduler validation (issue 206)
+
+Issue [206](https://github.com/robbe1912/motorstorm-mv-recomp/issues/206)
+validates the fork's existing bounded persistent-worker scheduler before a
+selective game port. Own-fork modular branch
+`codex/issue-206-windows-spurs-tests` at `87a8133` contains implementation
+`ec73ca6` and the registered-workflow integration; `combined` integrates it at
+`bd4c149`. Fork `master` and upstream `master` were verified identical at
+`a6d76c8`. This does not synchronize the divergent combined runtime wholesale.
+
+The authored regression compiles the actual scheduler, policy runner, channels
+and coherency code on Windows with assertions enabled. Owned thread handles
+are joined and closed, and waits use elapsed deadlines. Out-of-scope taskset
+and job-chain linkage traps abort if called. The tests retain producer/consumer
+progress, bounded contention, stable physical slots, fair admission, BUSY
+immutability, teardown/reinitialization, independent-instance/local-store
+ownership and concurrent stop/exit checks. A compiled coordinator mutant with
+only one admission slot must fail the producer-progress assertion; an unrelated
+crash, compile failure or successful platform skip cannot satisfy CI.
+
+The local Windows fixture and negative control pass. Hosted provenance is
+[modular run 39932786504](https://github.com/robbe1912/ps3recomp/actions/runs/39932786504)
+and [combined run 39932752929](https://github.com/robbe1912/ps3recomp/actions/runs/39932752929).
+All six Windows/Linux/macOS jobs passed the native-leaf and scheduler
+regressions, including required actual-execution markers. Logs and exact compile commands are
+retained as five-day source-only artifacts. No original game input is used.
+
+The fork's full Windows, Linux, Linux/Vulkan and macOS workflows are manually
+disabled while Windows DX12 performance is the priority; the broad Windows
+suite also builds the parked Vulkan backend. Focused DX12/SPU workflows remain
+enabled, including the small scheduler portability matrix. These are reversible
+repository settings, not changes to upstream or fork `master`. There are no
+scheduled workflows in the inspected combined configuration. This validation
+does not port the scheduler into the game or establish native compatibility,
+a frame-time gain or stable 30 FPS. A selective port must preserve the private
+boundary observer, SIMD scopes, MFC ownership and lifecycle safeguards;
+[issue 202](https://github.com/robbe1912/motorstorm-mv-recomp/issues/202)
+separately owns counter isolation and aggregation.
+
 Issue [196](https://github.com/robbe1912/motorstorm-mv-recomp/issues/196)
 adds an explicit native-leaf registration seam, developed on own-fork modular
 branch `codex/spu-native-leaf-dispatch` through `d996c59` and integrated into
