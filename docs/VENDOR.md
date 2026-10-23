@@ -1007,3 +1007,10 @@ Public ownership checks retain the visible cross-image wildcard diagnostic.
 The [timeline report](research/NATIVE_JOB_TIMELINE.md) distinguishes these
 observations from missing lifetime bindings, capture overhead and game-level
 performance proof. No game observer is installed; #219 remains open.
+
+The first public Linux audit exposed another standalone consumer, the dispatch
+identity fixture, without a public include search path. Fork-first follow-up
+`d28e24d780a7e00644ae47874d500bbff61e4fba` on modular/combined makes the new
+context include relative, matching its existing PS3 types include. This fixes
+all such consumers without weakening checks or changing execution semantics;
+the original failed audit is retained. The same one-line change is curated here.

@@ -9,7 +9,7 @@
 
 #ifndef SPU_CONTEXT_H
 #define SPU_CONTEXT_H
-#include "ps3emu/spu_execution_observer.h"
+#include "../../include/ps3emu/spu_execution_observer.h"
 
 #include "../../include/ps3emu/ps3types.h"
 #include <stdint.h>
