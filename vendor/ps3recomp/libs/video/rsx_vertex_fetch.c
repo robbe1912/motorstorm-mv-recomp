@@ -15,6 +15,32 @@ float rsx_rd_bef(const u8* p)
     float f; memcpy(&f, &w, 4); return f;
 }
 
+void rsx_vertex_fetch_prepare(rsx_vertex_fetch_batch* batch, const rsx_state* st)
+{
+    batch->state = st;
+    batch->count = 0;
+    for (u32 i = 0; i < 16; ++i)
+        if (st->vertex_attribs[i].enabled && st->vertex_attribs[i].stride)
+            batch->active[batch->count++] = (u8)i;
+    if (batch->count <= 8)
+        memcpy(batch->constants, st->vertex_data4f, sizeof(batch->constants));
+}
+
+void rsx_fetch_vertex_prepared(const rsx_vertex_fetch_batch* batch, u32 vi,
+                               rsx_vertex_value out[16])
+{
+    if (batch->count > 8) {
+        for (u32 i = 0; i < 16; ++i)
+            rsx_fetch_attrib(batch->state, (int)i, vi, out[i].v);
+        return;
+    }
+    memcpy(out, batch->constants, sizeof(batch->constants));
+    for (u32 i = 0; i < batch->count; ++i) {
+        u32 slot = batch->active[i];
+        rsx_fetch_attrib(batch->state, (int)slot, vi, out[slot].v);
+    }
+}
+
 float rsx_rd_half_be(const u8* p)
 {
     u16 h = (u16)((p[0] << 8) | p[1]);

@@ -72,6 +72,16 @@ jobs:
         run: python scripts/check_spurs_guest_fields.py
       - name: Scalar-u64 SPURS policy arguments
         run: python scripts/check_spurs_policy_arguments.py
+      - name: Prepared native vertex fetch and actual work controls
+        run: python scripts/check_vertex_prepared.py --mutants
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vertex-prepared-logs-${{ runner.os }}
+          retention-days: 5
+          path: |
+            build/self-tests/vertex-prepared/**/*.log
+            build/self-tests/vertex-prepared/**/*.json
       - name: Fragment snapshot decisions and historical controls
         run: python scripts/check_fp_snapshot.py --mutants
       - uses: actions/upload-artifact@v4
@@ -199,6 +209,16 @@ jobs:
         run: python scripts/check_spurs_guest_fields.py
       - name: Scalar-u64 SPURS policy arguments
         run: python scripts/check_spurs_policy_arguments.py
+      - name: Prepared native vertex fetch and actual work controls
+        run: python scripts/check_vertex_prepared.py --mutants
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vertex-prepared-logs-${{ runner.os }}
+          retention-days: 5
+          path: |
+            build/self-tests/vertex-prepared/**/*.log
+            build/self-tests/vertex-prepared/**/*.json
       - name: Fragment snapshot decisions and historical controls
         run: python scripts/check_fp_snapshot.py --mutants
       - uses: actions/upload-artifact@v4

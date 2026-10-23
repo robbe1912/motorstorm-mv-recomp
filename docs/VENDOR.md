@@ -503,7 +503,7 @@ unmodified operand. The preserved baseline fails; the candidate passes.
 Both Windows and Linux CI run this contract. No external PR was opened.
 The native menu remains malformed; this is a repaired instruction contract.
 
-### Upstream recheck — October 12, 2026
+### Upstream recheck â€” October 12, 2026
 
 Rechecked all 230 upstream PRs and 14 issues, including open and closed entries.
 Upstream master remains `5244db92669b54831c6d3ebb7a96d58c4dbfa6df`
@@ -676,7 +676,7 @@ buffer against an owned snapshot. Pointer reuse alone never establishes a hit.
 Misses hash that snapshot with the unchanged legacy FNV basis and multiplier;
 allocation failure visibly falls back to the original calculation. Buffers must
 remain stable during the call, as before; this does not make concurrent writes
-atomic. Eligible sizes are 4–256 KiB, with 32 entries and at most 4 MiB retained
+atomic. Eligible sizes are 4â€“256 KiB, with 32 entries and at most 4 MiB retained
 per thread. Windows FLS and POSIX key destructors release the snapshots.
 
 `SPU_FINGERPRINT_CACHE=1` enables the cache; the default makes no snapshot
@@ -797,3 +797,48 @@ with broader producer and sustained-30 acceptance in issues 155 and 27.
 Own-fork modular90bbae9 (fixture portability93a335a), combined621fcfa, adds CPU-surface service at the end of a submitted render batch, after captures, presentation and allocator/fence advancement. The message pump remains. Recording must be closed; existing generation/resource-state checks, command order, GPU fences, copies, deadlines and errors remain. This addresses queue delay measured under179, without skipping unchanged or changed reads.
 
 Absolute QPC boundaries and client/renderer IDs supplement optional profile records. The authored regression compiles production completion/request/service functions, verifies a submitted model pixel and waiter event, and rejects premature recording/missing completion; default-off clocks and prior accounting/packing controls remain. This models scheduling, not an actual GPU. Own-fork focused Linux/Windows jobs pass; actual muted DX12 normal-PLAY validation completed on checkedO2/Ob2 EXE61d63b581a423ca8acca09ddc950fb11aa50c9c6424d29738001594fbef491fc/PDB931cb331424d6d5d20967877a11f193bb111f4cdf701ab97d8cd58f49cd4c51f. Native hierarchy/PM1/debug validation retained. Run20261021T175402.989970Z reached observed menu/race/HUD and an explicit owned stop305.875s/native1.77requests from one client are fully QPC-contained in44.863s, with5.283s request wall/3.974s queue/1.245s prior GPU fence. This is an unmatched diagnostic case; it does not prove a causal FPS speedup, and a loading request still queued5.293s. No stable30 claim; see181 for protected evidence and limits.
+
+
+## Prepared native vertex uploads (issue 215)
+
+The legacy DX12 upload fetched all16attribute slots independently for every
+expanded vertex. Own-fork modular
+`0161bb4127003db5102330abe741c90b152d59b1`, merged into combined
+`bc080bf0ae2345e5b25a0b315763b406eeff274e`, adds a per-batch constants/active-slot
+plan and typed16-float4 output. Both focused
+[modular](https://github.com/robbe1912/ps3recomp/actions/runs/39966706794) and
+[combined](https://github.com/robbe1912/ps3recomp/actions/runs/39966711278)
+Windows/Linux runs passed. Six native upload functions prepare only after
+valid-state admission; topology, indices, buffer ownership and capacities
+are untouched. The position diagnostic remains once per fetched vertex.
+
+Sparse layouts (at most8enabled nonzero-stride arrays) bulk-copy current
+constants and invoke the actual scalar fetch only for active slots. Dense
+layouts retain the original vertex loop. Guest array data/address translation
+remain live per vertex, including context-DMA, page mappings, divisors, unknown
+format diagnostics and unsupported/default behavior. The complete4667-byte
+LF-normalized scalar function is unchanged (SHA256
+`4415c168ed9ba051dd6a31766062796a02453da063d3c87eea7d1dcbcd17d2ec`).
+Call `rsx_vertex_fetch_prepare` again after declaration/current-register changes;
+there is no cross-draw data cache or new title-specific path.
+
+`python scripts/check_vertex_prepared.py --mutants` compares complete outputs,
+resolver traces and actual function calls across918format/index combinations,
+live-byte edits, missing VM, refreshed declarations, zero strides, wraparound
+indices, NaN/default bits, MAIN/LOCAL and both frequency modes. Three separately
+compiled controls reject historical all-slot work, lost constants and stale
+live bytes. Call-count instrumentation is inserted only into the checked test
+copy; benchmark builds use uninstrumented production source/resolvers.
+
+Five alternating checked-O2/Ob2/DebugCRT authored draw pairs include preparation
+and verified real checksums. At4active arrays/1024vertices, median51.184ns per
+vertex (50.637-51.791) became28.090ns (27.353-28.313). Constant-only and8-array
+cases also improved; dense1024-vertex ranges overlap. Dense single-vertex
+preparation adds roughly17-20ns in these trials. This is a native input-expansion
+micro result with authored mappings, not a full renderer/game speedup. Timed
+windows use20million vertices/side; Windows self CPU/wall time, compiler/source
+hashes and commands are retained privately under fork build/vertex-prepared-tests.
+Earlier short/instrumented trials remain separately identified. Host12logical
+CPUs had11.98% total load before and23.57% after the final series; no game ran.
+Native build/original menu/normal-PLAY acceptance is pending. #155/#26/#27/#137
+and complete typed game-workload replacement remain open.

@@ -68,6 +68,25 @@ float rsx_rd_half_be(const u8* p);  /* 2-byte IEEE half -> float  */
  */
 void rsx_fetch_attrib(const rsx_state* st, int idx, u32 vi, float out[4]);
 
+/* A draw owns immutable attribute declarations/current registers while it
+ * expands vertices. Prepare those constants and enabled slots once; guest
+ * array bytes and address translation remain live for every vertex. The
+ * output keeps all sixteen float4 slots and the scalar format/diagnostics.
+ * Dense layouts (>8 arrays) retain scalar expansion to avoid redundant
+ * constant copying. Reprepare after any declaration/current-register change.
+ * No guest vertex data cache. */
+typedef struct rsx_vertex_value { float v[4]; } rsx_vertex_value;
+
+typedef struct rsx_vertex_fetch_batch {
+    const rsx_state* state;
+    rsx_vertex_value constants[16];
+    u8 active[16];
+    u32 count;
+} rsx_vertex_fetch_batch;
+void rsx_vertex_fetch_prepare(rsx_vertex_fetch_batch* batch, const rsx_state* st);
+void rsx_fetch_vertex_prepared(const rsx_vertex_fetch_batch* batch, u32 vi,
+                               rsx_vertex_value out[16]);
+
 #ifdef __cplusplus
 }
 #endif
