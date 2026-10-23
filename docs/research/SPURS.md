@@ -797,3 +797,12 @@ language. Existing original-byte-verified PPU Ghidra exports remain reusable,
 but no SPU function decompilation or new typed vehicle operation is claimed.
 The next implementation must distinguish an isolated native operation from
 the broader fork scheduler port and validate its actual input/output contract.
+
+Further offline decoding of that same capture narrows the particle work to two
+candidate regions: 65 original-PC/register observations in `0xA800..0xAA00`
+and 42 in `0x12300..0x12400`. The latter contains an unrolled load/rotate/
+float-compare/select scan; the former includes float math and reciprocal
+estimates. These are static investigation regions, not proven complete
+function boundaries, exclusive costs or accepted native replacements. Their
+private listings, source hashes and observation identities are retained so
+input/output recovery can proceed without another game session.
