@@ -886,3 +886,47 @@ SHA256, exact PDB field extents and active lists revalidate offline. These
 sequential declarations establish plausible sparse eligibility, not draw-weighted
 usage, ABA-proof snapshots, function costs or frame savings. #155/#26/#27/#137
 and complete typed game-workload replacement remain open.
+
+## Bounded native job trace foundation
+
+Issue [219](https://github.com/robbe1912/motorstorm-mv-recomp/issues/219) uses
+authored recorder storage from fork modular commits
+[`c902c728`](https://github.com/robbe1912/ps3recomp/commit/c902c728c08c06d981672c17b5697308e0defdc9)
+and [`c60c6297`](https://github.com/robbe1912/ps3recomp/commit/c60c6297c8c65013a4bb993e686ff076de76148c).
+The single combined branch integrates them as
+[`a970623a`](https://github.com/robbe1912/ps3recomp/commit/a970623aabc1919fd7a3d8a793a8dd424e4bbfe5)
+and [`f846155a`](https://github.com/robbe1912/ps3recomp/commit/f846155a823de90dfee082db61bf63df69771ae5).
+Fork master remains separate; no upstream push or outside-game PR was made.
+
+The production header SHA256 is
+`afd83a8ec59a1d636399445e35bb6a30121da11e18dd392f771680ff7253188d`;
+the implementation is
+`1bcb4d6743515fb9157db18c46499b4f986e958555bb956d965fe8ff3c2fb668`.
+Both are byte-identical to the fork. Public test/runner paths are adapted to
+the curated tree; fixture data and implementation are wholly authored, with
+no original instruction stream, guest context or asset in public tests.
+
+The opt-in owner API allocates a fixed record array at setup and requires
+lock-free counters. Append does no allocation, clock/environment reads,
+formatting or file I/O. Release/acquire publication hides unfinished payloads;
+overflow drops visibly and never overwrites retained records. Live metadata
+is not a final atomic snapshot; quiescent teardown and owner error reporting
+are required. No game call site creates a trace in this checkpoint.
+
+`python scripts/check_native_job_trace.py --mutants` compiles the actual C17
+implementation and a C++17 API consumer, checks paused publication and 16,384
+concurrent authored events, and rejects four compiled mutants by their specific
+assertions. Final modular
+[CI 40003722104](https://github.com/robbe1912/ps3recomp/actions/runs/40003722104)
+and combined
+[CI 40003867170](https://github.com/robbe1912/ps3recomp/actions/runs/40003867170)
+passed on Windows, Linux and macOS. Earlier foundational runs also passed.
+This proves recorder storage behavior, not game binding, capture overhead,
+whole-job tracing, exclusive frame cost or a performance improvement.
+
+The [original publication/marker checkpoint](research/NATIVE_JOB_TIMELINE.md)
+records independently checked original bytes, partial Ghidra coverage and a
+private production-interpreter arithmetic replay. Original inputs and generated
+instructions remain private. Actual commit/worker/job hooks, generation-aware
+analysis and a coordinated native run remain required by #219; stable30 and
+the full typed native game migration remain open.
