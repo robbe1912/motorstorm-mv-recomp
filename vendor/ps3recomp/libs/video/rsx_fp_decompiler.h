@@ -125,6 +125,8 @@ int rsx_fp_collect_constants(
 /* Canonical structural fragment-program hash. Instruction bytes and their
  * order are hashed; inline CONST payload bytes are skipped. Returns zero for
  * malformed input. */
+/* Zero inline constants only for buffered-HLSL prefetch identity. */
+u32 rsx_fp_canonical_program(const u8* ucode,u32 max_bytes,u8* out,u32 capacity);
 u64 rsx_fp_structural_hash(const u8* ucode, u32 max_bytes, u64 seed);
 
 /* Hash the exact legacy HLSL literal spellings (%g) for a program while also

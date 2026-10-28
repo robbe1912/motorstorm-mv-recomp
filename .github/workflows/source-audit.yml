@@ -319,3 +319,16 @@ jobs:
         run: python scripts/check_task_lifecycle.py
       - name: Check complete task cleanup API
         run: python scripts/check_task_exit_source.py
+
+  shader-pipeline:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Shader storage, worker and owner controls
+        run: python scripts/check_shader_pipeline.py --cc clang-cl

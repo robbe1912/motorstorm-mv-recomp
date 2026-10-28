@@ -1014,3 +1014,30 @@ identity fixture, without a public include search path. Fork-first follow-up
 context include relative, matching its existing PS3 types include. This fixes
 all such consumers without weakening checks or changing execution semantics;
 the original failed audit is retained. The same one-line change is curated here.
+
+
+## Checked shader disk cache (#137)
+
+The matching fork-first runtime component is prepared on the research
+combined base d28e24d780a7e00644ae47874d500bbff61e4fba. The game remains a
+curated vendor snapshot, not a submodule or a wholesale runtime-tree replacement.
+The shared cache, coordinator and recovery headers are byte-identical to that
+component; renderer hooks preserve this consumer's existing buffered fragment
+ABI, 16 samplers, recorded constants and PSO retention. Runtime evidence comes
+from corrected R48 consumer 30fcd9e/runtime 895f230, not the earlier import-thunk
+checkpoint. Local own-fork cache component d4e2519462f465f85840be4f88888d3052c56b02 contains this selective port.
+
+The [cache contract](SHADER_PIPELINE_CACHE.md) describes defaults, exact input
+and compiler identity, storage bounds, source retry and authored checks.
+The new source candidate needs owner acceptance independently of prior R48
+trials. No launcher, private input, readable-span helper or R62 change is ported.
+
+
+### Compile-only FXC pool
+
+The next local own-fork component adds bounded compile-only workers and exact
+prefetch identity on the same combined base. Shared worker/prefetch/coordinator
+headers stay byte-identical; each backend retains its existing shader ABI,
+texture state and draw ordering. Local own-fork pool component a9f79d8307ce3840beb226890bd25e2a7f4e2c41 contains this integration. The existing view-resolution pass queues work, then an owner
+walk creates PSOs before command replay. Real FXC/worker tests and an authored
+owner/device spy cover the coordinator; native acceptance remains separate.

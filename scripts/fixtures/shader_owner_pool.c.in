@@ -1,0 +1,95 @@
+/* Authored owner/device spy around actual prepare/draw/coordinator functions.
+ * Default pool and lookup settings are used; disk storage is disabled so the
+ * authored source deterministically misses instead of hitting a prior run. */
+#include <windows.h>
+#include <d3dcompiler.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+typedef uint32_t u32;typedef uint64_t u64;typedef uint16_t u16;
+static DWORD owner_thread;static volatile LONG worker_compiles,owner_compiles,wrong_device_thread;
+static unsigned observed[16],device_calls,failures;
+static HRESULT authored_compile(LPCVOID source,SIZE_T bytes,LPCSTR name,const D3D_SHADER_MACRO* defines,
+ ID3DInclude* include,LPCSTR entry,LPCSTR target,UINT flags1,UINT flags2,ID3DBlob** code,ID3DBlob** error)
+{
+ if(GetCurrentThreadId()==owner_thread)InterlockedIncrement(&owner_compiles);
+ else InterlockedIncrement(&worker_compiles);
+ return D3DCompile(source,bytes,name,defines,include,entry,target,flags1,flags2,code,error);
+}
+#define D3DCompile authored_compile
+#include "rsx_shader_bytecode_backend.h"
+#undef D3DCompile
+
+typedef struct {int vs_idx;u32 fp_addr,blend_key,rt_off,rt_fmt,fp_exp32,fp_ctrl,cmask,cull,fp_snap,fp_const_n,cb_slot;u64 ds_key;} D3D12DrawRecord;
+#define DXGI_FORMAT_R8G8B8A8_UNORM 28
+@SINGLE_PSO@
+static int dr_num_rts(const D3D12DrawRecord*d){(void)d;return 1;}
+static u32 dr_rt_dxgi(const D3D12DrawRecord*d){(void)d;return 28;}
+static u32 rsx_surface_dxgi(u32 f){return f;}
+static u32 dr_cube_mask(const D3D12DrawRecord*d){(void)d;return 0;}
+static u32 dr_alpha_key(const D3D12DrawRecord*d){(void)d;return 0;}
+static u32 dr_unnorm(const D3D12DrawRecord*d,u32 dims[16][2]){(void)d;memset(dims,0,16*2*sizeof(u32));return 0;}
+static void vp_record_fp_b1(u32 slot,D3D12DrawRecord*d){(void)slot;(void)d;failures++;}
+static void vp_serve_pso_consts(u32 slot,D3D12DrawRecord*d,u16 n){(void)slot;(void)d;(void)n;failures++;}
+static void* vp_get_fp_pso(int vs_idx,u32 fp,u32 blend,...)
+{
+ (void)vs_idx;(void)blend;char source[160];
+ snprintf(source,sizeof(source),"float4 main():SV_TARGET{return float4(%u,0,0,1);}",fp);
+ ID3DBlob *blob=NULL,*error=NULL;HRESULT hr=fp_compile_cached(fp,source,&blob,&error);
+ memset(source,'?',strlen(source)); /* queued source must already be owned */
+ if(shader_prefetch_active){if(hr!=E_PENDING || blob || error)failures++;return NULL;}
+ if(FAILED(hr)||!blob){failures++;if(error)error->lpVtbl->Release(error);return NULL;}
+ if(GetCurrentThreadId()!=owner_thread)InterlockedIncrement(&wrong_device_thread);
+ if(device_calls<16)observed[device_calls++]=fp;else failures++;
+ blob->lpVtbl->Release(blob);if(error)error->lpVtbl->Release(error);return (void*)1;
+}
+@OWNER_DRAW@
+@PREPARE_DRAW@
+static DWORD WINAPI wrong_owner(LPVOID arg){shader_compile_draw((D3D12DrawRecord*)arg);return 0;}
+#define CHECK(x) do{if(!(x)){fprintf(stderr,"FAIL owner line=%d %s\n",__LINE__,#x);return 1;}}while(0)
+int main(int argc,char**argv)
+{
+ const char* mode=argc>1?argv[1]:"default";
+ int legacy=!strncmp(mode,"legacy-",7);
+ int disabled=!strcmp(mode,"disabled") || legacy,wrong=!strcmp(mode,"wrong-owner");
+ owner_thread=GetCurrentThreadId();CHECK(SetEnvironmentVariableA("RSX_SHADER_DISK_CACHE","0"));
+ CHECK(_putenv_s("RSX_FXC_THREADS",disabled?"0":"")==0);
+ CHECK(_putenv_s("RSX_PSO_SINGLE_LOOKUP",!strcmp(mode,"legacy-duplicate")?"0":!strcmp(mode,"legacy-single")?"1":"")==0);
+ CHECK(disabled || !getenv("RSX_FXC_THREADS") || !*getenv("RSX_FXC_THREADS"));
+#if HAS_SINGLE_PSO
+ CHECK(single_pso_on()==(strcmp(mode,"legacy-duplicate")!=0));
+#endif
+ D3D12DrawRecord draws[4]={{0}};unsigned expected[4]={3,1,3,2};
+ int pooled=shader_pool_on();SYSTEM_INFO info;GetSystemInfo(&info);
+ if(!disabled && info.dwNumberOfProcessors==1){CHECK(!pooled);puts("SKIP default worker assertion: single logical CPU uses synchronous compilation");return 0;}
+ CHECK(pooled==!disabled);
+ if(pooled){shader_prefetch_generation++;rsx_prefetch_begin(&s_shader_seen);}
+ for(unsigned i=0;i<4;i++){
+  draws[i].fp_addr=expected[i];
+  shader_prepare_draw(&draws[i],pooled);
+  CHECK(!shader_prefetch_active);
+ }
+ unsigned prepass_calls=0;
+#if HAS_SINGLE_PSO
+ if(!pooled && !single_pso_on())prepass_calls=4;
+#else
+ if(!pooled)prepass_calls=4; /* Fork has no optional duplicate-lookup switch. */
+#endif
+ CHECK(device_calls==prepass_calls && !failures);
+ if(pooled)CHECK(shader_queued>0);
+ /* The explicit owner-resolution walk must run even when lookup defaults on.
+  * For the synchronous path, this loop stands for the normal replay lookup. */
+ for(unsigned i=0;i<4;i++)shader_compile_draw(&draws[i]);
+ CHECK(device_calls==prepass_calls+4 && !failures);
+ if(prepass_calls)CHECK(!memcmp(observed,expected,sizeof(expected)));
+ CHECK(!memcmp(observed+prepass_calls,expected,sizeof(expected)));
+ CHECK(disabled?(owner_compiles==3 && !worker_compiles):(worker_compiles==3 && !owner_compiles));
+ if(pooled)CHECK(shader_claimed>0);
+ if(wrong){HANDLE thread=CreateThread(NULL,0,wrong_owner,&draws[0],0,NULL);CHECK(thread);CHECK(WaitForSingleObject(thread,10000)==WAIT_OBJECT_0);CloseHandle(thread);}
+ shader_pool_finish();CHECK(!s_shader_pool);rsx_shader_cache_clear(&s_fp_bytecode,&s_fp_blob_ops);
+ CHECK(!wrong_device_thread);
+ printf("PASS actual prepare/draw default gate, owner order and real FXC mode=%s queued=%u claimed=%u prepass=%u\n",
+        mode,shader_queued,shader_claimed,prepass_calls);return 0;
+}

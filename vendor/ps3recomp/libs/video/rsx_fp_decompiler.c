@@ -197,6 +197,24 @@ static u64 fp_hash_bytes(const void* data, u32 size, u64 hash)
     return hash;
 }
 
+/* Canonical buffered program bytes preserve instruction positions and zero inline constants. */
+u32 rsx_fp_canonical_program(const u8* ucode,u32 max_bytes,u8* out,u32 capacity)
+{
+    if(!ucode || !out)return 0;
+    u32 off=0,constants=0;
+    while(off+16<=max_bytes && off+16<=capacity){
+        u32 w0=rsx_fp_read_word(ucode+off),w1=rsx_fp_read_word(ucode+off+4);
+        u32 w2=rsx_fp_read_word(ucode+off+8),w3=rsx_fp_read_word(ucode+off+12);
+        memcpy(out+off,ucode+off,16);off+=16;
+        if(fp_instruction_has_constant(w1,w2,w3)){
+            if(off+16>max_bytes || off+16>capacity || constants++>=RSX_FP_MAX_INLINE_CONSTANTS)return 0;
+            memset(out+off,0,16);off+=16;
+        }
+        if(w0&FP_END)return off;
+    }
+    return 0;
+}
+
 u64 rsx_fp_structural_hash(const u8* ucode, u32 max_bytes, u64 seed)
 {
     if (!ucode)

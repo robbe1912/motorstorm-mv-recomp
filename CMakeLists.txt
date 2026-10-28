@@ -273,6 +273,7 @@ if(WIN32)
         d3d12
         dxgi
         d3dcompiler
+        bcrypt
         dxguid
     )
 endif()
