@@ -10,6 +10,7 @@
  */
 
 #include "cellSpurs.h"
+#include "../../include/ps3emu/spurs_scheduler_observer.h"
 #include "../../runtime/platform/win32_compat.h"
 #include "../../runtime/ps3_log.h"
 #include "spu_workload.h"   /* SPU image -> lifted-entry dispatch (runtime/spu) */
@@ -71,6 +72,15 @@ typedef struct {
 
 /* Global workload table (per-SPURS instance in a real system, simplified) */
 static SpursWorkload s_workloads[CELL_SPURS_MAX_WORKLOAD];
+#if PS3_SPURS_SCHEDULER_OBSERVATION
+/* Each counter is advanced only under its existing directory/registry/instance
+ * lock. Diagnostic identity exhaustion never changes guest execution. */
+static uint64_t s_trace_instance_epoch, s_trace_workload_epoch;
+static uint64_t s_trace_workloads[CELL_SPURS_MAX_WORKLOAD];
+static uint64_t spurs_trace_next(uint64_t* value) {
+    return *value==UINT64_MAX ? 0 : ++*value;
+}
+#endif
 static SpursTask     s_tasks[CELL_SPURS_MAX_TASK];
 static u32           s_next_task_id = 0;
 
@@ -451,6 +461,9 @@ struct SpursPmSlot {
     const uint8_t* pm;
     u64 data;
     HANDLE thread;
+#if PS3_SPURS_SCHEDULER_OBSERVATION
+    ps3_spurs_dispatch_info trace;
+#endif
 };
 static struct SpursInst {
     u32 ea, nspus;
@@ -462,9 +475,37 @@ static struct SpursInst {
     struct SpursPmSlot slots[6];
     u8 active[16], idle[16];
     u32 cursor, pass_no;
+#if PS3_SPURS_SCHEDULER_OBSERVATION
+    uint64_t trace_instance, trace_dispatch;
+#endif
 } s_inst[MAX_SPURS_INST];
 static SRWLOCK s_inst_directory_lock = SRWLOCK_INIT;
 static SRWLOCK s_workload_registry_lock = SRWLOCK_INIT;
+
+#if PS3_SPURS_SCHEDULER_OBSERVATION
+/* Call with the ordinary lifecycle/registry ownership held, or after all of
+ * this instance's workers/coordinator have joined. Never calls an observer. */
+static ps3_spurs_dispatch_info spurs_trace_info(struct SpursInst* si,u32 wid) {
+    ps3_spurs_dispatch_info info={0};
+    info.instance=si->trace_instance; info.instance_ea=si->ea;
+    info.workload=wid; info.lane=UINT32_MAX; info.image=-1; info.nspus=si->nspus;
+    if (wid<CELL_SPURS_MAX_WORKLOAD) {
+        info.workload_generation=s_trace_workloads[wid];
+        info.pm_ea=(u32)(uintptr_t)s_workloads[wid].pm;
+        info.pm_size=s_workloads[wid].sizePm; info.argument=s_workloads[wid].data;
+    }
+    return info;
+}
+static void spurs_trace_lifecycle(u32 kind,const ps3_spurs_dispatch_info* info,s32 result) {
+    ps3_spurs_scheduler_event event={0};
+    event.kind=kind; event.info=*info; event.result=result;
+    ps3_spurs_scheduler_publish(&event);
+}
+static void spurs_trace_flush(ps3_spurs_scheduler_event* events,unsigned* count) {
+    for (unsigned i=0;i<*count;i++) ps3_spurs_scheduler_publish(&events[i]);
+    *count=0;
+}
+#endif
 
 static s32 spurs_scheduler_start(struct SpursInst* si);
 static s32 spurs_scheduler_stop(struct SpursInst* si, u32 ea);
@@ -521,12 +562,20 @@ static s32 spurs_initialize_common(u32 spurs_ea, u32 nspus, const char* prefix)
     }
     si->starting = 1;
     si->kernel_live = 1; /* reserve this lifecycle before publishing guest memory */
+#if PS3_SPURS_SCHEDULER_OBSERVATION
+    si->trace_instance=spurs_trace_next(&s_trace_instance_epoch);
+    si->trace_dispatch=0;
+#endif
     __atomic_store_n(&si->ea, spurs_ea, __ATOMIC_RELEASE);
     ReleaseSRWLockExclusive(&si->lock);
     ReleaseSRWLockExclusive(&s_inst_directory_lock);
     si->nspus = (nspus > 0 && nspus <= CELL_SPURS_MAX_SPU) ? nspus : 1;
     memset(si->prefix, 0, sizeof(si->prefix));
     if (prefix) memcpy(si->prefix, prefix, 15);
+#if PS3_SPURS_SCHEDULER_OBSERVATION
+    ps3_spurs_dispatch_info trace=spurs_trace_info(si,UINT32_MAX);
+    spurs_trace_lifecycle(PS3_SPURS_INSTANCE_RESERVED,&trace,0);
+#endif
 
     /* Real BE instance: zero it, then the few live fields. (The global
      * workload table is NOT wiped here — the title may init several SPURS
@@ -540,6 +589,9 @@ static s32 spurs_initialize_common(u32 spurs_ea, u32 nspus, const char* prefix)
     si->starting = 0;
     if (start_rc) __atomic_store_n(&si->ea, 0, __ATOMIC_RELEASE);
     ReleaseSRWLockExclusive(&si->lock);
+#if PS3_SPURS_SCHEDULER_OBSERVATION
+    spurs_trace_lifecycle(PS3_SPURS_INSTANCE_RESULT,&trace,start_rc);
+#endif
     if (start_rc) return start_rc;
     printf("[cellSpurs] Initialize \"%s\" ea=0x%08X nSpus=%u (real BE instance + kernel poll)\n",
            si->prefix, spurs_ea, si->nspus);
@@ -576,6 +628,9 @@ s32 cellSpursFinalize(CellSpurs* spurs)
     if (!si) return CELL_SPURS_CORE_ERROR_STAT;
     s32 rc = spurs_scheduler_stop(si, (u32)(uintptr_t)spurs);
     if (rc) return rc; /* BUSY changes neither admission nor attached queues. */
+#if PS3_SPURS_SCHEDULER_OBSERVATION
+    ps3_spurs_dispatch_info trace=spurs_trace_info(si,UINT32_MAX);
+#endif
     u32 ea = si->ea;
     spurs_policy_release_instance(ea);
     spurs_scheduler_retire(ea);
@@ -584,6 +639,9 @@ s32 cellSpursFinalize(CellSpurs* spurs)
     __atomic_store_n(&si->ea, 0, __ATOMIC_RELEASE);
     si->stopping = 0;
     ReleaseSRWLockExclusive(&si->lock);
+#if PS3_SPURS_SCHEDULER_OBSERVATION
+    spurs_trace_lifecycle(PS3_SPURS_INSTANCE_CLOSED,&trace,0);
+#endif
     return CELL_OK;
 }
 
@@ -1354,6 +1412,9 @@ s32 cellSpursAddWorkload(CellSpurs* spurs, CellSpursWorkloadId* wid,
                    (u16)(vm_read16(spurs_ea + SPURS_WKL_SIGNAL1) & ~(0x8000u >> i)));
             ef_line_end(spurs_ea);
             s_workloads[i].in_use = 1;
+#if PS3_SPURS_SCHEDULER_OBSERVATION
+            s_trace_workloads[i]=spurs_trace_next(&s_trace_workload_epoch);
+#endif
             s_workloads[i].pm = pm;
             s_workloads[i].sizePm = sizePm;
             s_workloads[i].data = data;
@@ -1388,7 +1449,13 @@ s32 cellSpursAddWorkload(CellSpurs* spurs, CellSpursWorkloadId* wid,
             vm_write32((u32)(uintptr_t)wid, i);
             printf("[cellSpurs] AddWorkload(wid=%u, pm=%p, size=%u)\n",
                    i, pm, sizePm);
+#if PS3_SPURS_SCHEDULER_OBSERVATION
+            ps3_spurs_dispatch_info trace=spurs_trace_info(si,i);
+#endif
             spurs_api_unlock(si);
+#if PS3_SPURS_SCHEDULER_OBSERVATION
+            spurs_trace_lifecycle(PS3_SPURS_WORKLOAD_ADDED,&trace,0);
+#endif
             return CELL_OK;
         }
     }
@@ -1570,6 +1637,9 @@ s32 cellSpursRemoveWorkload(CellSpurs* spurs, CellSpursWorkloadId wid)
     if (si->active[wid] || spurs_policy_release_workload(si->ea, wid)) {
         spurs_api_unlock(si); return CELL_SPURS_CORE_ERROR_BUSY;
     }
+#if PS3_SPURS_SCHEDULER_OBSERVATION
+    ps3_spurs_dispatch_info trace=spurs_trace_info(si,wid);
+#endif
     s_workloads[wid].in_use = 0;
     vm_write8(si->ea + SPURS_WKL_STATE1 + wid, 3);
     vm_write32(si->ea + SPURS_WKL_ENABLED,
@@ -1577,6 +1647,9 @@ s32 cellSpursRemoveWorkload(CellSpurs* spurs, CellSpursWorkloadId wid)
     spurs_scheduler_forget(wid);
     printf("[cellSpurs] RemoveWorkload(wid=%u)\n", wid);
     spurs_api_unlock(si);
+#if PS3_SPURS_SCHEDULER_OBSERVATION
+    spurs_trace_lifecycle(PS3_SPURS_WORKLOAD_REMOVED,&trace,0);
+#endif
     return CELL_OK;
 }
 
@@ -1661,9 +1734,16 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
             SleepConditionVariableSRW(&si->wake, &si->lock, INFINITE, 0);
         if (si->stopping && !slot->busy) break;
         ReleaseSRWLockExclusive(&si->lock);
+#if PS3_SPURS_SCHEDULER_OBSERVATION
+        ps3_spurs_scheduler_worker_begin(&slot->trace);
+        int trace_result=
+#endif
         spu_run_policy_module(slot->fn, slot->image_id, slot->pm, slot->pm_size,
                               slot->data, slot->wid, slot->ea, slot->spu_num);
         unsigned polls = g_spurs_pm_polls;
+#if PS3_SPURS_SCHEDULER_OBSERVATION
+        ps3_spurs_scheduler_worker_return(trace_result,polls);
+#endif
         AcquireSRWLockExclusive(&si->lock);
         u32 wid = slot->wid;
         if (si->active[wid]) si->active[wid]--;
@@ -1684,6 +1764,10 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
     struct SpursInst* si = (struct SpursInst*)p;
     ps3_thread_setname((uintptr_t)-2,"spurs_kernel");
     int disabled = getenv("PS3_NO_SPURS_PM") != NULL;
+#if PS3_SPURS_SCHEDULER_OBSERVATION
+    ps3_spurs_scheduler_event trace_events[6];
+    unsigned trace_count=0;
+#endif
     AcquireSRWLockExclusive(&si->lock);
     while (!si->stopping) {
         /* Preserve the periodic poller's native Sleep(1) cadence during this
@@ -1691,7 +1775,13 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
          * probe. Explicit producer publication/notification is separate work.
          * Neither sleeping nor guest execution may hold the instance lock. */
         ReleaseSRWLockExclusive(&si->lock);
+#if PS3_SPURS_SCHEDULER_OBSERVATION
+        spurs_trace_flush(trace_events,&trace_count);
+#endif
         Sleep(1);
+#if PS3_SPURS_SCHEDULER_OBSERVATION
+        uint64_t trace_begin=ps3_spurs_scheduler_clock();
+#endif
         AcquireSRWLockExclusive(&si->lock);
         if (si->stopping) break;
         if (disabled) continue;
@@ -1739,6 +1829,19 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
                 spu_lockline_lock();
                 vm_base[ea + SPURS_WKL_CURCONT + wid] = si->active[wid];
                 ef_line_end(ea);
+#if PS3_SPURS_SCHEDULER_OBSERVATION
+                ps3_spurs_scheduler_event trace={0};
+                trace.info=spurs_trace_info(si,wid);
+                trace.info.dispatch=spurs_trace_next(&si->trace_dispatch);
+                trace.info.lane=sn; trace.info.image=slot->image_id;
+                trace.info.argument=slot->data;
+                trace.kind=PS3_SPURS_ADMITTED; trace.tick_begin=trace_begin;
+                trace.flags=PS3_SPURS_TIME_INTERVAL|PS3_SPURS_SEQUENTIAL_SNAPSHOT;
+                trace.ready=ready; trace.signal=signal;
+                trace.active=si->active[wid]; trace.max_contention=maxcont;
+                slot->trace=trace.info;
+                trace_events[trace_count++]=trace;
+#endif
                 slot->busy = 1;
                 WakeAllConditionVariable(&si->wake);
                 break;
@@ -1747,6 +1850,9 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
         ReleaseSRWLockExclusive(&s_workload_registry_lock);
     }
     ReleaseSRWLockExclusive(&si->lock);
+#if PS3_SPURS_SCHEDULER_OBSERVATION
+    spurs_trace_flush(trace_events,&trace_count);
+#endif
     return 0;
 }
 
