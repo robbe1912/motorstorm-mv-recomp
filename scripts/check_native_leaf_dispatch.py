@@ -23,7 +23,7 @@ def build(name, source, baseline=False):
     directory=out/name
     directory.mkdir(exist_ok=True)
     exe=directory/('fixture.exe' if os.name=='nt' else 'fixture')
-    command=[args.compiler, str(source), str(root/'scripts/fixtures/native_leaf_dispatch.c'), str(spu/'spu_drain.c')]
+    command=[args.compiler, str(source), str(root/'scripts/fixtures/native_leaf_dispatch.c'), str(spu/'spu_drain.c'), str(spu/'spu_float_simd.c')]
     if os.name=='nt':
         command+=['/nologo','/std:c17','/Gy','/Gw','/O2','/UNDEBUG','/D_CRT_SECURE_NO_WARNINGS',
                   '/I'+str(root/'vendor/ps3recomp/include'),'/I'+str(spu),'/Fo'+str(directory)+os.sep,'/Fe'+str(exe),'/link','/OPT:REF']
@@ -89,6 +89,22 @@ assert reference.count('    PS3_SPU_EXECUTION(PS3_SPU_INTERPRETER_INVOKE, ctx, 0
 reference=reference.replace('    PS3_SPU_EXECUTION(PS3_SPU_INTERPRETER_INVOKE, ctx, 0, ctx->pc, 0,\n        PS3_SPU_SOURCE_UNAVAILABLE | PS3_SPU_TARGET_CONTEXT_PC, 0);\n','',1)
 assert reference.count('        if (fn) {\n            ctx->pc = target;\n            PS3_SPU_RESOLVED(ctx, fn);\n            fn(ctx); return;\n        }\n')==1
 reference=reference.replace('        if (fn) {\n            ctx->pc = target;\n            PS3_SPU_RESOLVED(ctx, fn);\n            fn(ctx); return;\n        }\n','        if (fn) { ctx->pc = target; fn(ctx); return; }\n',1)
+# Undo the separately validated SIMD scope wrapper only in the pinned reference.
+# Production and its mutants still link the actual SIMD implementation.
+scope_wrapper = """
+uint32_t spu_interp_run_until_budget(spu_context* ctx, uint32_t start_lsa, uint32_t stop_lsa, uint64_t local_budget)
+{
+    uint64_t saved = spu_sf_simd_enter();
+    uint32_t result = spu_interp_run_until_budget_scoped_body(ctx, start_lsa, stop_lsa, local_budget);
+    spu_sf_simd_leave(saved);
+    return result;
+}
+"""
+assert reference.count(scope_wrapper)==1
+reference=reference.replace(scope_wrapper,'',1)
+scoped='static uint32_t spu_interp_run_until_budget_scoped_body('
+assert reference.count(scoped)==1
+reference=reference.replace(scoped,'uint32_t spu_interp_run_until_budget(',1)
 # The option cache changes only the trace gate outside the registry/hook.
 trace_begin=reference.index('    /* A direct dump before any interpreter run')
 trace_end=reference.index('\n    fprintf(stderr, "[SPU-TRACE]',trace_begin)

@@ -1014,3 +1014,12 @@ identity fixture, without a public include search path. Fork-first follow-up
 context include relative, matching its existing PS3 types include. This fixes
 all such consumers without weakening checks or changing execution semantics;
 the original failed audit is retained. The same one-line change is curated here.
+
+## Exact SPU float values and scoped SIMD
+
+This selective vendor sync ports runtime `057c56c` and `daeb1575`, preserving
+Robin Fröhlich’s authorship. The [value contract](SPU_FLOAT_VALUES.md) records
+the finite exponent255 range, exact scalar fallback, SIMD scope and authored
+checks. Original vendor test/workflow paths are omitted; curated runners
+exercise the actual helpers and keep existing interpreter assertions. Native
+menu/race effects require the separate owner trial.

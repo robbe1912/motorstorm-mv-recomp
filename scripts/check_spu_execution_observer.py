@@ -21,7 +21,8 @@ compiler=shutil.which(a.compiler) or a.compiler
 msvc=Path(compiler).name.lower() in ('cl','cl.exe','clang-cl','clang-cl.exe')
 spu=toolkit/'runtime/spu';diag=toolkit/'runtime/diag/spu_execution_observer.c'
 sources={x:(toolkit/x).read_text() for x in ['runtime/spu/spu_context.h','runtime/spu/spu_interp.c',
-    'runtime/spu/spu_drain.c','runtime/spu/spu_channels.c','runtime/diag/spu_execution_observer.c']}
+    'runtime/spu/spu_drain.c','runtime/spu/spu_channels.c','runtime/diag/spu_execution_observer.c',
+    'runtime/spu/spu_float_simd.c','runtime/spu/spu_float_simd.h','runtime/spu/spu_float.h','runtime/spu/spu_helpers.h']}
 def function(text,signature):
     start=text.index(signature);opening=text.index('{',start)
     clean=re.sub(r'/\*[\s\S]*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'',
@@ -71,7 +72,7 @@ def build_run(name,enabled,changes=None):
         (local/Path(path).name).write_text(contents[path])
     (d/'observer.c').write_text(contents['runtime/diag/spu_execution_observer.c'].replace(
         '#include "../spu/spu_context.h"','#include "spu_context.h"'))
-    drain=function(contents['runtime/spu/spu_drain.c'],'void spu_drain_call(')
+    drain=function(contents['runtime/spu/spu_drain.c'],'static void spu_drain_call_scoped_body(')
     # The curated drain has additional diagnostics and policy routing. Exercise
     # its exact selection/IRQ/call slice in an authored loop, not a fork model.
     begin=drain.index('            spu_task_launch_check(ctx, (void*)fn);')
@@ -93,7 +94,8 @@ def build_run(name,enabled,changes=None):
     fixture=fixture.replace('/* ACTUAL_RESOLVED_TAIL */',tail)
     (d/'fixture.c').write_text(fixture.replace('/* ACTUAL_SCOPED_BODY */',body))
     exe=d/('fixture.exe'if os.name=='nt'else'fixture')
-    inputs=[str(local/'spu_interp.c'),str(d/'observer.c'),str(d/'fixture.c')]
+    inputs=[str(local/'spu_interp.c'),str(toolkit/'runtime/spu/spu_float_simd.c'),
+            str(d/'observer.c'),str(d/'fixture.c')]
     if msvc:
         flags=['/nologo','/std:c17','/O2','/UNDEBUG','/D_CRT_SECURE_NO_WARNINGS',
             '/DPS3_EXECUTION_OBSERVATION='+str(enabled),'/I'+str(toolkit/'include'),'/I'+str(local),

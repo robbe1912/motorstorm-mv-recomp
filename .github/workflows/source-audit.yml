@@ -142,6 +142,8 @@ jobs:
           path: |
             build/self-tests/spurs-policy-counters/**/*.log
             build/self-tests/spurs-policy-counters/**/*.json
+      - name: Exact SPU float values and scoped SIMD
+        run: python scripts/check_spu_float.py
       - name: Productive SPU interrupt returns
         run: python scripts/check_spu_iret_progress.py
       - name: Interpreter thread reporting isolation
@@ -309,6 +311,8 @@ jobs:
           path: |
             build/self-tests/spurs-policy-counters/**/*.log
             build/self-tests/spurs-policy-counters/**/*.json
+      - name: Exact SPU float values and scoped SIMD
+        run: python scripts/check_spu_float.py
       - name: Productive SPU interrupt returns
         run: python scripts/check_spu_iret_progress.py
       - name: Interpreter thread reporting isolation

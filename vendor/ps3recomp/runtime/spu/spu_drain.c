@@ -1,3 +1,4 @@
+#include "spu_float_simd.h"
 /* SPU_DRAIN trampoline model -- runtime state + stub hooks (faithful-adopt).
  *
  * Milestone 1 lands the execution-model plumbing; the per-transfer hooks
@@ -429,7 +430,7 @@ typedef void (*spu_drain_fn)(spu_context*);
 extern spu_drain_fn spu_lookup(uint32_t addr, int image_id);
 extern void (*spu_lifted_lookup(const spu_context* ctx, uint32_t lsa))(spu_context*); /* spu_channels.c */
 
-void spu_drain_call(spu_context* ctx, uint32_t return_pc)
+static void spu_drain_call_scoped_body(spu_context* ctx, uint32_t return_pc)
 {
     spu_depth_guard(ctx);
     /* The frame an interrupt taken in THIS loop returns to. It stays armed
@@ -720,4 +721,10 @@ void spu_drain_call(spu_context* ctx, uint32_t return_pc)
         }
     }
 #undef SPU_DRAIN_POP_IRQ
+}
+
+void spu_drain_call(spu_context* ctx, uint32_t return_pc) {
+    uint64_t saved=spu_sf_simd_enter();
+    spu_drain_call_scoped_body(ctx,return_pc);
+    spu_sf_simd_leave(saved);
 }
