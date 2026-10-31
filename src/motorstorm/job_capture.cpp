@@ -9,6 +9,7 @@ struct job_capture {
     ps3_spu_execution_observer execution;
     ps3_spurs_scheduler_observer scheduler;
     std::atomic<uint64_t> unexpected_failures;
+    std::atomic<uint64_t> excluded_atomic, excluded_execution, excluded_scheduler;
 };
 /* Setup/teardown are serialized while producers are quiescent. */
 static job_capture* active;
@@ -16,6 +17,26 @@ static job_capture* active;
 static uint64_t clock_now(void* p) {
     auto* c = static_cast<job_capture*>(p);
     return c->config.clock(c->config.user);
+}
+static void increment(std::atomic<uint64_t>& counter) {
+    uint64_t previous = counter.load(std::memory_order_relaxed);
+    while (previous != UINT64_MAX && !counter.compare_exchange_weak(
+            previous, previous + 1, std::memory_order_relaxed)) {}
+}
+static int accept_atomic(void* p, uint32_t source, uintptr_t context, uint64_t address, uint32_t size) {
+    auto* c = static_cast<job_capture*>(p);
+    if (!c->config.accept_atomic || c->config.accept_atomic(c->config.user, source, context, address, size)) return 1;
+    increment(c->excluded_atomic); return 0;
+}
+static int accept_execution(void* p, uint32_t kind, uintptr_t context, uint32_t source, uint32_t target) {
+    auto* c = static_cast<job_capture*>(p);
+    if (!c->config.accept_execution || c->config.accept_execution(c->config.user, kind, context, source, target)) return 1;
+    increment(c->excluded_execution); return 0;
+}
+static int accept_scheduler(void* p, const ps3_spurs_scheduler_event* event) {
+    auto* c = static_cast<job_capture*>(p);
+    if (!c->config.accept_scheduler || c->config.accept_scheduler(c->config.user, event)) return 1;
+    increment(c->excluded_scheduler); return 0;
 }
 static job_capture_record record_for(job_capture* c, uint32_t kind) {
     job_capture_record r{};
@@ -28,9 +49,7 @@ static job_capture_record record_for(job_capture* c, uint32_t kind) {
 static void append(job_capture* c, const job_capture_record& r) {
     int result = ps3_sized_trace_append(c->trace, &r, sizeof(r));
     if (result == PS3_SIZED_TRACE_RECORDED || result == PS3_SIZED_TRACE_FULL) return;
-    uint64_t previous = c->unexpected_failures.load(std::memory_order_relaxed);
-    while (previous != UINT64_MAX && !c->unexpected_failures.compare_exchange_weak(
-            previous, previous + 1, std::memory_order_relaxed)) {}
+    increment(c->unexpected_failures);
 }
 static void atomic_event(void* p, const ps3_atomic_observation* e) {
     auto* c = static_cast<job_capture*>(p);
@@ -56,13 +75,17 @@ job_capture* job_capture_start(const job_capture_config* config) {
     auto* c = new (std::nothrow) job_capture{};
     if (!c) return nullptr;
     c->unexpected_failures.store(0, std::memory_order_relaxed);
-    if (!c->unexpected_failures.is_lock_free()) { delete c; return nullptr; }
+    c->excluded_atomic.store(0, std::memory_order_relaxed);
+    c->excluded_execution.store(0, std::memory_order_relaxed);
+    c->excluded_scheduler.store(0, std::memory_order_relaxed);
+    if (!c->unexpected_failures.is_lock_free() || !c->excluded_atomic.is_lock_free() ||
+        !c->excluded_execution.is_lock_free() || !c->excluded_scheduler.is_lock_free()) { delete c; return nullptr; }
     c->config = *config;
     c->trace = ps3_sized_trace_create(config->capacity, sizeof(job_capture_record));
     if (!c->trace) { delete c; return nullptr; }
-    c->atomic = {c, clock_now, atomic_event, nullptr};
-    c->execution = {c, clock_now, execution_event, nullptr};
-    c->scheduler = {c, clock_now, scheduler_event, nullptr};
+    c->atomic = {c, clock_now, atomic_event, accept_atomic};
+    c->execution = {c, clock_now, execution_event, accept_execution};
+    c->scheduler = {c, clock_now, scheduler_event, accept_scheduler};
     if (!ps3_atomic_observer_install_ppu(&c->atomic)) goto fail;
     if (!ps3_atomic_observer_install_spu(&c->atomic)) goto clear_ppu;
     if (!ps3_spu_execution_observer_install(&c->execution)) goto clear_spu;
@@ -86,6 +109,12 @@ int job_capture_describe(const job_capture* c, job_capture_info* out) {
     info.run_id = c->config.run_id;
     info.ticks_per_second = c->config.ticks_per_second;
     info.unexpected_append_failures = c->unexpected_failures.load(std::memory_order_relaxed);
+    info.excluded_atomic = c->excluded_atomic.load(std::memory_order_relaxed);
+    info.excluded_execution = c->excluded_execution.load(std::memory_order_relaxed);
+    info.excluded_scheduler = c->excluded_scheduler.load(std::memory_order_relaxed);
+    info.filter_mask = (c->config.accept_atomic ? uint32_t(JOB_CAPTURE_FILTER_ATOMIC) : 0u) |
+        (c->config.accept_execution ? uint32_t(JOB_CAPTURE_FILTER_EXECUTION) : 0u) |
+        (c->config.accept_scheduler ? uint32_t(JOB_CAPTURE_FILTER_SCHEDULER) : 0u);
     info.schema_version = JOB_CAPTURE_SCHEMA_VERSION;
     info.record_size = sizeof(job_capture_record);
     info.pointer_size = sizeof(uintptr_t);

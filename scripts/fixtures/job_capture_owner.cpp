@@ -34,6 +34,9 @@ static std::atomic<uint64_t> ticks{1};
 static thread_local uint64_t tid = 11;
 static uint64_t clock_now(void*) { return ticks.fetch_add(1); }
 static uint64_t thread_now(void*) { return tid; }
+static int filter_atomic(void*, uint32_t, uintptr_t, uint64_t address, uint32_t) { return address == 42; }
+static int filter_execution(void*, uint32_t, uintptr_t, uint32_t, uint32_t target) { return target == 42; }
+static int filter_scheduler(void*, const ps3_spurs_scheduler_event* e) { return e->info.dispatch == 42; }
 static int visit(void* user, uint64_t index, const job_capture_record*) {
     auto* count = static_cast<unsigned*>(user);
     assert(index == *count); ++*count; return *count < 7;
@@ -54,7 +57,7 @@ static void produce(unsigned id) {
     }
 }
 int main() {
-    job_capture_config config{7, 10000000, 4004, nullptr, clock_now, thread_now};
+    job_capture_config config{7, 10000000, 4004, nullptr, clock_now, thread_now, nullptr, nullptr, nullptr};
     assert(!job_capture_start(nullptr));
     for (int fail = 1; fail <= 4; ++fail) {
         fail_at = fail; install_call = 0;
@@ -100,5 +103,24 @@ int main() {
     assert(job_capture_describe(capture, &info) && info.storage.attempted == 4005 && info.storage.dropped == 1);
     job_capture_stop(capture);
     assert(!ppu && !spu && !execution && !scheduler);
+    config.accept_atomic = filter_atomic;
+    config.accept_execution = filter_execution;
+    config.accept_scheduler = filter_scheduler;
+    capture = job_capture_start(&config); assert(capture);
+    assert(!ppu->accept(ppu->user, PS3_ATOMIC_PPU32, 1, 41, 4));
+    assert(ppu->accept(ppu->user, PS3_ATOMIC_PPU32, 1, 42, 4));
+    assert(!execution->accept(execution->user, 1, 1, 0, 41));
+    assert(execution->accept(execution->user, 1, 1, 0, 42));
+    s.info.dispatch = 41; assert(!scheduler->accept(scheduler->user, &s));
+    s.info.dispatch = 42; assert(scheduler->accept(scheduler->user, &s));
+    for (auto& t : threads) t = std::thread([] {
+        for (unsigned i = 0; i < 1000; ++i)
+            assert(!ppu->accept(ppu->user, PS3_ATOMIC_PPU32, 1, 41, 4));
+    });
+    for (auto& t : threads) t.join();
+    assert(job_capture_describe(capture, &info));
+    assert(info.filter_mask == 7 && info.excluded_atomic == 4001 && info.excluded_execution == 1 && info.excluded_scheduler == 1);
+    assert(info.storage.attempted == 0);
+    job_capture_stop(capture);
     return 0;
 }

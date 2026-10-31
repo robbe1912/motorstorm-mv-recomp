@@ -287,8 +287,12 @@ the sized store with one supplied clock and run ID. Each record includes a
 thread ID and, when available, the current host-worker assignment. The latter
 is not proof that an arbitrary observed context belongs to that worker. Failed
 installation rolls back earlier installations; startup and shutdown require all
-producers to be quiescent and no other observer owner. The owner captures all
-events, so finite capacity and loss must be accounted for in any capture.
+producers to be quiescent and no other observer owner. Optional owner-provided
+atomic, execution and scheduler filters execute before event capture. The owner
+reports which filters were configured and saturating per-source exclusion counts;
+excluded events are missing coverage, not proof of absent work. Filters must be
+concurrent-safe and obey the observer callback restrictions. Null accepts all.
+Finite capacity and loss must be accounted for in any capture.
 
 An explicit visit API scans the initial reservation horizon and records pending
 slots, consumer failures and metadata before and after the scan. Unexpected
