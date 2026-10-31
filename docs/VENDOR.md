@@ -1053,3 +1053,16 @@ Fork storage runs `41226175836` and `41226179389` passed on Windows, Linux and
 macOS. The public source audit runs the real store and four negative controls on
 Linux and Windows. This is storage only: it does not install an observer, bind
 a game job, measure capture overhead, or establish an FPS improvement.
+
+### SPURS workload attribute contention
+
+Issue #227's context-aware ninth-argument handler is curated from fork modular
+and combined commit `49b20c9d8c13852ea01715d5021d06180156120d`. The fork HLE
+and native workload runs `41231041610`, `41231041521`, `41231064697` and
+`41231064621` passed on Windows, Linux and macOS. The public generator receives
+the matching registration change, and authored controls exercise actual HLE
+dispatch and scheduler admission. The selected local generated tree did not
+contain a pre-existing HLE table, so the build uses the public generator; a
+separately supplied old table would need the context registration regenerated.
+No game workload request, frame-time improvement or race result is established
+by these authored tests.

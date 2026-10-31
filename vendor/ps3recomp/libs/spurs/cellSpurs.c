@@ -17,6 +17,7 @@
 #include "../../runtime/platform/thread_name.h"
 #include "spurs_taskset.h"  /* REAL BE CellSpursTaskset layout builders (fork Option-B) */
 #include "../../runtime/ppu/ppu_memory.h"   /* vm_base (guest mem) */
+#include "../../runtime/ppu/ppu_context.h"
 #include "../../runtime/ppu/ppu_context.h"  /* g_active_ctx -> guest lr (SendSignal caller) */
 #include <stdio.h>
 #include <stdlib.h>   /* getenv -- an implicit decl returns int, truncating the pointer */
@@ -1586,10 +1587,11 @@ s32 cellSpursAddWorkloadWithAttribute(CellSpurs* spurs,
 
 /* The SDK-versioned workload-attribute initializer (the import the game links;
  * NID differs from the non-underscore inline wrapper). Args arrive raw in
- * r3..r10; writes the REAL BE layout so AddWorkloadWithAttribute round-trips. */
+ * r3..r10 and the ninth stack argument; writes the REAL BE layout so
+ * AddWorkloadWithAttribute round-trips. */
 s32 _cellSpursWorkloadAttributeInitialize(u64 attr_ea, u32 revision, u32 sdkVersion,
                                           u64 pm_ea, u32 size, u64 data,
-                                          u64 prio_ea, u32 minContention)
+                                          u64 prio_ea, u32 minContention, u32 maxContention)
 {
     if (!attr_ea) return CELL_SPURS_CORE_ERROR_NULL_POINTER;
     vm_write32((u32)attr_ea + WKATTR_REVISION,   revision);
@@ -1601,7 +1603,7 @@ s32 _cellSpursWorkloadAttributeInitialize(u64 attr_ea, u32 revision, u32 sdkVers
         *(vm_base + (u32)attr_ea + WKATTR_PRIORITY + i) =
             prio_ea ? *(vm_base + (u32)prio_ea + i) : 0;
     vm_write32((u32)attr_ea + WKATTR_MIN_CONT, minContention);
-    vm_write32((u32)attr_ea + WKATTR_MAX_CONT, 1);   /* 9th arg is beyond the 8-GPR adapter */
+    vm_write32((u32)attr_ea + WKATTR_MAX_CONT, maxContention);
     vm_write32((u32)attr_ea + WKATTR_NAME_CLASS, 0);
     vm_write32((u32)attr_ea + WKATTR_NAME_INST,  0);
     vm_write32((u32)attr_ea + WKATTR_HOOK,     0);
@@ -1609,6 +1611,21 @@ s32 _cellSpursWorkloadAttributeInitialize(u64 attr_ea, u32 revision, u32 sdkVers
     printf("[cellSpurs] _WorkloadAttributeInitialize(attr=0x%08X pm=0x%08X size=%u data=0x%llX minC=%u)\n",
            (u32)attr_ea, (u32)pm_ea, size, (unsigned long long)data, minContention);
     return CELL_OK;
+}
+
+/* PPC64 ELFv1 uses r3-r10 for the first eight integer arguments. The ninth
+ * occupies the eight-byte parameter slot at SP+0x70 in guest byte order. */
+void ps3_spurs_workload_attribute_initialize(ppu_context* ctx)
+{
+    if (!ctx->gpr[3]) {
+        ctx->gpr[3] = (u64)(int64_t)(s32)CELL_SPURS_CORE_ERROR_NULL_POINTER;
+        return;
+    }
+    u32 maxContention = (u32)vm_read64((u32)ctx->gpr[1] + 0x70u);
+    s32 rc = _cellSpursWorkloadAttributeInitialize(
+        ctx->gpr[3], (u32)ctx->gpr[4], (u32)ctx->gpr[5], ctx->gpr[6],
+        (u32)ctx->gpr[7], ctx->gpr[8], ctx->gpr[9], (u32)ctx->gpr[10], maxContention);
+    ctx->gpr[3] = (u64)(int64_t)rc;
 }
 
 s32 cellSpursWorkloadAttributeSetName(u64 attr_ea, u64 nameClass_ea, u64 nameInstance_ea)

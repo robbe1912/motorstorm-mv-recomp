@@ -115,12 +115,19 @@ def main():
         for _nid, name in regs:
             f.write(f"    void {name}(void);\n")
         f.write("}\n")
-        if any(name == 'cellSaveDataListAutoLoad' for _, name in regs):
+        context_names = {name for _, name in regs}
+        if context_names & {'cellSaveDataListAutoLoad', '_cellSpursWorkloadAttributeInitialize'}:
             f.write('struct ppu_context;\n')
-            f.write('extern "C" void ps3_savedata_list_auto_load(ppu_context*);\n')
             f.write('extern "C" void ps3_hle_register_ctx(unsigned, const char*, void (*)(ppu_context*));\n')
+        if 'cellSaveDataListAutoLoad' in context_names:
+            f.write('extern "C" void ps3_savedata_list_auto_load(ppu_context*);\n')
+        if '_cellSpursWorkloadAttributeInitialize' in context_names:
+            f.write('extern "C" void ps3_spurs_workload_attribute_initialize(ppu_context*);\n')
         f.write('extern "C" void ppu_hle_register_all(void) {\n')
         for nid, name in regs:
+            if name == '_cellSpursWorkloadAttributeInitialize':
+                f.write(f'    ps3_hle_register_ctx(0x{nid:08X}u, "{name}", ps3_spurs_workload_attribute_initialize);\n')
+                continue
             f.write(f'    ps3_hle_register(0x{nid:08X}u, "{name}", (void*){name});\n')
         if any(name == 'cellSaveDataListAutoLoad' for _, name in regs):
             f.write('    ps3_hle_register_ctx(0x21425307u, "cellSaveDataListAutoLoad", ps3_savedata_list_auto_load);\n')

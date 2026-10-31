@@ -102,6 +102,14 @@ jobs:
           path: |
             build/self-tests/spurs-admission-observers/**/*.log
             build/self-tests/spurs-admission-observers/**/*.json
+      - name: SPURS workload attribute HLE dispatch
+        run: python scripts/check_spurs_attribute_hle.py --mutants
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: spurs-attribute-hle-${{ runner.os }}
+          retention-days: 5
+          path: build/self-tests/spurs-attribute-hle/*.log
       - name: Game job capture owner controls
         run: python scripts/check_job_capture.py --mutants
       - uses: actions/upload-artifact@v4
@@ -301,6 +309,14 @@ jobs:
           path: |
             build/self-tests/spurs-admission-observers/**/*.log
             build/self-tests/spurs-admission-observers/**/*.json
+      - name: SPURS workload attribute HLE dispatch
+        run: python scripts/check_spurs_attribute_hle.py --mutants
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: spurs-attribute-hle-${{ runner.os }}
+          retention-days: 5
+          path: build/self-tests/spurs-attribute-hle/*.log
       - name: Game job capture owner controls
         run: python scripts/check_job_capture.py --mutants
       - uses: actions/upload-artifact@v4
