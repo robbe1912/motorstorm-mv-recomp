@@ -1043,3 +1043,13 @@ the three existing scheduler controls. The source audit runs these checks on
 Linux and Windows. They do not establish game bindings, capture overhead or an
 FPS improvement. The [timeline report](research/NATIVE_JOB_TIMELINE.md) records
 the remaining gates and limitations.
+
+### Bounded sized observation payloads
+
+The sized trace store is curated from fork modular and combined commit
+`4bbc4e827f60692922056348b88ddd833a1c5360`. Its header and implementation are
+identical to the fork; the authored fixture and runner only adapt public paths.
+Fork storage runs `41226175836` and `41226179389` passed on Windows, Linux and
+macOS. The public source audit runs the real store and four negative controls on
+Linux and Windows. This is storage only: it does not install an observer, bind
+a game job, measure capture overhead, or establish an FPS improvement.

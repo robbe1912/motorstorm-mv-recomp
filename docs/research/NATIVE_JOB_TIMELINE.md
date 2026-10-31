@@ -268,3 +268,16 @@ Stable30 and graphics acceptance (#27/#137), the critical producer's frame-time
 cost (#155), and this timeline (#219) remain open. Vulkan and retail mstream
 remain parked. Neither the recorder nor this static binding makes the game
 faster by itself.
+
+### Complete observation payload storage
+
+The fixed job-trace record cannot hold an entire atomic observation. The new
+bounded sized store accepts an owner-selected fixed payload size and preserves
+each payload in one release-published slot, without fragments, allocation or
+I/O on append. It exposes pending slots and saturating loss counters, never
+reuses a slot, and requires producer and consumer quiescence before destruction.
+The owner must define the schema, clocks, run and lifetime identities, and
+interpret losses; this store does not supply any of those. It is not yet
+connected to a game capture. The actual store fixture tests full authored atomic
+snapshots, concurrent writers, pending publication, loss, counter saturation,
+and odd-sized records; four compiled controls must fail specific assertions.
