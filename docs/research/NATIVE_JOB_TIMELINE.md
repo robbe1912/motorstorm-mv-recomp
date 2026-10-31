@@ -294,6 +294,16 @@ excluded events are missing coverage, not proof of absent work. Filters must be
 concurrent-safe and obey the observer callback restrictions. Null accepts all.
 Finite capacity and loss must be accounted for in any capture.
 
+The owner also provides a caller-thread private stream snapshot: a header,
+indexed completed records and a footer containing the before/after counts,
+pending slots, filters and losses. The reader checks the format, record indices
+and total extent before delivering records. Truncated files and consumer errors
+are rejected. The format uses the native ABI, has no payload checksum, and
+`fflush` is not a durability guarantee. The caller owns the stream and must
+close and independently preserve it; game startup and a live trigger before
+guard termination are still required. The view remains non-atomic and cannot
+establish missing job dependencies or a causal order.
+
 An explicit visit API scans the initial reservation horizon and records pending
 slots, consumer failures and metadata before and after the scan. Unexpected
 append failures use a saturating counter; full-store losses use the store's drop

@@ -1,4 +1,5 @@
 #include "../../src/motorstorm/job_capture.h"
+#include "../../src/motorstorm/job_capture_snapshot.h"
 #include <atomic>
 #include <cassert>
 #include <cstring>
@@ -41,6 +42,14 @@ static int visit(void* user, uint64_t index, const job_capture_record*) {
     auto* count = static_cast<unsigned*>(user);
     assert(index == *count); ++*count; return *count < 7;
 }
+static int read_record(void* user, uint64_t index, const job_capture_record* record) {
+    auto* count = static_cast<unsigned*>(user);
+    assert(index == *count);
+    if (!index) assert(record->kind == JOB_CAPTURE_EXECUTION && record->value.execution.context == 123);
+    ++*count;
+    return 1;
+}
+static int reject_record(void*, uint64_t, const job_capture_record*) { return 0; }
 
 static void produce(unsigned id) {
     tid = id + 1;
@@ -99,8 +108,32 @@ int main() {
     assert(job_capture_visit(capture, visit, &visited, &snapshot));
     assert(visited == 7 && snapshot.consumer_failed && snapshot.examined == 7 && snapshot.delivered == 6);
     assert(snapshot.before.storage.attempted == 4003 && snapshot.after.storage.attempted == 4003);
+    FILE* file = tmpfile(); assert(file);
+    assert(job_capture_write_snapshot(capture, file));
+    unsigned read_count = 0; job_capture_snapshot loaded{};
+    assert(job_capture_read_snapshot(file, read_record, &read_count, &loaded));
+    assert(read_count == 4003 && loaded.delivered == 4003 && loaded.pending == 0);
+    assert(loaded.before.storage.records_address == 0 && loaded.after.storage.records_address == 0);
+    assert(!job_capture_read_snapshot(file, reject_record, nullptr, &loaded));
+    FILE* truncated = tmpfile(); assert(truncated);
+    assert(!fseek(file, 0, SEEK_SET)); job_capture_file_header h{};
+    assert(fread(&h, sizeof(h), 1, file) == 1 && fwrite(&h, sizeof(h), 1, truncated) == 1);
+    assert(!fflush(truncated)); read_count = 0;
+    assert(!job_capture_read_snapshot(truncated, read_record, &read_count, &loaded) && read_count == 0);
+    assert(!fclose(truncated));
+    FILE* readonly = fopen(__FILE__, "rb"); assert(readonly);
+    assert(!job_capture_write_snapshot(capture, readonly)); assert(!fclose(readonly));
+    assert(!fseek(file, 0, SEEK_SET)); assert(fputc('X', file) != EOF); assert(!fflush(file));
+    read_count = 0;
+    assert(!job_capture_read_snapshot(file, read_record, &read_count, &loaded) && read_count == 0);
+    assert(!fclose(file));
     ps3_atomic_observation a{}; ppu->observe(ppu->user, &a); ppu->observe(ppu->user, &a);
     assert(job_capture_describe(capture, &info) && info.storage.attempted == 4005 && info.storage.dropped == 1);
+    file = tmpfile(); assert(file && job_capture_write_snapshot(capture, file));
+    read_count = 0;
+    assert(job_capture_read_snapshot(file, read_record, &read_count, &loaded));
+    assert(read_count == 4004 && loaded.before.storage.dropped == 1 && loaded.after.storage.dropped == 1);
+    assert(!fclose(file));
     job_capture_stop(capture);
     assert(!ppu && !spu && !execution && !scheduler);
     config.accept_atomic = filter_atomic;
