@@ -82,6 +82,8 @@ if args.mutants:
                     'r.value.atomic.after[j] == static_cast<uint8_t>(~r.value.atomic.before[j])'),
         'visitor-failure': ('snapshot.consumer_failed = 1;', 'snapshot.consumer_failed = 0;',
                             'visited == 7 && snapshot.consumer_failed && snapshot.examined == 7 && snapshot.delivered == 6'),
+        'append-failure': ('int result = ps3_sized_trace_append(c->trace, &r, sizeof(r));',
+                           '(void)r; int result = PS3_SIZED_TRACE_INVALID;', 'info.unexpected_append_failures == 0'),
     }
     for name, (old, new, expected) in variants.items():
         assert original.count(old) == 1

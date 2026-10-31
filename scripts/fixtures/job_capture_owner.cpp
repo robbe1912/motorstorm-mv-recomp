@@ -74,6 +74,7 @@ int main() {
     for (auto& t : threads) t.join();
     job_capture_info info{}; assert(job_capture_describe(capture, &info));
     assert(info.run_id == 7 && info.ticks_per_second == 10000000);
+    assert(info.unexpected_append_failures == 0);
     assert(info.schema_version == JOB_CAPTURE_SCHEMA_VERSION && info.record_size == sizeof(job_capture_record) && info.pointer_size == sizeof(uintptr_t));
     assert(info.storage.attempted == 4003 && info.storage.dropped == 0);
     job_capture_record r{};

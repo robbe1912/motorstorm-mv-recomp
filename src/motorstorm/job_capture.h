@@ -31,6 +31,7 @@ struct job_capture_config {
 };
 struct job_capture_info {
     uint64_t run_id, ticks_per_second;
+    uint64_t unexpected_append_failures;
     uint32_t schema_version, record_size, pointer_size;
     ps3_sized_trace_info storage;
 };

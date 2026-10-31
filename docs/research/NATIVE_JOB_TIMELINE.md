@@ -291,12 +291,14 @@ producers to be quiescent and no other observer owner. The owner captures all
 events, so finite capacity and loss must be accounted for in any capture.
 
 An explicit visit API scans the initial reservation horizon and records pending
-slots, consumer failures and metadata before and after the scan. It is a live,
+slots, consumer failures and metadata before and after the scan. Unexpected
+append failures use a saturating counter; full-store losses use the store's drop
+count. It is a live,
 partial view; callbacks can arrive out of order, writers can complete after a
 slot was scanned, and the layout contains native ABI fields rather than a
 portable file format. The actual owner fixture checks concurrent complete
 payloads, installation rollback, identity flags, loss and partial visits, with
-four specific negative controls. A second fixture links the actual execution and
+five specific negative controls. A second fixture links the actual execution and
 scheduler observer implementations; the atomic installers there are authored
 test dependencies. No game startup, durable capture, game-specific job identity,
 overhead measurement or native run is provided by this owner yet.
