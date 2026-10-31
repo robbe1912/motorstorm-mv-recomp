@@ -7,9 +7,11 @@ extern "C" int ps3_atomic_observer_install_ppu(const ps3_atomic_observer* p) { p
 extern "C" int ps3_atomic_observer_install_spu(const ps3_atomic_observer* p) { spu = p; return 1; }
 static uint64_t tick(void*) { static uint64_t value = 10; return ++value; }
 static uint64_t thread(void*) { return 42; }
+static int only_target(void*, uint32_t, uintptr_t, uint32_t, uint32_t target) { return target == 0x30; }
+static int no_scheduler(void*, const ps3_spurs_scheduler_event*) { return 0; }
 static spu_context context;
 int main() {
-    job_capture_config cfg{9, 1000, 8, nullptr, tick, thread};
+    job_capture_config cfg{9, 1000, 8, nullptr, tick, thread, nullptr, nullptr, nullptr};
     auto* c = job_capture_start(&cfg); assert(c && ppu && spu);
     ps3_spurs_dispatch_info info{};
     info.instance = 1; info.workload_generation = 2; info.dispatch = 3;
@@ -26,5 +28,16 @@ int main() {
     assert(job_capture_read(c, 3, &r) == 1 && r.kind == JOB_CAPTURE_EXECUTION && !(r.flags & JOB_CAPTURE_HOST_ASSIGNMENT));
     job_capture_stop(c);
     assert(!ppu && !spu);
+    cfg.accept_execution = only_target; cfg.accept_scheduler = no_scheduler;
+    c = job_capture_start(&cfg); assert(c);
+    ps3_spurs_scheduler_worker_begin(&info);
+    ps3_spu_execution_notify(PS3_SPU_NATIVE_BEGIN, &context, 0x10, 0x20, 7, 0, 0);
+    ps3_spu_execution_notify(PS3_SPU_NATIVE_END, &context, 0x20, 0x30, 8, 0, 0);
+    ps3_spurs_scheduler_worker_return(0, 4);
+    job_capture_info metadata{}; assert(job_capture_describe(c, &metadata));
+    assert(metadata.excluded_execution == 1 && metadata.excluded_scheduler == 2 && metadata.storage.attempted == 1);
+    assert(job_capture_read(c, 0, &r) == 1 && r.kind == JOB_CAPTURE_EXECUTION);
+    assert((r.flags & JOB_CAPTURE_HOST_ASSIGNMENT) && r.host_assignment.dispatch == 3);
+    job_capture_stop(c);
     return 0;
 }

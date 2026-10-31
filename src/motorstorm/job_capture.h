@@ -7,9 +7,11 @@
 
 /* Process-local, versioned data. The raw pointer fields are observations, not
  * lifetime-qualified guest identities. The owner defines the output format. */
-enum { JOB_CAPTURE_SCHEMA_VERSION = 1 };
+enum { JOB_CAPTURE_SCHEMA_VERSION = 2 };
 enum { JOB_CAPTURE_ATOMIC = 1, JOB_CAPTURE_EXECUTION, JOB_CAPTURE_SCHEDULER };
 enum { JOB_CAPTURE_THREAD_UNKNOWN = 1, JOB_CAPTURE_HOST_ASSIGNMENT = 2 };
+enum { JOB_CAPTURE_FILTER_ATOMIC = 1, JOB_CAPTURE_FILTER_EXECUTION = 2,
+       JOB_CAPTURE_FILTER_SCHEDULER = 4 };
 struct job_capture_record {
     uint64_t thread;
     uint32_t kind, flags;
@@ -28,10 +30,18 @@ struct job_capture_config {
     void* user;
     uint64_t (*clock)(void*);
     uint64_t (*thread_id)(void*);
+    /* Optional immutable, concurrent-safe filters. They obey the same callback
+     * restrictions below. Rejected events are counted as coverage gaps, not
+     * evidence that work did not happen. Null accepts all for that source. */
+    int (*accept_atomic)(void*, uint32_t, uintptr_t, uint64_t, uint32_t);
+    int (*accept_execution)(void*, uint32_t, uintptr_t, uint32_t, uint32_t);
+    int (*accept_scheduler)(void*, const ps3_spurs_scheduler_event*);
 };
 struct job_capture_info {
     uint64_t run_id, ticks_per_second;
     uint64_t unexpected_append_failures;
+    uint64_t excluded_atomic, excluded_execution, excluded_scheduler;
+    uint32_t filter_mask;
     uint32_t schema_version, record_size, pointer_size;
     ps3_sized_trace_info storage;
 };

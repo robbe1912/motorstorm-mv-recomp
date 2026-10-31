@@ -84,6 +84,8 @@ if args.mutants:
                             'visited == 7 && snapshot.consumer_failed && snapshot.examined == 7 && snapshot.delivered == 6'),
         'append-failure': ('int result = ps3_sized_trace_append(c->trace, &r, sizeof(r));',
                            '(void)r; int result = PS3_SIZED_TRACE_INVALID;', 'info.unexpected_append_failures == 0'),
+        'hidden-exclusions': ('increment(c->excluded_atomic); return 0;', 'return 0;',
+                              'info.filter_mask == 7 && info.excluded_atomic == 4001'),
     }
     for name, (old, new, expected) in variants.items():
         assert original.count(old) == 1
