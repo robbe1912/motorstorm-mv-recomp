@@ -15,12 +15,15 @@ fixture = ROOT/'scripts/fixtures/spurs_scheduler.c'
 build_env = build_environment()
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--mutants', action='store_true', help='Reject serialized-admission regression')
+parser.add_argument('--observe', action='store_true', help='Run actual lifecycle/admission observations')
+parser.add_argument('--observer-mutants', action='store_true', help='Reject specific observer faults (requires --observe)')
 parser.add_argument('--runtime',type=Path,default=root,help='Selected consumer runtime')
 parser.add_argument('--output',type=Path,default=ROOT/'build/self-tests/spurs-scheduler')
 parser.add_argument('--compiler', default=os.environ.get('CC') or
                     (build_env.get('MV_CLANG','clang-cl') if os.name=='nt' else build_env.get('CC','cc')))
 args = parser.parse_args()
 assert args.compiler, 'Set CC or --compiler to a C17 compiler'
+assert not args.observer_mutants or args.observe, '--observer-mutants requires --observe'
 root = args.runtime.resolve()
 out = args.output.resolve()
 out.mkdir(parents=True, exist_ok=True)
@@ -35,28 +38,31 @@ command = [args.compiler, str(fixture), str(ROOT/'scripts/fixtures/spurs_policy_
            str(root/'runtime/memory/guest_read_sync.c'),
            str(root/'runtime/platform/thread_name.c'),
            str(root/'runtime/syscalls/spu_ea_alias.c'),
-           str(root/'runtime/diag/loadtime_trace.c')]
+           str(root/'runtime/diag/loadtime_trace.c'),
+           str(root/'runtime/diag/spurs_scheduler_observer.c')]
 includes = [root/'include', root/'runtime/spu', root/'runtime/platform',root/'libs/spurs']
 if os.name == 'nt':
     command += ['/nologo','/std:c17','/O2','/UNDEBUG','/Gy','/Gw',
+                '/DPS3_SPURS_SCHEDULER_OBSERVATION='+str(int(args.observe)),
                 *['/I'+str(path) for path in includes], '/Fo'+str(out)+os.sep,
                 '/Fe'+str(exe), '/link','/OPT:REF']
 else:
     command += ['-std=gnu17','-D_GNU_SOURCE','-O2','-UNDEBUG','-ffunction-sections','-fdata-sections',
+                '-DPS3_SPURS_SCHEDULER_OBSERVATION='+str(int(args.observe)),
                 '-Wl,-dead_strip' if platform.system()=='Darwin' else '-Wl,--gc-sections',
                 *['-I'+str(path) for path in includes], '-pthread','-lm','-o',str(exe)]
 env = {key:value for key,value in build_env.items()
        if not key.startswith(('SPU_','SPURS_','YDKJ_','LBP_','GH3_'))}
 tracked=[Path(arg) for arg in command if str(arg).endswith('.c')]
-tracked += [root/'runtime/spu/spu_channels.c',root/'libs/spurs/cellSpurs.c',root/'runtime/spu/spu_context.h',root/'runtime/spu/spu_workload.h',root/'runtime/spu/spu_policy_counters.h']
+tracked += [root/'runtime/spu/spu_channels.c',root/'libs/spurs/cellSpurs.c',root/'runtime/spu/spu_context.h',root/'runtime/spu/spu_workload.h',root/'runtime/spu/spu_policy_counters.h',root/'include/ps3emu/spurs_scheduler_observer.h',ROOT/'scripts/fixtures/spurs_scheduler_observer_fixture.h']
 (out/'source-hashes.json').write_text(json.dumps({str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in tracked},indent=2))
 # Compile changed production modules independently: a fixture's preceding
 # includes must not conceal a missing module-level declaration.
 standalone=[args.compiler]
 if os.name=='nt':
-    standalone += ['/nologo','/std:c17','/UNDEBUG','/Zs',*['/I'+str(path) for path in includes]]
+    standalone += ['/nologo','/std:c17','/UNDEBUG','/Zs','/DPS3_SPURS_SCHEDULER_OBSERVATION='+str(int(args.observe)),*['/I'+str(path) for path in includes]]
 else:
-    standalone += ['-std=gnu17','-D_GNU_SOURCE','-UNDEBUG','-fsyntax-only',*['-I'+str(path) for path in includes]]
+    standalone += ['-std=gnu17','-D_GNU_SOURCE','-UNDEBUG','-fsyntax-only','-DPS3_SPURS_SCHEDULER_OBSERVATION='+str(int(args.observe)),*['-I'+str(path) for path in includes]]
 standalone += [str(root/'libs/spurs/cellSpurs.c'),str(root/'runtime/spu/spurs_policy.c')]
 (out/'standalone-command.json').write_text(json.dumps(standalone,indent=2))
 checked=subprocess.run(standalone,env=env,cwd=out,capture_output=True,text=True,timeout=120)
@@ -79,18 +85,35 @@ assert ran.returncode == 0, 'Actual scheduler fixture failed; retain run.log'
 assert 'SPURS same workload/lane across instances retains separate LS and TLS exit classification PASS' in ran.stdout
 print('PASS actual scheduler on '+platform.system()+'; no title inputs or skipped execution')
 
+cases=[]
 if args.mutants:
-    for name,failure in [
+    cases += [
         ('serialized-admission','runnable producer could not run'),
         ('consumed-ready-demand','scheduler consumed policy-owned requested lanes'),
-        ('stale-rejected-policy','rejected policy retained preceding worker productivity')]:
+        ('stale-rejected-policy','rejected policy retained preceding worker productivity')]
+observer_edits={
+    'reused-instance':('source','si->trace_instance=spurs_trace_next(&s_trace_instance_epoch);','si->trace_instance=1;','instance generation reused'),
+    'reused-workload':('source','s_trace_workloads[i]=spurs_trace_next(&s_trace_workload_epoch);','s_trace_workloads[i]=1;','workload generation reused'),
+    'wrong-worker-lane':('source','trace.info.lane=sn;','trace.info.lane=sn+1;','worker slot identity mismatch'),
+    'missing-admission':('source','trace_events[trace_count++]=trace;','/* missing admission */','admission observations missing'),
+    'missing-return':('source','ps3_spurs_scheduler_worker_return(trace_result,polls);','/* missing return */','dispatch lifecycle incomplete or reused'),
+    'callback-under-lock':('source','ps3_spurs_scheduler_worker_begin(&slot->trace);','AcquireSRWLockExclusive(&si->lock);ps3_spurs_scheduler_worker_begin(&slot->trace);ReleaseSRWLockExclusive(&si->lock);','scheduler callback under lock'),
+    'hidden-clock':('observer','event.flags|=PS3_SPURS_CLOCK_INVALID;','event.flags|=0;','invalid scheduler clock hidden'),
+    'hidden-exhaustion':('observer','event.flags|=PS3_SPURS_IDENTITY_INVALID;','event.flags|=0;','exhausted identity hidden'),
+    'wrong-return-result':('source','ps3_spurs_scheduler_worker_return(trace_result,polls);','ps3_spurs_scheduler_worker_return(0,polls);','policy return result changed'),
+}
+if args.observer_mutants:cases += [(name,edit[3]) for name,edit in observer_edits.items()]
+if cases:
+    for name,failure in cases:
         mutant=out/name
         (mutant/'tests').mkdir(parents=True,exist_ok=True)
         (mutant/'libs/spurs').mkdir(parents=True,exist_ok=True)
         (mutant/'runtime/spu').mkdir(parents=True,exist_ok=True)
+        (mutant/'runtime/diag').mkdir(parents=True,exist_ok=True)
         shutil.copy2(fixture,mutant/'tests/test_spurs_scheduler.c')
         source=(root/'libs/spurs/cellSpurs.c').read_text()
         policy=(root/'runtime/spu/spurs_policy.c').read_text()
+        observer=(root/'runtime/diag/spurs_scheduler_observer.c').read_text()
         if name=='serialized-admission':
             start=source.index('static DWORD WINAPI spurs_kernel_thread(LPVOID p)\n{')
             before='for (u32 sn = 0; sn < si->nspus; sn++)'
@@ -100,23 +123,31 @@ if args.mutants:
             before='                /* Requested lanes are policy-owned demand'
             assert source.count(before)==1
             source=source.replace(before,'                if (ready) vm_base[ea + SPURS_WKL_READY1 + wid] = (u8)(ready - 1);\n'+before)
-        else:
+        elif name=='stale-rejected-policy':
             before='    g_spurs_pm_polls = 0;\n    g_spurs_pm_exited = 0;\n    g_wws_batch_gets = 0;\n'
             assert policy.count(before)==1
             policy=policy.replace(before,'')
             admission='    if (wid >= SPURS_PM_MAX_WKL || spu_num >= 6) return -1;'
             assert policy.count(admission)==1
             policy=policy.replace(admission,before+admission)
+        else:
+            destination,before,after,_=observer_edits[name]
+            if destination=='source':
+                assert source.count(before)==1;source=source.replace(before,after)
+            else:
+                assert observer.count(before)==1;observer=observer.replace(before,after)
         (mutant/'libs/spurs/cellSpurs.c').write_text(source)
         (mutant/'runtime/spu/spurs_policy.c').write_text(policy)
+        (mutant/'runtime/diag/spurs_scheduler_observer.c').write_text(observer)
         mutant_exe=mutant/('fixture.exe' if os.name=='nt' else 'fixture')
         replacements={str(fixture):str(mutant/'tests/test_spurs_scheduler.c'),
                       str(root/'runtime/spu/spurs_policy.c'):str(mutant/'runtime/spu/spurs_policy.c'),
+                      str(root/'runtime/diag/spurs_scheduler_observer.c'):str(mutant/'runtime/diag/spurs_scheduler_observer.c'),
                       '/Fe'+str(exe):'/Fe'+str(mutant_exe),str(exe):str(mutant_exe),
                       '/Fo'+str(out)+os.sep:'/Fo'+str(mutant)+os.sep,
                       ('/I' if os.name=='nt' else '-I')+str(root/'libs/spurs'):('/I' if os.name=='nt' else '-I')+str(mutant/'libs/spurs')}
         mutant_command=[replacements.get(arg,arg) for arg in command]
-        extra=[('/I' if os.name=='nt' else '-I')+str(root/path) for path in ('tests','libs/spurs')]
+        extra=[('/I' if os.name=='nt' else '-I')+str(p) for p in (ROOT/'scripts/fixtures',root/'libs/spurs')]
         position=mutant_command.index('/link') if os.name=='nt' else len(mutant_command)
         mutant_command[position:position]=extra
         (mutant/'command.json').write_text(json.dumps(mutant_command,indent=2))
@@ -130,3 +161,6 @@ if args.mutants:
             print('PASS serialized-admission mutant compiled and failed the real producer-progress assertion')
         else:
             print('PASS '+name+' mutant compiled and failed its intended behavioral assertion')
+(out/'observer-result.json').write_text(json.dumps({'observer_enabled':args.observe,
+    'mutants_rejected':[name for name,_ in cases],
+    'scope':'Actual scheduler and policies with authored dependencies; no game timeline, overhead, or FPS measurement.'},indent=2))

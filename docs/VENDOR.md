@@ -1023,3 +1023,23 @@ the finite exponent255 range, exact scalar fallback, SIMD scope and authored
 checks. Original vendor test/workflow paths are omitted; curated runners
 exercise the actual helpers and keep existing interpreter assertions. Native
 menu/race effects require the separate owner trial.
+
+## SPURS admission observations (#219)
+
+Fork-first modular and combined commit `bfed7562da0d531c16e9fed37ec1cebacfb1d01d`
+adds default-OFF policy admission/worker and lifetime observations. Selected
+changes to the curated scheduler and CMake reverse to their pre-curation sources
+after newline normalization; unchanged lines retain their original bytes. The
+authored API header and observer core are copied from the fork, while the public
+scheduler fixture and runner preserve their existing dependencies and diagnostics.
+No generated guest code or original game data is included.
+The combined fork admission run `41224503133` passed on Windows, Linux and
+macOS; native workload run `41224503096` also passed.
+
+`scripts/check_spurs_scheduler.py --observe --mutants --observer-mutants`
+executes the actual curated scheduler and policies with authored dependencies,
+checks standalone production syntax and tests nine observer faults alongside
+the three existing scheduler controls. The source audit runs these checks on
+Linux and Windows. They do not establish game bindings, capture overhead or an
+FPS improvement. The [timeline report](research/NATIVE_JOB_TIMELINE.md) records
+the remaining gates and limitations.

@@ -92,6 +92,16 @@ jobs:
           path: |
             build/self-tests/fp-snapshot/**/*.log
             build/self-tests/fp-snapshot/**/*.json
+      - name: Actual SPURS admission observations and negative controls
+        run: python scripts/check_spurs_scheduler.py --observe --mutants --observer-mutants --output build/self-tests/spurs-admission-observers
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: spurs-admission-observers-${{ runner.os }}
+          retention-days: 5
+          path: |
+            build/self-tests/spurs-admission-observers/**/*.log
+            build/self-tests/spurs-admission-observers/**/*.json
       - name: SPU execution observations and native admission controls
         run: python scripts/check_spu_execution_observer.py --mutants --syntax
       - uses: actions/upload-artifact@v4
@@ -261,6 +271,16 @@ jobs:
           path: |
             build/self-tests/fp-snapshot/**/*.log
             build/self-tests/fp-snapshot/**/*.json
+      - name: Actual SPURS admission observations and negative controls
+        run: python scripts/check_spurs_scheduler.py --observe --mutants --observer-mutants --output build/self-tests/spurs-admission-observers
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: spurs-admission-observers-${{ runner.os }}
+          retention-days: 5
+          path: |
+            build/self-tests/spurs-admission-observers/**/*.log
+            build/self-tests/spurs-admission-observers/**/*.json
       - name: SPU execution observations and native admission controls
         run: python scripts/check_spu_execution_observer.py --mutants --syntax
       - uses: actions/upload-artifact@v4

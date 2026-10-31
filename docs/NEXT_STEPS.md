@@ -1,8 +1,8 @@
 # Work tracking
 
 The [job timeline checkpoint](research/NATIVE_JOB_TIMELINE.md) now includes
-default-OFF atomic and SPU execution observations. Admission/worker identities,
-the game binding, analyzer and measured capture overhead remain required before
+default-OFF atomic, SPU execution and SPURS admission/worker observations. The
+game binding, analyzer and measured capture overhead remain required before
 the next coordinated run; these hooks alone establish no FPS improvement.
 
 [GitHub issues](https://github.com/robbe1912/motorstorm-mv-recomp/issues) are the authoritative atomic todo list. This page describes how to use it; it does not maintain a second backlog.
@@ -16,8 +16,8 @@ publication-to-completion timeline before choosing between admission changes
 and a complete typed native batch; adding workers alone is not that migration.
 The [job-timeline checkpoint](research/NATIVE_JOB_TIMELINE.md) records the
 bounded recorder, verified original descriptor/hint/marker bindings and opt-in
-actual atomic observations. Admission/job hooks, lifetime-qualified identities
-and a live timeline remain issue 219's next gates.
+actual atomic and admission observations. Game job identities and a live
+timeline remain issue 219's next gates.
 
 For each replacement, bind the actual workload and its inputs, outputs, ownership and completion ordering; implement the game operation directly with native data and execution; compare against the retained original behavior; then validate normal PLAY and frame times. Keep the interpreter as a migration bridge and correctness reference for work that has not yet been replaced. Interpreter optimization alone does not establish progress toward the native source architecture. Reusable toolkit corrections still follow the fork-first modular and combined workflow in [vendor provenance](VENDOR.md); game implementations belong in this repository.
 

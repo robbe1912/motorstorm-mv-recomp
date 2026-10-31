@@ -212,10 +212,39 @@ that reference reconstruction; its original digest is unchanged. The ownership
 fixture passes 18 checks with its existing cross-image wildcard diagnostic
 visible. These checks measure neither capture overhead nor game frame times.
 
+## SPURS admission and worker observations
+
+The default-OFF `PS3RECOMP_SPURS_SCHEDULER_OBSERVATION` option can expose real
+instance reservation/result/closure, workload registration/removal, policy
+admission and worker invocation/return. It assigns nonwrapping process-local
+instance, workload-generation and dispatch identities. Exhaustion yields zero
+and an explicit invalid-identity flag. A capture owner must supply a run identity
+and one shared monotonic clock. Thread-local access identifies the current host
+worker assignment; it does not establish that an arbitrary SPU context or job
+belongs to it. A direct policy call outside the pool has no such assignment.
+
+Admission metadata is copied under the existing scheduler locks and delivered
+after their release. Its time interval starts before the admission pass acquires
+the instance lock and ends after release. Multiple admissions share a pass; a
+worker can begin or return before that pass is delivered. Ready/signal values
+are sequential demand observations, not proof of job eligibility. Policy return
+is not individual job completion. Failed or BUSY lifecycle API attempts are not
+reported as completed transitions; successful instance closure retires its
+remaining workloads. Filtering, clock failures, unknown bindings and missing
+events must remain visible. Callbacks must not reenter or mutate the runtime,
+allocate, format, perform I/O or take application locks.
+
+The authored fixture executes the real scheduler and policies in both build modes.
+It verifies physical lane and lifetime identity against the actual policy context,
+reuse and exhaustion, direct-call absence, filtering, actual error returns and
+same-thread lock witnesses. Nine compiled observer mutants and the three existing
+scheduler regressions must fail their particular assertions. The test dependencies
+are authored scaffolding, not proof of full game synchronization or capture cost.
+
 ## Remaining integration gates
 
-1. Connect the atomic and execution observations above and add generic opt-in
-   admission/worker boundaries on the fork. Preserve native-leaf admission
+1. Connect the atomic, execution and admission observations above to a capture
+   owner and bounded recorder. Preserve native-leaf admission
    and all original failures. Event
    capture must not run guest work, allocate, format or take application locks.
    Qualify precise source attribution in interpreted and lifted paths: a lifted
