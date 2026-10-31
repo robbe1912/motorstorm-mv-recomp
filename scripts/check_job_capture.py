@@ -20,6 +20,7 @@ include = root / 'vendor/ps3recomp/include'
 source = root / 'src/motorstorm/job_capture.cpp'
 fixture = root / 'scripts/fixtures/job_capture_owner.cpp'
 storage = root / 'vendor/ps3recomp/runtime/diag/sized_trace.c'
+snapshot_source = root / 'src/motorstorm/job_capture_snapshot.cpp'
 
 def command(cmd, label):
     (out / (label + '-command.json')).write_text(json.dumps(cmd, indent=2))
@@ -33,10 +34,10 @@ cc = [args.compiler, str(storage)] + (['/nologo', '/std:c17', '/O2', '/c', '/I'+
 result = command(cc, 'storage-build')
 assert result.returncode == 0, result.stdout + result.stderr
 
-def run(src, name):
+def run(src, name, snapshot=snapshot_source):
     exe = out / (name + ('.exe' if os.name == 'nt' else ''))
     compiler = args.compiler if msvc else (shutil.which('c++') or args.compiler)
-    cmd = [compiler, str(src), str(fixture), str(obj)]
+    cmd = [compiler, str(src), str(snapshot), str(fixture), str(obj)]
     if msvc:
         cmd += ['/nologo', '/std:c++17', '/EHsc', '/O2', '/UNDEBUG', '/I'+str(include),
                 '/I'+str(source.parent), '/Fe'+str(exe)]
@@ -92,5 +93,19 @@ if args.mutants:
         mutant = out / (name + '.cpp')
         mutant.write_text(original.replace(old, new))
         result = run(mutant, name)
+        assert result.returncode != 0 and expected in result.stdout + result.stderr, (name, result.stdout, result.stderr)
+        print('PASS rejected ' + name)
+    original = snapshot_source.read_text()
+    variants = {
+        'snapshot-header': ('memcmp(header.magic, "MSJOB001", 8)', '0',
+            '!job_capture_read_snapshot(file, read_record, &read_count, &loaded) && read_count == 0'),
+        'snapshot-consumer': ('!consumer(user, index, &record)', '(static_cast<void>(consumer(user, index, &record)), 0)',
+            '!job_capture_read_snapshot(file, reject_record, nullptr, &loaded)'),
+    }
+    for name, (old, new, expected) in variants.items():
+        assert original.count(old) == 1
+        mutant = out / (name + '.cpp')
+        mutant.write_text(original.replace(old, new))
+        result = run(source, name, mutant)
         assert result.returncode != 0 and expected in result.stdout + result.stderr, (name, result.stdout, result.stderr)
         print('PASS rejected ' + name)
