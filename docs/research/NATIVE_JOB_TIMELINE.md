@@ -281,3 +281,22 @@ interpret losses; this store does not supply any of those. It is not yet
 connected to a game capture. The actual store fixture tests full authored atomic
 snapshots, concurrent writers, pending publication, loss, counter saturation,
 and odd-sized records; four compiled controls must fail specific assertions.
+
+The game-side `job_capture` owner now connects the four installation points to
+the sized store with one supplied clock and run ID. Each record includes a
+thread ID and, when available, the current host-worker assignment. The latter
+is not proof that an arbitrary observed context belongs to that worker. Failed
+installation rolls back earlier installations; startup and shutdown require all
+producers to be quiescent and no other observer owner. The owner captures all
+events, so finite capacity and loss must be accounted for in any capture.
+
+An explicit visit API scans the initial reservation horizon and records pending
+slots, consumer failures and metadata before and after the scan. It is a live,
+partial view; callbacks can arrive out of order, writers can complete after a
+slot was scanned, and the layout contains native ABI fields rather than a
+portable file format. The actual owner fixture checks concurrent complete
+payloads, installation rollback, identity flags, loss and partial visits, with
+four specific negative controls. A second fixture links the actual execution and
+scheduler observer implementations; the atomic installers there are authored
+test dependencies. No game startup, durable capture, game-specific job identity,
+overhead measurement or native run is provided by this owner yet.

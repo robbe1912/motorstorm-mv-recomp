@@ -102,6 +102,16 @@ jobs:
           path: |
             build/self-tests/spurs-admission-observers/**/*.log
             build/self-tests/spurs-admission-observers/**/*.json
+      - name: Game job capture owner controls
+        run: python scripts/check_job_capture.py --mutants
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: job-capture-owner-${{ runner.os }}
+          retention-days: 5
+          path: |
+            build/self-tests/job-capture-owner/*.log
+            build/self-tests/job-capture-owner/*.json
       - name: Sized trace payloads and negative controls
         run: python scripts/check_sized_trace.py --mutants
       - uses: actions/upload-artifact@v4
@@ -291,6 +301,16 @@ jobs:
           path: |
             build/self-tests/spurs-admission-observers/**/*.log
             build/self-tests/spurs-admission-observers/**/*.json
+      - name: Game job capture owner controls
+        run: python scripts/check_job_capture.py --mutants
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: job-capture-owner-${{ runner.os }}
+          retention-days: 5
+          path: |
+            build/self-tests/job-capture-owner/*.log
+            build/self-tests/job-capture-owner/*.json
       - name: Sized trace payloads and negative controls
         run: python scripts/check_sized_trace.py --mutants
       - uses: actions/upload-artifact@v4
