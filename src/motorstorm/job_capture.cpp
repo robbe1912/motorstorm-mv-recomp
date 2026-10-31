@@ -112,9 +112,9 @@ int job_capture_describe(const job_capture* c, job_capture_info* out) {
     info.excluded_atomic = c->excluded_atomic.load(std::memory_order_relaxed);
     info.excluded_execution = c->excluded_execution.load(std::memory_order_relaxed);
     info.excluded_scheduler = c->excluded_scheduler.load(std::memory_order_relaxed);
-    info.filter_mask = (c->config.accept_atomic ? JOB_CAPTURE_FILTER_ATOMIC : 0u) |
-        (c->config.accept_execution ? JOB_CAPTURE_FILTER_EXECUTION : 0u) |
-        (c->config.accept_scheduler ? JOB_CAPTURE_FILTER_SCHEDULER : 0u);
+    info.filter_mask = (c->config.accept_atomic ? uint32_t(JOB_CAPTURE_FILTER_ATOMIC) : 0u) |
+        (c->config.accept_execution ? uint32_t(JOB_CAPTURE_FILTER_EXECUTION) : 0u) |
+        (c->config.accept_scheduler ? uint32_t(JOB_CAPTURE_FILTER_SCHEDULER) : 0u);
     info.schema_version = JOB_CAPTURE_SCHEMA_VERSION;
     info.record_size = sizeof(job_capture_record);
     info.pointer_size = sizeof(uintptr_t);
