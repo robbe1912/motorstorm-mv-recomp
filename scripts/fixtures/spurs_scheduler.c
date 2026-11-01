@@ -198,6 +198,37 @@ int main(void)
     assert(VirtualAlloc(vm_base,ppu_vm_size,MEM_COMMIT,PAGE_READWRITE));
     /* Retain the consumer unexpected-stop diagnostic, backed by authored zeros. */
     assert(VirtualAlloc(vm_base+0x4023F000,0x1000,MEM_COMMIT,PAGE_READWRITE));
+    /* The ninth integer argument occupies the guest stack parameter area.
+     * Asymmetric high/low words distinguish BE decoding from host word reads. */
+    for (u32 requested=1; requested<=6; ++requested) {
+        ppu_context ctx={0};
+        ctx.gpr[1]=0x19000; ctx.gpr[3]=0x18000; ctx.gpr[4]=0x12345678;
+        ctx.gpr[5]=0x87654321; ctx.gpr[6]=0x11223344; ctx.gpr[7]=0x55667788;
+        ctx.gpr[8]=0x123456789abcdef0ULL; ctx.gpr[9]=0x18100; ctx.gpr[10]=3;
+        for (u32 i=0;i<8;i++) vm_write8(0x18100+i,(u8)(i+1));
+        vm_write64(0x19070,0xa1b2c3d400000000ULL | requested);
+        ppu_context before=ctx;
+        ps3_spurs_workload_attribute_initialize(&ctx);
+        assert(ctx.gpr[3]==0);
+        ctx.gpr[3]=before.gpr[3];
+        assert(!memcmp(&ctx,&before,sizeof(ctx)));
+        assert(vm_read32(0x18000+WKATTR_REVISION)==0x12345678);
+        assert(vm_read32(0x18000+WKATTR_SDKVERSION)==0x87654321);
+        assert(vm_read32(0x18000+WKATTR_PM)==0x11223344);
+        assert(vm_read32(0x18000+WKATTR_SIZE)==0x55667788);
+        assert(vm_read64(0x18000+WKATTR_DATA)==0x123456789abcdef0ULL);
+        assert(vm_read32(0x18000+WKATTR_MIN_CONT)==3);
+        assert(vm_read32(0x18000+WKATTR_MAX_CONT)==requested);
+        for (u32 i=0;i<8;i++) assert(vm_read8(0x18000+WKATTR_PRIORITY+i)==i+1);
+    }
+    { ppu_context ctx={0}; ctx.gpr[1]=0xffffff00u; ctx.gpr[3]=0;
+      ps3_spurs_workload_attribute_initialize(&ctx);
+      assert(ctx.gpr[3]==(u64)(int64_t)(s32)CELL_SPURS_CORE_ERROR_NULL_POINTER); }
+    { ppu_context ctx={0}; ctx.gpr[1]=0x19000; ctx.gpr[3]=0x18000;
+      vm_write64(0x19070,0xa1b2c3d400000000ULL);
+      ps3_spurs_workload_attribute_initialize(&ctx); assert(ctx.gpr[3]==0);
+      assert(vm_read32(0x18000+WKATTR_MAX_CONT)==0);
+      for (u32 i=0;i<8;i++) assert(vm_read8(0x18000+WKATTR_PRIORITY+i)==0); }
     register_pm(0x9000,0x11,consumer,77);register_pm(0x9100,0x22,producer,78);
     assert((u32)cellSpursInitialize((CellSpurs*)0x1000,7,0,0,0)==CELL_SPURS_CORE_ERROR_INVAL);
     assert(cellSpursInitialize((CellSpurs*)0x1000,2,0,0,0)==0);
@@ -239,7 +270,12 @@ int main(void)
     atomic_store(&gate,0);atomic_store(&held[0],0);atomic_store(&done[0],0);
     atomic_store(&peak_count,0);atomic_store(&lane_mask,0);
     assert(cellSpursInitialize((CellSpurs*)0x1000,3,0,0,0)==0);
-    assert(cellSpursAddWorkload((CellSpurs*)0x1000,(u32*)0x8000,(void*)0x9200,16,0,NULL,1,2)==0);
+    { ppu_context ctx={0}; ctx.gpr[1]=0x19000; ctx.gpr[3]=0x18000;
+      ctx.gpr[6]=0x9200; ctx.gpr[7]=16; ctx.gpr[9]=0x18100; ctx.gpr[10]=1;
+      vm_write64(0x19070,0xa1b2c3d400000002ULL);
+      ps3_spurs_workload_attribute_initialize(&ctx); assert(ctx.gpr[3]==0);
+      assert(cellSpursAddWorkloadWithAttribute((CellSpurs*)0x1000,(u32*)0x8000,
+             (CellSpursWorkloadAttribute*)0x18000)==0); }
     wait_for(&held[0],2,"maxContention two");Sleep(20);
     assert(atomic_load(&held[0])==2 && atomic_load(&peak_count)==2);
     assert(vm_read8(0x1000+SPURS_WKL_CURCONT)==2);

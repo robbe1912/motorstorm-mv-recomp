@@ -90,7 +90,9 @@ if args.mutants:
     cases += [
         ('serialized-admission','runnable producer could not run'),
         ('consumed-ready-demand','scheduler consumed policy-owned requested lanes'),
-        ('stale-rejected-policy','rejected policy retained preceding worker productivity')]
+        ('stale-rejected-policy','rejected policy retained preceding worker productivity'),
+        ('hardcoded-contention','vm_read32(0x18000+WKATTR_MAX_CONT)==requested'),
+        ('wrong-stack-slot','vm_read32(0x18000+WKATTR_MAX_CONT)==requested')]
 observer_edits={
     'reused-instance':('source','si->trace_instance=spurs_trace_next(&s_trace_instance_epoch);','si->trace_instance=1;','instance generation reused'),
     'reused-workload':('source','s_trace_workloads[i]=spurs_trace_next(&s_trace_workload_epoch);','s_trace_workloads[i]=1;','workload generation reused'),
@@ -130,6 +132,13 @@ if cases:
             admission='    if (wid >= SPURS_PM_MAX_WKL || spu_num >= 6) return -1;'
             assert policy.count(admission)==1
             policy=policy.replace(admission,before+admission)
+        elif name in ('hardcoded-contention','wrong-stack-slot'):
+            before,after = (
+                ('WKATTR_MAX_CONT, maxContention)', 'WKATTR_MAX_CONT, 1)')
+                if name == 'hardcoded-contention' else
+                ('ctx->gpr[1] + 0x70u)', 'ctx->gpr[1] + 0x68u)'))
+            assert source.count(before)==1
+            source=source.replace(before,after)
         else:
             destination,before,after,_=observer_edits[name]
             if destination=='source':
