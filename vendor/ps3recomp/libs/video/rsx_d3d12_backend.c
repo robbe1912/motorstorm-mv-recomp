@@ -43,6 +43,13 @@
 #include <dxgi1_4.h>
 #include <dxgi1_6.h>
 #include <d3dcompiler.h>
+#include "rsx_mrt_masks.h"
+#include "rsx_d3d12_mrt.h"
+static u32 rsx_record_color_masks(const rsx_state* state)
+{
+    return state ? rsx_mrt_color_masks(state->color_mask, state->color_mask_mrt) : 15u;
+}
+
 
 /* We need these GUIDs — define them here to avoid uuid.lib dependency */
 #include <initguid.h>
@@ -112,7 +119,7 @@ typedef struct {
                          * faces on most solid geometry; rendering everything
                          * double-sided lets a shell's interior faces show
                          * through and shade unlit (black). */
-    u32 cmask;          /* D3D write mask from SET_COLOR_MASK at draw time
+    u32 cmask;          /* Packed RT0..3 D3D write masks at draw time
                          * (wave's sim passes write single lanes of the height
                          * maps; ignoring the mask stomped persistent state) */
     /* Per-unit textures (t0-t15): decompiled FPs may sample any of the NV40's
@@ -2227,17 +2234,19 @@ static u32 rsx_blend_key(const rsx_state* st, int enable)
         if (!f && ns<32) { seen[ns++]=sk;
             fprintf(stderr, "[BLEND] enable=%d sfactor=0x%X dfactor=0x%X%c", enable,
                     st?st->blend_sfactor:0, st?st->blend_dfactor:0, 10); } } }
-    if (!enable) return 0;
+    const u32 enables = rsx_mrt_blend_enables(enable, st ? st->blend_enable_mrt : 0);
+    const u32 enable_bits = rsx_mrt_blend_key_bits(enables);
+    if (!enables) return 0;
     /* Factors never programmed: keep the legacy straight-alpha behaviour
      * (dbgfont-style text enables blending without setting factors). */
     if (!st || (st->blend_sfactor == 0 && st->blend_dfactor == 0))
-        return 1u
+        return enable_bits
              | ((u32)D3D12_BLEND_SRC_ALPHA     << 1)
              | ((u32)D3D12_BLEND_INV_SRC_ALPHA << 6)
              | ((u32)D3D12_BLEND_ONE           << 11)
              | ((u32)D3D12_BLEND_INV_SRC_ALPHA << 16)
              | ((u32)D3D12_BLEND_OP_ADD << 21) | ((u32)D3D12_BLEND_OP_ADD << 24);
-    return 1u
+    return enable_bits
          | ((u32)gl_blend_factor_d3d(st->blend_sfactor,       0) << 1)
          | ((u32)gl_blend_factor_d3d(st->blend_dfactor,       0) << 6)
          | ((u32)gl_blend_factor_d3d(st->blend_sfactor >> 16, 1) << 11)
@@ -2843,13 +2852,15 @@ static ID3D12PipelineState* vp_get_fp_pso(int vs_idx, u32 fp_addr, u32 blend, in
     /* Blend per the guest's packed key (see rsx_blend_key): dbgfont text needs
      * straight alpha; demosaic's effect passes blend OFF; DeferredShading's
      * light accumulation is additive ONE,ONE. */
+    const u32 blend_enables = rsx_mrt_blend_key_enables(blend);
+    const int any_blend = blend_enables != 0;
     pd.BlendState.RenderTarget[0].BlendEnable    = (blend & 1) ? TRUE : FALSE;
-    pd.BlendState.RenderTarget[0].SrcBlend       = (blend & 1) ? (D3D12_BLEND)((blend >> 1)  & 0x1F) : D3D12_BLEND_ONE;
-    pd.BlendState.RenderTarget[0].DestBlend      = (blend & 1) ? (D3D12_BLEND)((blend >> 6)  & 0x1F) : D3D12_BLEND_ZERO;
-    pd.BlendState.RenderTarget[0].BlendOp        = (blend & 1) ? (D3D12_BLEND_OP)((blend >> 21) & 0x7) : D3D12_BLEND_OP_ADD;
-    pd.BlendState.RenderTarget[0].SrcBlendAlpha  = (blend & 1) ? (D3D12_BLEND)((blend >> 11) & 0x1F) : D3D12_BLEND_ONE;
-    pd.BlendState.RenderTarget[0].DestBlendAlpha = (blend & 1) ? (D3D12_BLEND)((blend >> 16) & 0x1F) : D3D12_BLEND_ZERO;
-    pd.BlendState.RenderTarget[0].BlendOpAlpha   = (blend & 1) ? (D3D12_BLEND_OP)((blend >> 24) & 0x7) : D3D12_BLEND_OP_ADD;
+    pd.BlendState.RenderTarget[0].SrcBlend       = any_blend ? (D3D12_BLEND)((blend >> 1)  & 0x1F) : D3D12_BLEND_ONE;
+    pd.BlendState.RenderTarget[0].DestBlend      = any_blend ? (D3D12_BLEND)((blend >> 6)  & 0x1F) : D3D12_BLEND_ZERO;
+    pd.BlendState.RenderTarget[0].BlendOp        = any_blend ? (D3D12_BLEND_OP)((blend >> 21) & 0x7) : D3D12_BLEND_OP_ADD;
+    pd.BlendState.RenderTarget[0].SrcBlendAlpha  = any_blend ? (D3D12_BLEND)((blend >> 11) & 0x1F) : D3D12_BLEND_ONE;
+    pd.BlendState.RenderTarget[0].DestBlendAlpha = any_blend ? (D3D12_BLEND)((blend >> 16) & 0x1F) : D3D12_BLEND_ZERO;
+    pd.BlendState.RenderTarget[0].BlendOpAlpha   = any_blend ? (D3D12_BLEND_OP)((blend >> 24) & 0x7) : D3D12_BLEND_OP_ADD;
     pd.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
     pd.SampleMask = UINT_MAX;
     pd.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
@@ -2860,18 +2871,14 @@ static ID3D12PipelineState* vp_get_fp_pso(int vs_idx, u32 fp_addr, u32 blend, in
          * every MRT-B write would be masked off. Mirror RT0's blend state. */
         pd.BlendState.RenderTarget[_r] = pd.BlendState.RenderTarget[0];
     }
-    /* Guest colour write mask (RGBA nibble, already D3D-ordered). cmask is 0xF
-     * by default (unset colour_mask register decodes to all-on); a literal 0
-     * therefore means the guest EXPLICITLY masked every channel -- a depth-only
-     * pass (e.g. DeferredShading's shadow-map generation). Honour it: forcing 0
-     * back to 0xF splatters the depth pass's fragment colour onto the target. */
+    /* Packed RGBA nibbles for RT0..3, retained in records and PSO identity. */
     /* CMASK_FORCE=1: ignore the guest colour mask (write RGBA on every draw).
      * A mis-decoded mask makes geometry rasterize correctly and write nothing,
      * which is indistinguishable from "the draw never happened". */
     { static int _cf = -1; if (_cf < 0) _cf = getenv("CMASK_FORCE") ? 1 : 0;
-      if (_cf) cmask = 0xF; }
-    for (int _r = 0; _r < nrt; _r++)
-        pd.BlendState.RenderTarget[_r].RenderTargetWriteMask = (UINT8)(cmask & 0xF);
+      if (_cf) cmask = 0xFFFF; }
+    rsx_d3d12_write_masks(&pd.BlendState, (unsigned)nrt, cmask);
+    rsx_d3d12_blend_enables(&pd.BlendState, (unsigned)nrt, blend_enables);
     pd.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
     /* Guest depth/stencil, decoded from the NV4097 command stream (packed by
      * rsx_depth_stencil_key). Previously hardcoded LEQUAL/ALL/stencil-off,
@@ -7454,14 +7461,7 @@ static void d3d12_draw_arrays(void* ud, u32 primitive, u32 first, u32 count)
                 dr->fp_ctrl = s_d3d.current_rsx_state ? s_d3d.current_rsx_state->shader_control : 0;
                 dr->cull = rsx_cull_key(s_d3d.current_rsx_state);
                 dr->begin_epoch = s_d3d.current_rsx_state ? s_d3d.current_rsx_state->begin_epoch : 0;
-                dr->cmask = 0xF;
-                if (s_d3d.current_rsx_state) {
-                    u32 _cm = s_d3d.current_rsx_state->color_mask;
-                    dr->cmask = ((_cm & 0x00010000) ? 1u : 0u)   /* R */
-                              | ((_cm & 0x00000100) ? 2u : 0u)   /* G */
-                              | ((_cm & 0x00000001) ? 4u : 0u)   /* B */
-                              | ((_cm & 0x01000000) ? 8u : 0u);  /* A */
-                }
+                dr->cmask = rsx_record_color_masks(s_d3d.current_rsx_state);
                 dr->alpha_ctl = 0;
                 dr->alpha_ref_raw = 0;
                 if (s_d3d.current_rsx_state) {
@@ -7575,7 +7575,10 @@ static void d3d12_draw_arrays(void* ud, u32 primitive, u32 first, u32 count)
                          | (s_d3d.current_rsx_state->alpha_ref & 0xFFu),
                 arefnow = s_d3d.current_rsx_state->alpha_ref;
             if (pv->is_vp && pv->topology == RSX_TOPOLOGY_TRIANGLES &&
-                pv->fp_addr == fpnow && pv->fp_ctrl == fpctrlnow &&
+                pv->fp_addr == fpnow &&
+                pv->blend_key == rsx_blend_key(s_d3d.current_rsx_state,
+                    s_d3d.current_rsx_state ? s_d3d.current_rsx_state->blend_enable : 1) &&
+                pv->cmask == rsx_record_color_masks(s_d3d.current_rsx_state) && pv->fp_ctrl == fpctrlnow &&
                 pv->alpha_ctl == alphanow && pv->alpha_ref_raw == arefnow &&
                 pv->zeta_off == (s_d3d.current_rsx_state
                     ? s_d3d.current_rsx_state->surface_zeta_offset : 0) &&
@@ -7600,14 +7603,7 @@ static void d3d12_draw_arrays(void* ud, u32 primitive, u32 first, u32 count)
             dr->fp_ctrl = s_d3d.current_rsx_state ? s_d3d.current_rsx_state->shader_control : 0;
             dr->cull = rsx_cull_key(s_d3d.current_rsx_state);
             dr->begin_epoch = s_d3d.current_rsx_state ? s_d3d.current_rsx_state->begin_epoch : 0;
-            dr->cmask = 0xF;
-            if (s_d3d.current_rsx_state) {
-                u32 _cm = s_d3d.current_rsx_state->color_mask;
-                dr->cmask = ((_cm & 0x00010000) ? 1u : 0u)   /* R */
-                          | ((_cm & 0x00000100) ? 2u : 0u)   /* G */
-                          | ((_cm & 0x00000001) ? 4u : 0u)   /* B */
-                          | ((_cm & 0x01000000) ? 8u : 0u);  /* A */
-            }
+            dr->cmask = rsx_record_color_masks(s_d3d.current_rsx_state);
             dr->alpha_ctl = 0;
             dr->alpha_ref_raw = 0;
             if (s_d3d.current_rsx_state) {
@@ -7742,6 +7738,9 @@ static void d3d12_draw_indexed(void* ud, u32 primitive, u32 first, u32 count)
                     ? s_d3d.current_rsx_state->shader_program : 0;
         if (pv->is_vp && pv->topology == RSX_TOPOLOGY_TRIANGLES &&
             pv->fp_addr == fpnow &&
+            pv->blend_key == rsx_blend_key(s_d3d.current_rsx_state,
+                s_d3d.current_rsx_state ? s_d3d.current_rsx_state->blend_enable : 1) &&
+            pv->cmask == rsx_record_color_masks(s_d3d.current_rsx_state) &&
             pv->zeta_off == (s_d3d.current_rsx_state
                 ? s_d3d.current_rsx_state->surface_zeta_offset : 0) &&
             pv->begin_epoch == (s_d3d.current_rsx_state
@@ -7764,14 +7763,7 @@ static void d3d12_draw_indexed(void* ud, u32 primitive, u32 first, u32 count)
         dr->fp_ctrl = s_d3d.current_rsx_state ? s_d3d.current_rsx_state->shader_control : 0;
         dr->cull = rsx_cull_key(s_d3d.current_rsx_state);
         dr->begin_epoch = s_d3d.current_rsx_state ? s_d3d.current_rsx_state->begin_epoch : 0;
-        dr->cmask = 0xF;
-        if (s_d3d.current_rsx_state) {
-            u32 _cm = s_d3d.current_rsx_state->color_mask;
-            dr->cmask = ((_cm & 0x00010000) ? 1u : 0u)   /* R */
-                      | ((_cm & 0x00000100) ? 2u : 0u)   /* G */
-                      | ((_cm & 0x00000001) ? 4u : 0u)   /* B */
-                      | ((_cm & 0x01000000) ? 8u : 0u);  /* A */
-        }
+        dr->cmask = rsx_record_color_masks(s_d3d.current_rsx_state);
         dr->alpha_ctl = 0;
         dr->alpha_ref_raw = 0;
         if (s_d3d.current_rsx_state) {

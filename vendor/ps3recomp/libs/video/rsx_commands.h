@@ -171,6 +171,7 @@ extern "C" {
 
 /* Color mask */
 #define NV4097_SET_COLOR_MASK                   0x00000324
+#define NV4097_SET_COLOR_MASK_MRT               0x00000370
 
 /* Alpha test */
 #define NV4097_SET_ALPHA_TEST_ENABLE            0x00000304
@@ -179,6 +180,7 @@ extern "C" {
 
 /* Blending */
 #define NV4097_SET_BLEND_ENABLE                 0x00000310
+#define NV4097_SET_BLEND_ENABLE_MRT             0x0000036C
 #define NV4097_SET_BLEND_FUNC_SFACTOR           0x00000314
 #define NV4097_SET_BLEND_FUNC_DFACTOR           0x00000318
 #define NV4097_SET_BLEND_EQUATION               0x00000320
@@ -270,6 +272,7 @@ typedef struct rsx_state {
 
     /* Blend */
     int blend_enable;
+    u32 blend_enable_mrt; /* Raw bits1..3, reset zero. */
     u32 blend_sfactor, blend_dfactor;
     u32 blend_equation;
     u32 blend_color;
@@ -291,6 +294,7 @@ typedef struct rsx_state {
 
     /* Color mask — bits: [0] B, [8] G, [16] R, [24] A */
     u32 color_mask;
+    u32 color_mask_mrt; /* Raw secondary ARGB nibbles; reset zero. */
     int color_mask_dirty;
 
     /* Alpha test */
