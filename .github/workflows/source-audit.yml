@@ -54,6 +54,8 @@ jobs:
         run: python scripts/check_rsx_restart.py
       - name: Actual indexed vertex reuse regression
         run: python scripts/check_rsx_indexed_strip.py
+      - name: Named SPU extraction identities and rejections
+        run: python scripts/check_spu_named_extract.py
       - name: Actual packed vertex fetch regression
         run: python scripts/check_rsx_vertex.py
       - name: Actual fragment source modifier regression
@@ -227,6 +229,8 @@ jobs:
         run: python scripts/check_rsx_restart.py
       - name: Actual indexed vertex reuse regression
         run: python scripts/check_rsx_indexed_strip.py
+      - name: Named SPU extraction identities and rejections
+        run: python scripts/check_spu_named_extract.py
       - name: Actual packed vertex fetch regression
         run: python scripts/check_rsx_vertex.py
       - name: Actual fragment source modifier regression
