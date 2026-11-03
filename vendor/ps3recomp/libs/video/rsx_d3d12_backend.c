@@ -382,6 +382,8 @@ typedef struct {
     ID3D12RootSignature*  vp_root_sig;          /* CBV(b0) + SRV table + sampler */
     ID3D12PipelineState*  pipeline_state_vp;    /* decompiled VS + atlas PS      */
     ID3D12PipelineState*  pipeline_state_vp_color; /* decompiled VS + colour PS (untextured 3D) */
+    ID3D12PipelineState*  pipeline_state_vp_no_depth;
+    ID3D12PipelineState*  pipeline_state_vp_color_no_depth;
     ID3D12Resource*       vp_vb;                /* raw float4 attrib0, per-frame */
     void*                 vp_vb_mapped;
     u32                   vp_vb_offset;
@@ -1962,6 +1964,8 @@ static void rsx_capture_frame(u32 fi, u32 ndraws, u32 capidx, unsigned reason, i
            (unsigned long long)s_d3d.frame_count, dir, ndraws);
 }
 
+#include "rsx_d3d12_fallback.h"
+
 /* Decompile the captured RSX vertex program to HLSL and build the VP PSO
  * (decompiled VS + atlas alpha-test PS). One-shot per program. */
 static void compile_vp(void)
@@ -2054,6 +2058,8 @@ static void compile_vp(void)
     pd.DepthStencilState.StencilEnable = FALSE;
     pd.SampleDesc.Count = 1;
     hr = s_d3d.device->lpVtbl->CreateGraphicsPipelineState(s_d3d.device, &pd, &IID_ID3D12PipelineState, (void**)&s_d3d.pipeline_state_vp);
+    if (SUCCEEDED(hr))
+        hr = rsx_d3d12_fallback_no_depth(s_d3d.device, &pd, &s_d3d.pipeline_state_vp_no_depth);
 
     /* Second PSO: same VS but a COLOUR-only PS (no texture sample, no alpha
      * discard) for untextured 3D geometry (vkcube's cube). The atlas PS above
@@ -2073,6 +2079,8 @@ static void compile_vp(void)
             HRESULT hr2 = s_d3d.device->lpVtbl->CreateGraphicsPipelineState(
                 s_d3d.device, &pd, &IID_ID3D12PipelineState,
                 (void**)&s_d3d.pipeline_state_vp_color);
+            if (SUCCEEDED(hr2))
+                hr2 = rsx_d3d12_fallback_no_depth(s_d3d.device, &pd, &s_d3d.pipeline_state_vp_color_no_depth);
             printf(SUCCEEDED(hr2) ? "[VP] colour pipeline ready\n"
                                   : "[VP] colour PSO FAIL (0x%08lX)\n", hr2);
             pcb->lpVtbl->Release(pcb);
@@ -3045,6 +3053,7 @@ static ID3D12PipelineState* vp_get_fp_pso(int vs_idx, u32 fp_addr, u32 blend, in
         rsx_cmp_d3d((u32)((ds_key & RSX_DSK_DEPTH_FUNC) >> 1));
     pd.DepthStencilState.StencilEnable =
         (ds_key & RSX_DSK_STENCIL_EN) ? TRUE : FALSE;
+    pd.DSVFormat = rsx_d3d12_depth_format(&pd.DepthStencilState);
     if (pd.DepthStencilState.StencilEnable) {
         D3D12_DEPTH_STENCILOP_DESC* so = &pd.DepthStencilState.FrontFace;
         so->StencilFailOp      = (D3D12_STENCIL_OP)((ds_key & RSX_DSK_SFAIL)  >> 17);
@@ -4923,6 +4932,14 @@ static void shader_prepare_draw(D3D12DrawRecord* dr,int use_pool)
     }
 }
 
+static ID3D12PipelineState* vp_select_draw_pso(const D3D12DrawRecord* dr,
+                                               ID3D12PipelineState* compiled)
+{
+    return rsx_d3d12_fallback_select(compiled, s_d3d.tex_ready, dr->depth_slot != 0,
+        s_d3d.pipeline_state_vp, s_d3d.pipeline_state_vp_color,
+        s_d3d.pipeline_state_vp_no_depth, s_d3d.pipeline_state_vp_color_no_depth);
+}
+
 static void render_frame(void)
 {
     double _rf0 = perf_on() ? perf_now() : 0.0;
@@ -5864,7 +5881,11 @@ static void render_frame(void)
                     }
                 }
                 if (phase_on()) s_phase.pso += perf_now() - ph_pso;
-                ID3D12PipelineState* next_pso = dpso ? dpso : vpso;
+                ID3D12PipelineState* next_pso = vp_select_draw_pso(dr, dpso);
+                if (!next_pso) {
+                    fprintf(stderr, "[D3D12] No compatible VP fallback pipeline (depth=%u)\n", dr->depth_slot);
+                    abort();
+                }
                 if (!bind_reuse_on() || next_pso != bound_pso) {
                     if (bind_reuse_on()) {
                         next_pso->lpVtbl->AddRef(next_pso);
@@ -6076,7 +6097,7 @@ static void render_frame(void)
             if (perf_on()) s_perf_gpu += perf_now() - _rec0;   /* reuse: record time */
             /* Leave the backbuffer bound for the dump/present epilogue. */
             if (cur_rt >= 0) {
-                s_d3d.cmd_list->lpVtbl->OMSetRenderTargets(s_d3d.cmd_list, 1, &rtv_handle, FALSE, &dsv_handle);
+                s_d3d.cmd_list->lpVtbl->OMSetRenderTargets(s_d3d.cmd_list, 1, &rtv_handle, FALSE, NULL);
                 D3D12_VIEWPORT vp = {0, 0, (float)s_d3d.width, (float)s_d3d.height, 0.0f, 1.0f};
                 D3D12_RECT sc = {0, 0, (LONG)s_d3d.width, (LONG)s_d3d.height};
                 s_d3d.cmd_list->lpVtbl->RSSetViewports(s_d3d.cmd_list, 1, &vp);
@@ -8367,6 +8388,10 @@ void rsx_d3d12_backend_shutdown(void)
     if (s_d3d.pipeline_state)        s_d3d.pipeline_state->lpVtbl->Release(s_d3d.pipeline_state);
     if (s_d3d.pipeline_state_lines)  s_d3d.pipeline_state_lines->lpVtbl->Release(s_d3d.pipeline_state_lines);
     if (s_d3d.pipeline_state_points) s_d3d.pipeline_state_points->lpVtbl->Release(s_d3d.pipeline_state_points);
+    if (s_d3d.pipeline_state_vp) s_d3d.pipeline_state_vp->lpVtbl->Release(s_d3d.pipeline_state_vp);
+    if (s_d3d.pipeline_state_vp_color) s_d3d.pipeline_state_vp_color->lpVtbl->Release(s_d3d.pipeline_state_vp_color);
+    if (s_d3d.pipeline_state_vp_no_depth) s_d3d.pipeline_state_vp_no_depth->lpVtbl->Release(s_d3d.pipeline_state_vp_no_depth);
+    if (s_d3d.pipeline_state_vp_color_no_depth) s_d3d.pipeline_state_vp_color_no_depth->lpVtbl->Release(s_d3d.pipeline_state_vp_color_no_depth);
     rsx_d3d12_depth_release(&s_d3d.depth_cache);
     if (s_d3d.depth_buffer) s_d3d.depth_buffer->lpVtbl->Release(s_d3d.depth_buffer);
     if (s_d3d.dsv_heap)     s_d3d.dsv_heap->lpVtbl->Release(s_d3d.dsv_heap);

@@ -26,6 +26,36 @@ prefix is also checked for premature texture release. Windows CI executes real
 evicted pipelines on WARP; local hardware coverage uses the same authored draw.
 These controls do not establish native race completion or an FPS improvement.
 
+## Depth admission and attachment-compatible fallbacks (issue 245)
+
+PR #252 ports the depth-use predicate and allocation diagnostics from own-fork
+`04e10bfb492ce667d96d55d45f86446332542c62`. Its game adapter prepares a guest
+depth surface only for explicit depth/stencil clears or enabled tests; a write
+mask alone does not allocate a stale zeta address. Existing depth/stencil
+contents and explicit clear decoding remain covered by authored pixel checks.
+
+Review correction `62a2390df946de35b897c3a2d41bb53b73f6ef2d` on own-fork modular
+branch `codex/issue-245-depth-fallback` supplies the exact
+`rsx_d3d12_fallback.h` and authored depth fixture. It preserves the original
+attached fallback PSOs and creates matching depthless variants, with both tests
+disabled and DSV format UNKNOWN. The game selector uses the actual record's
+depth slot when a guest fragment program is absent or compilation fails, while
+successfully compiled guest pipelines retain precedence. Final backbuffer
+restoration binds no stale depth descriptor. The fork's older shared-depth
+renderer continues to select its attached variants; its sampler identity table
+recognizes both variants of each fallback shader.
+
+`check_rsx_depth_contract.py` compiles the actual game fallback descriptor and
+selection functions with authored COM adapters, checks the dynamic guest depth
+state (including UNKNOWN format when both tests are disabled), and rejects
+attachment-blind selection. `check_rsx_depth_admission.py`
+uses only authored shaders and pixels. WARP and hardware each pass 18 checks;
+the eager-allocation control fails the capacity case, and the old depth-enabled
+fallback control reports two real null-DSV validation errors. Dynamic pipelines
+with both tests disabled and the original write mask also pass a null-DSV draw.
+These checks do not establish a native race, an FPS improvement, or removal of
+the genuine 128-surface live working-set limit. No game data is included.
+
 ## Exact-byte fragment snapshot reuse (issue 213)
 
 The generic `rsx_fp_snapshot.h` decision helper originates on own-fork modular
