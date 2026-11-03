@@ -18,13 +18,17 @@ PREFIX = r'''
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 typedef uint32_t u32;typedef uint64_t u64;typedef uint8_t u8;
 typedef struct {float v[4];} VPSlot;
 typedef struct {struct {int enabled;} vertex_attribs[16];u32 index_array_dma,begin_epoch,restart_index_enable,restart_index;} rsx_state;
 #define MAX_VERTICES 4096
 #define VP_VERT_STRIDE 256
 static VPSlot buffer[4096*16];
-static struct {void*vp_vb_mapped;u32 vp_vb_offset,vp_parity;} s_d3d={buffer,0,0};
+static struct {void*vp_vb_mapped;u32 vp_vb_offset,vp_parity,vp_capacity;} s_d3d={buffer,0,0,MAX_VERTICES};
+/* This assembly fixture stays within its authored storage. Growth has its own
+ * production-path contract in check_rsx_vp_upload.py. */
+static void vp_upload_reserve(u64 n){if(n>MAX_VERTICES-s_d3d.vp_vb_offset/VP_VERT_STRIDE)abort();}
 uint8_t*vm_base=(uint8_t*)1;static const u32*indices;static unsigned markers_fetched;
 static u32 read_guest_index(const rsx_state*s,u32 k){(void)s;return indices[k];}
 static void read_vp_vertex(const rsx_state*s,u32 i,VPSlot*out){out[0].v[0]=(float)i;if(s->restart_index_enable&&((s->index_array_dma>>4)!=1||s->restart_index<=65535)&&i==s->restart_index)markers_fetched++;}
@@ -70,7 +74,7 @@ def main():
         prefix += '\nu32 cellGcmResolveOffset(u32 o){(void)o;abort();}\nu32 cellGcmResolveLocated(int l,u32 o){(void)l;(void)o;abort();}\n'
     c.write_text(prefix + include + body + CHECK, encoding='utf-8')
     env = os.environ.copy()
-    if os.name == 'nt':
+    if os.name == 'nt' and not env.get('CC'):
         from project import build_environment
         env = build_environment()
         cmd = [env['MV_CLANG'], '/nologo', str(c), '/Fe' + str(exe), '/Fo' + str(out) + os.sep]
