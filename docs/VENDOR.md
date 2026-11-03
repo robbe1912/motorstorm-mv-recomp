@@ -1232,3 +1232,22 @@ per WARP/hardware adapter. The unchanged legacy-expression control reproduces
 the invalid-bytecode error. CI runs WARP; the portable third-source modifier
 check also remains in source audit. These tests do not prove that source
 negation caused the separate device hang or that a race reaches 30 FPS.
+
+### Complete render-batch timing (#255)
+
+Own-fork modular branch `codex/issue-255-render-accounting` and combined commit
+`38ee99de074718d922d6375c50655085fef8157d` move opt-in PERF accounting to the
+successful render-batch boundary, after submission, presentation and
+CPU-surface completion. The first report covers all twenty timed batches.
+Nonpresenting drains count as batches, so the rate is `batches/s`;
+`outside_render` is unclassified time between calls, not exclusive game CPU.
+CPU-wall Close/Execute durations remain inside render time and introduce no
+waits or GPU ordering changes. Failed Close aborts explicitly before Execute.
+
+The curated port omits the fork-only submission-owner commit and bytecode
+cache report, whose subsystems are absent here; existing curated metrics and
+checked ownership remain intact. The actual-helper fixture verifies full
+tail time, first-window coverage, callback ordering, disabled-mode behavior
+and failed-Close refusal. Historical early-placement and omitted-tail controls
+fail. Windows clang-cl and Linux GCC pass the fork and curated helpers; this
+change establishes no game speedup or stable race FPS.
