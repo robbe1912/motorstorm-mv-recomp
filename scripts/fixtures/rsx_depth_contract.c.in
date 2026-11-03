@@ -8,7 +8,7 @@
 #include "rsx_d3d12_depth.h"
 typedef uint32_t u32;
 @DEPTH_KEYS@
-typedef struct { unsigned depth_slot; } D3D12DrawRecord;
+typedef struct { unsigned depth_slot, vertex_count, vb_byte_offset; } D3D12DrawRecord;
 static struct {
     ID3D12Device* device;
     ID3D12RootSignature* vp_root_sig;
@@ -36,6 +36,19 @@ static D3D12_COMPARISON_FUNC rsx_cmp_d3d(uint32_t comparison) {
     return (D3D12_COMPARISON_FUNC)(comparison + 1);
 }
 @SELECTOR@
+static ID3D12PipelineState* held_pso;
+static u32 held_count, held_first;
+static void gpu_pso_draw(ID3D12PipelineState* pso, u32 count, u32 first) {
+    held_pso = pso; held_count = count; held_first = first;
+}
+static void production_draw(D3D12DrawRecord* dr, ID3D12PipelineState* dpso,
+                            ID3D12PipelineState* vpso) {
+    ID3D12PipelineState* next_pso = vp_select_draw_pso(dr, dpso);
+    @DRAW@
+    check(held_pso == next_pso, "draw holds selected pipeline");
+    check(held_count == dr->vertex_count && held_first == dr->vb_byte_offset / 256,
+          "draw preserves upload coordinates");
+}
 static D3D12_GRAPHICS_PIPELINE_STATE_DESC dynamic(uint64_t ds_key) {
     D3D12_GRAPHICS_PIPELINE_STATE_DESC pd = {0};
     @DYNAMIC@
@@ -69,12 +82,14 @@ int main(void) {
     for (unsigned texture = 0; texture < 2; ++texture) {
         s_d3d.tex_ready = (int)texture;
         for (unsigned depth = 0; depth < 2; ++depth) {
-            D3D12DrawRecord record = {depth};
+            D3D12DrawRecord record = {depth, 9, 1024};
             ID3D12PipelineState* fallback = &objects[(depth ? 0 : 2) + !texture];
             check(vp_select_draw_pso(&record, NULL) == fallback,
                   "missing or failed guest FP selects attachment-compatible fallback");
             check(vp_select_draw_pso(&record, &objects[4]) == &objects[4],
                   "successfully compiled guest FP remains selected");
+            production_draw(&record, NULL, &objects[!texture]);
+            production_draw(&record, &objects[4], &objects[!texture]);
         }
     }
     for (unsigned bits = 0; bits < 4; ++bits) {

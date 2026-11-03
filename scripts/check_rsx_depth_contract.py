@@ -1,5 +1,6 @@
 """Extract actual fallback descriptors and draw selection; reject old selection."""
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -28,6 +29,7 @@ def main():
     start = compile_vp.index('    D3D12_GRAPHICS_PIPELINE_STATE_DESC pd = {0};')
     creation = compile_vp[start:compile_vp.index('    /* Second PSO:', start)]
     selector = function(source, 'static ID3D12PipelineState* vp_select_draw_pso(')
+    draw = re.search(r'gpu_pso_draw\([^;]+dr->vb_byte_offset / 256\);', source).group(0)
     start = source.index('    pd.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;',
                          source.index('static ID3D12PipelineState* vp_get_fp_pso('))
     dynamic = source[start:source.index('    if (pd.DepthStencilState.StencilEnable) {', start)]
@@ -35,12 +37,13 @@ def main():
     assert 'FALSE, NULL);\n                D3D12_VIEWPORT vp = ' in source
     template = (ROOT / 'scripts/fixtures/rsx_depth_contract.c.in').read_text()
     keys = '\n'.join(line for line in source.splitlines() if line.startswith('#define RSX_DSK_'))
-    actual = template.replace('@SELECTOR@', selector).replace('@CREATION@', creation).replace('@DYNAMIC@', dynamic).replace('@DEPTH_KEYS@', keys)
+    actual = template.replace('@SELECTOR@', selector).replace('@CREATION@', creation).replace('@DYNAMIC@', dynamic).replace('@DEPTH_KEYS@', keys).replace('@DRAW@', draw)
     with tempfile.TemporaryDirectory(prefix='depth-contract-') as directory:
         out = Path(directory)
-        for name, body, rejected in [
-            ('actual', actual, False),
-            ('old-selection', actual.replace('dr->depth_slot != 0', '1'), True),
+        for name, body, expected_error in [
+            ('actual', actual, None),
+            ('old-selection', actual.replace('dr->depth_slot != 0', '1'), 'attachment-compatible fallback'),
+            ('old-owner', actual.replace('gpu_pso_draw(next_pso,', 'gpu_pso_draw(dpso ? dpso : vpso,'), 'draw holds selected pipeline'),
         ]:
             unit = out / (name + '.c'); unit.write_text(body, encoding='utf-8')
             exe = out / (name + '.exe')
@@ -49,11 +52,11 @@ def main():
                             str(unit), '/Fe' + str(exe), '/link', 'dxguid.lib'],
                            cwd=out, env=env, check=True, timeout=60)
             result = subprocess.run([str(exe)], capture_output=True, text=True, timeout=10)
-            if rejected:
-                assert result.returncode and 'attachment-compatible fallback' in result.stderr, result
+            if expected_error:
+                assert result.returncode and expected_error in result.stderr, result
             else:
                 assert result.returncode == 0 and 'failures=0' in result.stdout, result
-    print('PASS actual production fallback descriptors/selection and dynamic guest depth state; old selection rejected')
+    print('PASS actual production fallback descriptors/selection, draw owner and dynamic guest depth state; old selection/owner rejected')
 
 
 if __name__ == '__main__':

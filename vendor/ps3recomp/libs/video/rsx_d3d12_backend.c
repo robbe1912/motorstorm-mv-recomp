@@ -6076,7 +6076,7 @@ static void render_frame(void)
                 if (phase_on()) { s_phase.draws++; s_phase.small_draws += is_small; }
                 phase_gpu_draw(is_small, 0);
                 cpu_surface_written(cur_rt,cur_m);
-                gpu_pso_draw(dpso ? dpso : vpso, dr->vertex_count, dr->vb_byte_offset / 256);
+                gpu_pso_draw(next_pso, dr->vertex_count, dr->vb_byte_offset / 256);
                 if (dr->rt_off == 0) rsx_record_batch_display_write(&s_record_batch);
                 phase_gpu_draw(is_small, 1);
                 /* VP_SUBMIT=<N>: prove the VP pass actually reaches the GPU.
