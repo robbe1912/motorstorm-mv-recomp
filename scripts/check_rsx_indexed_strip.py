@@ -19,7 +19,7 @@ def main():
     source = args.source.resolve()
     text = source.read_text(encoding='utf-8')
     start = text.index('static u32 upload_strip_vp_indexed(')
-    end = text.index('static void d3d12_draw_arrays(', start)
+    end = text.index('\nstatic ', start + 1)
     fixture = ROOT / 'scripts/fixtures/rsx_indexed_strip.c.in'
     template = fixture.read_text(encoding='utf-8')
     assert template.count('@INDEXED_STRIP_FUNCTION@') == 1
