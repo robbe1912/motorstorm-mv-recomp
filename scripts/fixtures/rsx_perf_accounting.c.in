@@ -1,0 +1,92 @@
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+typedef unsigned long long u64;
+typedef int32_t HRESULT;
+#define FAILED(hr) ((hr) < 0)
+static double clock_s;
+static int enabled = 1, clock_reads, closes, executes, commits, reports;
+static int fail_close, fail_commit, failures, checks;
+static char order[8];
+static unsigned order_n;
+static void check(int good, const char* label) {
+    ++checks;
+    if (!good) { ++failures; fprintf(stderr, "FAIL %s\n", label); }
+}
+static int near(double a, double b) { return a > b - 0.00000001 && a < b + 0.00000001; }
+static double perf_now(void) { ++clock_reads; return clock_s; }
+static int perf_on(void) { return enabled; }
+static void texture_profile_log(void) { ++reports; }
+@GLOBALS@
+typedef struct command_list command_list;
+typedef command_list ID3D12CommandList;
+typedef struct command_queue command_queue;
+struct command_list { struct list_vtable* lpVtbl; };
+struct command_queue { struct queue_vtable* lpVtbl; };
+struct list_vtable { HRESULT (*Close)(command_list*); };
+struct queue_vtable { void (*ExecuteCommandLists)(command_queue*, unsigned, ID3D12CommandList**); };
+static void fixture_abort(void) {
+    if ((fail_close || fail_commit) && closes == 1 && executes == 0) {
+        puts("PASS failed submission never executes");
+        exit(77);
+    }
+    exit(78);
+}
+#define abort fixture_abort
+static HRESULT close_list(command_list* list) {
+    (void)list; ++closes; order[order_n++] = 'C'; clock_s += 0.003;
+    return fail_close ? (HRESULT)0x80004005u : 0;
+}
+static void execute_list(command_queue* queue, unsigned count, ID3D12CommandList** lists) {
+    (void)queue; check(count == 1 && lists[0] != NULL, "original command list submitted");
+    ++executes; order[order_n++] = 'E'; clock_s += 0.007;
+}
+@COMMIT_STUB@
+static struct list_vtable list_ops = { close_list };
+static struct queue_vtable queue_ops = { execute_list };
+static command_list list = { &list_ops };
+static command_queue queue = { &queue_ops };
+static struct { command_list* cmd_list; command_queue* cmd_queue; } s_d3d = { &list, &queue };
+@SUBMIT@
+@FINISH@
+int main(int argc, char** argv) {
+    clock_s = 1.0;
+    if (argc == 2) {
+        fail_close = strcmp(argv[1], "--fail-close") == 0;
+        fail_commit = strcmp(argv[1], "--fail-commit") == 0;
+        enabled = strcmp(argv[1], "--disabled") != 0;
+        submit_recorded_commands();
+        if (fail_close || fail_commit) return 79;
+        check(clock_reads == 0, "disabled profiling reads no clock");
+        check(closes == 1 && executes == 1, "disabled profiling preserves submission");
+        check(s_perf_close == 0 && s_perf_execute == 0, "disabled profiling changes no timing");
+        return failures ? 1 : 0;
+    }
+    for (int i = 0; i < 21; ++i) {
+        if (i) clock_s += 0.050; /* producer work outside the render function */
+        double started = clock_s;
+        clock_s += 0.010;       /* prepass and replay */
+        order_n = 0;
+        submit_recorded_commands();
+        order[order_n] = 0;
+        check(strcmp(order, "@ORDER@") == 0, "close/commit/execute order retained");
+        clock_s += 0.080;       /* tail, capture, present and completion */
+        perf_batch_finish(started);
+        if (!i) {
+            check(near(s_perf_rf, 0.100), "whole renderer tail included");
+            check(near(s_perf_frame, 0.100), "first batch belongs to first window");
+            check(near(s_perf_close, 0.003), "actual Close cost isolated");
+            check(near(s_perf_execute, 0.007), "actual Execute cost isolated");
+        }
+        if (i == 19) {
+            check(reports == 1, "one complete twenty-batch report");
+            check(s_perf_rf == 0 && s_perf_frame == 0, "whole-window counters reset together");
+            check(s_perf_close == 0 && s_perf_execute == 0, "submission counters reset with window");
+        }
+    }
+    check(near(s_perf_frame, 0.150), "next window retains between-batch interval");
+    check(near(s_perf_rf, 0.100), "next window retains only renderer work");
+    printf("accounting checks=%d failures=%d\n", checks, failures);
+    return failures ? 1 : 0;
+}

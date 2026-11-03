@@ -551,10 +551,11 @@ static void screen_copy_capture(u32 fi);   /* fwd */
 static int  s_sc_dump_pending = 0;
 static u32 s_duck_raw = 0;   /* as BOUND (what draw records carry) */
 static u32 s_duck_off = 0;   /* as RESOLVED (what the uploader sees)   */
-/* PERF=1: where a frame's CPU time actually goes. Guessing at this is how you
- * spend an afternoon optimising the wrong loop. */
+/* PERF=1: CPU wall-time boundaries, including waits. outside_render is
+ * unclassified work between render batches, not exclusive game execution. */
 static double s_perf_tex = 0.0, s_perf_frame = 0.0, s_perf_vtx = 0.0, s_perf_rf = 0.0;
 static double s_perf_gpu = 0.0, s_perf_pre = 0.0, s_perf_srv = 0.0, s_perf_pso = 0.0;
+static double s_perf_close = 0.0, s_perf_execute = 0.0;
 static int s_perf_pso_calls = 0, s_perf_pso_miss = 0, s_perf_pso_hashbytes = 0;
 static u64    s_perf_nverts = 0;
 static u64    s_perf_texbytes = 0;
@@ -4940,6 +4941,55 @@ static ID3D12PipelineState* vp_select_draw_pso(const D3D12DrawRecord* dr,
         s_d3d.pipeline_state_vp_no_depth, s_d3d.pipeline_state_vp_color_no_depth);
 }
 
+static void submit_recorded_commands(void)
+{
+    double started = perf_on() ? perf_now() : 0.0;
+    HRESULT hr = s_d3d.cmd_list->lpVtbl->Close(s_d3d.cmd_list);
+    if (perf_on()) s_perf_close += perf_now() - started;
+    if (FAILED(hr)) {
+        fprintf(stderr, "[D3D12] Command list close failed: 0x%08X\n", (unsigned)hr);
+        abort();
+    }
+    ID3D12CommandList* cmd_lists[] = {(ID3D12CommandList*)s_d3d.cmd_list};
+    if(!rsx_submission_commit())gpu_submission_fail("commit");
+    started = perf_on() ? perf_now() : 0.0;
+    s_d3d.cmd_queue->lpVtbl->ExecuteCommandLists(s_d3d.cmd_queue, 1, cmd_lists);
+    if (perf_on()) s_perf_execute += perf_now() - started;
+}
+
+static void perf_batch_finish(double started)
+{
+    static double s_t_prev = 0.0; static int s_n = 0;
+    double now = perf_now();
+    if (s_t_prev == 0.0) s_t_prev = started;
+    s_perf_frame += now - s_t_prev;
+    s_perf_rf += now - started;
+    s_t_prev = now;
+    if (++s_n % 20 == 0) {
+        texture_profile_log();
+        double fr = s_perf_frame > 0 ? s_perf_frame : 1;
+        fprintf(stderr, "[PERF] %.2f batches/s | tex %.2fs (%.0f%%, %d calls) | vtx %.2fs"
+                        " (%.0f%%, %.0fk verts) | render_frame %.2fs (%.0f%%)"
+                        " | prepass %.2fs (%.0f%%) [srv %.2fs %.0f%% | pso %.2fs %.0f%% %d calls %d MISS %dKB hashed] | outside_render %.2fs (%.0f%%)%c",
+                20.0 / fr,
+                s_perf_tex, 100.0 * s_perf_tex / fr, s_perf_ntex,
+                s_perf_vtx, 100.0 * s_perf_vtx / fr,
+                (double)s_perf_nverts / 1000.0,
+                s_perf_rf, 100.0 * s_perf_rf / fr,
+                s_perf_pre, 100.0 * s_perf_pre / fr,
+                s_perf_srv, 100.0 * s_perf_srv / fr,
+                s_perf_pso, 100.0 * s_perf_pso / fr,
+                s_perf_pso_calls, s_perf_pso_miss, s_perf_pso_hashbytes / 1024,
+                fr - s_perf_rf, 100.0 * (fr - s_perf_rf) / fr, 10);
+        fprintf(stderr, "[PERF] command_close %.3fs | command_execute %.3fs (CPU wall; included in render_frame)\n", s_perf_close, s_perf_execute);
+        s_perf_close = s_perf_execute = 0.0;
+        s_perf_frame = 0.0; s_perf_tex = 0.0; s_perf_vtx = 0.0; s_perf_rf = 0.0;
+        s_perf_gpu = 0.0; s_perf_pre = 0.0; s_perf_srv = 0.0; s_perf_pso = 0.0;
+        s_perf_pso_calls = 0; s_perf_pso_miss = 0; s_perf_pso_hashbytes = 0;
+        s_perf_ntex = 0; s_perf_texbytes = 0; s_perf_nverts = 0;
+    }
+}
+
 static void render_frame(void)
 {
     double _rf0 = perf_on() ? perf_now() : 0.0;
@@ -6108,7 +6158,6 @@ static void render_frame(void)
     double ph_replay_end = phase_on() ? perf_now() : 0.0;
     if (phase_on()) s_phase.replay = ph_replay_end - ph_replay;
 
-    if (perf_on()) s_perf_rf += perf_now() - _rf0;
     /* MEMPEEK=<hex addr>:<n>: n big-endian floats at a guest address each frame,
      * with a min/max so a buffer of constants is distinguishable from real data. */
     { const char* mp = getenv("MEMPEEK");
@@ -6163,33 +6212,7 @@ static void render_frame(void)
                 (unsigned long long)s_req_verts, (unsigned long long)s_req_draws,
                 MAX_VERTICES, (unsigned long long)s_drop_draws, 10); }
       s_req_verts = 0; s_req_draws = 0; s_drop_draws = 0; }
-    if (perf_on()) {
-        static double s_t_prev = 0.0; static int s_n = 0;
-        double now = perf_now();
-        if (s_t_prev > 0.0) s_perf_frame += now - s_t_prev;
-        s_t_prev = now;
-        if (++s_n % 20 == 0) {
-            texture_profile_log();
-            double fr = s_perf_frame > 0 ? s_perf_frame : 1;
-            fprintf(stderr, "[PERF] %.2f fps | tex %.2fs (%.0f%%, %d calls) | vtx %.2fs"
-                            " (%.0f%%, %.0fk verts) | render_frame %.2fs (%.0f%%)"
-                            " | prepass %.2fs (%.0f%%) [srv %.2fs %.0f%% | pso %.2fs %.0f%% %d calls %d MISS %dKB hashed] | guest %.2fs (%.0f%%)%c",
-                    20.0 / fr,
-                    s_perf_tex, 100.0 * s_perf_tex / fr, s_perf_ntex,
-                    s_perf_vtx, 100.0 * s_perf_vtx / fr,
-                    (double)s_perf_nverts / 1000.0,
-                    s_perf_rf, 100.0 * s_perf_rf / fr,
-                    s_perf_pre, 100.0 * s_perf_pre / fr,
-                    s_perf_srv, 100.0 * s_perf_srv / fr,
-                    s_perf_pso, 100.0 * s_perf_pso / fr,
-                    s_perf_pso_calls, s_perf_pso_miss, s_perf_pso_hashbytes / 1024,
-                    fr - s_perf_rf, 100.0 * (fr - s_perf_rf) / fr, 10);
-            s_perf_frame = 0.0; s_perf_tex = 0.0; s_perf_vtx = 0.0; s_perf_rf = 0.0;
-            s_perf_gpu = 0.0; s_perf_pre = 0.0; s_perf_srv = 0.0; s_perf_pso = 0.0;
-            s_perf_pso_calls = 0; s_perf_pso_miss = 0; s_perf_pso_hashbytes = 0;
-            s_perf_ntex = 0; s_perf_texbytes = 0; s_perf_nverts = 0;
-        }
-    }
+
     { static int dt = -1;
       if (dt < 0) { const char* e = getenv("RSX_DBG_TRACK"); dt = e ? atoi(e) : 0; }
       if (dt) { static int fr = 0; fr++;
@@ -6362,9 +6385,7 @@ skip_dump_consider: ;
 
     phase_gpu_end();
     /* Close and execute */
-    s_d3d.cmd_list->lpVtbl->Close(s_d3d.cmd_list);
-    ID3D12CommandList* cmd_lists[] = {(ID3D12CommandList*)s_d3d.cmd_list};
-    s_d3d.cmd_queue->lpVtbl->ExecuteCommandLists(s_d3d.cmd_queue, 1, cmd_lists);
+    submit_recorded_commands();
     s_cpu_surface_recording=0;
 
     /* D3D12_IQ=1: drain the debug layer's message queue after submitting the
@@ -6671,6 +6692,7 @@ skip_dump_consider: ;
         s_phase_last_end = now;
     }
     cpu_surface_frame_complete();
+    if (perf_on()) perf_batch_finish(_rf0);
 }
 
 /* ---------------------------------------------------------------------------

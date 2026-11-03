@@ -28,6 +28,13 @@ Queries add overhead and do not establish exclusive guest CPU cost. Match GPU
 results to their reported `gpu_frame`, and distinguish nonpresenting batches
 from completed display intervals in `frames.csv`.
 
+For CPU boundary timing without the per-draw GPU queries, set `PERF=1` in
+the launcher environment and leave `--profile-renderer` off. The report counts
+render batches, including nonpresenting drains, and measures the whole render
+function. `outside_render` is unclassified time between batches. The
+`command_close` and `command_execute` fields isolate CPU wall time in the API
+calls; they include driver work/waits and are not GPU execution durations.
+
 With a private replay, `--replay-observe-seconds 120` retains two minutes after
 the observed target instead of the default five seconds, subject to the same
 overall `--seconds` and resource guards. Target observation remains a navigation
