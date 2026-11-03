@@ -92,6 +92,7 @@ const char* rsx_fp_opcode_name(u32 op)
     case OP_LG2: return "LG2"; case OP_LIT: return "LIT"; case OP_LRP: return "LRP";
     case OP_STR: return "STR"; case OP_SFL: return "SFL"; case OP_COS: return "COS";
     case OP_SIN: return "SIN"; case OP_POW: return "POW"; case OP_DP2A: return "DP2A";
+    case OP_PK2H: return "PK2H";
     case OP_TXL: return "TXL"; case OP_TXB: return "TXB"; case OP_RFL: return "RFL";
     case OP_DIV: return "DIV"; case OP_DP2: return "DP2"; case OP_NRM: return "NRM";
     case OP_DIVSQ: return "DIVSQ"; case OP_LIF: return "LIF";
@@ -518,6 +519,7 @@ static int rsx_fp_decompile_internal(
     int wrote[2][FP_MAX_COLOR_TARGETS];
     memset(wrote, 0, sizeof wrote);
     int count = 0;
+    int needs_pack_half = 0;
     u32 off = 0;
     u32 constant_slot = 0;
 
@@ -677,6 +679,15 @@ static int rsx_fp_decompile_internal(
         switch (opcode) {
         case OP_NOP: rhs[0] = '\0'; handled = 0; break;
         case OP_MOV: snprintf(rhs, sizeof(rhs), "%s", a); break;
+        /* NV_fragment_program PK2H / RPCS3 PK2: x occupies the low half,
+         * y the high half. Replicate the packed bits as a float, rather
+         * than numerically converting the integer word to float. */
+        case OP_PK2H:
+            needs_pack_half = 1;
+            snprintf(rhs, sizeof(rhs),
+                     "asfloat(rsx_pack_half_rte((%s).x) | (rsx_pack_half_rte((%s).y) << 16))",
+                     a, a);
+            break;
         case OP_MUL: snprintf(rhs, sizeof(rhs), "(%s) * (%s)", a, b); break;
         case OP_ADD: snprintf(rhs, sizeof(rhs), "(%s) + (%s)", a, b); break;
         case OP_MAD: snprintf(rhs, sizeof(rhs), "(%s) * (%s) + (%s)", a, b, c); break;
@@ -954,7 +965,7 @@ static int rsx_fp_decompile_internal(
     /* Preamble: PSInput matches the backend's placeholder layout; temp/half
      * register files; texture+sampler banks for TEX. Built here, in front of
      * the body, now that the return type is known. */
-    char preamble[2048];
+    char preamble[4096];
     Out p = { preamble, sizeof(preamble), 0, 1 };
     preamble[0] = '\0';
     out_puts(&p,
@@ -991,6 +1002,23 @@ static int rsx_fp_decompile_internal(
             "};\n",
             buffered_constant_count ? buffered_constant_count : 1u);
         out_puts(&p, constants_decl);
+    }
+    if (needs_pack_half) {
+        /* D3D f32tof16 truncates and clamps finite overflow. Use explicit
+         * IEEE binary16 round-to-nearest-even, as in packHalf2x16, so pack
+         * results do not depend on the shader-model conversion policy. */
+        out_puts(&p,
+            "uint rsx_pack_half_rte(float value) {\n"
+            " uint b=asuint(value), s=(b>>16)&32768u, e=(b>>23)&255u, m=b&8388607u;\n"
+            " if(e==255u) return s|31744u|(m!=0u ? 512u|(m>>13) : 0u);\n"
+            " if(e>142u) return s|31744u;\n"
+            " if(e<102u) return s;\n"
+            " uint q, r, halfway;\n"
+            " if(e<113u) { uint shift=126u-e; m|=8388608u;\n"
+            "  q=m>>shift; r=m&((1u<<shift)-1u); halfway=1u<<(shift-1u); }\n"
+            " else { q=((e-112u)<<10)|(m>>13); r=m&8191u; halfway=4096u; }\n"
+            " return s|(q+((r>halfway || (r==halfway && (q&1u)!=0u)) ? 1u : 0u));\n"
+            "}\n");
     }
     if (targets == 1) {
         out_puts(&p, "float4 main(PSInput input) : SV_TARGET {\n");

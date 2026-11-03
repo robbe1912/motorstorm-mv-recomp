@@ -203,6 +203,8 @@ jobs:
       - run: python scripts/check_repository.py --self-test
       - run: python scripts/check_havok_observer.py
       - run: python scripts/check_bike_observer.py
+      - name: Fragment half-float packing (WARP)
+        run: python scripts/check_rsx_fp_pack.py --warp-only
       - name: Independent MRT masks and blending (WARP)
         run: python scripts/check_rsx_mrt.py
       - name: Vertex homogeneous clipping pixel regression (WARP)

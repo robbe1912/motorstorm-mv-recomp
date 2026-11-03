@@ -1098,3 +1098,12 @@ includes modular recovery fix `a25ff1d6`, retaining the original fragment blob
 if recovery compilation fails. The curated header and fixture match the fork;
 Windows offline shader pipeline checks cover failure and empty compiler output.
 Native race and performance effects remain unverified.
+
+### Fragment half-float packing
+
+The `PK2H` fragment instruction is curated from fork combined commit
+`8d8d3bb2068708d345bf485ce76a0d460daaeef7`. The prior native preview recorded
+in issue #24 included this change, but it was absent from the game vendor copy.
+The authored GPU fixture tests the production decompiler on WARP and hardware;
+its missing-instruction control must fail. The Windows source audit runs WARP.
+A new native comparison is required to establish the visual effect in this build.
