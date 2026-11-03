@@ -1117,3 +1117,14 @@ A full batch drains without a capacity-triggered present, preserves backing
 initialization and display-write state, and checks GPU retirement around slot
 reuse. Authored ordered-batch and extracted retirement fixtures include negative
 controls; they do not establish GPU ordering or native race presentation.
+
+### Triangle continuation at record capacity
+
+Issue #223's correction is selectively ported from fork modular `6367aead`
+and combined `5c285597`. A compatible TRIANGLES continuation checks the same
+merge predicate before record reservation and after upload, preserving the
+unfinished primitive at a full record queue. Curated depth-target and fragment
+control/alpha checks remain intact. Actual callback fixtures reject the previous
+ordering on Windows and the restored-order mutant on Windows/Linux at reduced
+and normal capacity. Authored upload/submission adapters do not establish GPU
+ordering, native presentation, race entry or frame-time improvement.

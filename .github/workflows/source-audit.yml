@@ -54,6 +54,7 @@ jobs:
         run: |
           python scripts/check_rsx_record_batch.py
           python scripts/check_rsx_record_retire.py
+          python scripts/check_rsx_triangle_capacity.py
       - name: Actual indexed strip restart regression
         run: python scripts/check_rsx_restart.py
       - name: Actual indexed vertex reuse regression
@@ -235,6 +236,7 @@ jobs:
         run: |
           python scripts/check_rsx_record_batch.py
           python scripts/check_rsx_record_retire.py
+          python scripts/check_rsx_triangle_capacity.py
       - name: Actual indexed strip restart regression
         run: python scripts/check_rsx_restart.py
       - name: Actual indexed vertex reuse regression
