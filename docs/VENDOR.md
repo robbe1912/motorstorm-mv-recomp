@@ -1249,5 +1249,7 @@ cache report, whose subsystems are absent here; existing curated metrics and
 checked ownership remain intact. The actual-helper fixture verifies full
 tail time, first-window coverage, callback ordering, disabled-mode behavior
 and failed-Close refusal. Historical early-placement and omitted-tail controls
-fail. Windows clang-cl and Linux GCC pass the fork and curated helpers; this
-change establishes no game speedup or stable race FPS.
+fail. The curated fixture also rejects an unavailable submission-owner call
+without inventing replacement APIs. Windows checks compile the complete
+backend translation unit against the SDK. Windows clang-cl and Linux GCC
+pass; this establishes no game speedup or stable race FPS.
