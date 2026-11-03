@@ -4951,7 +4951,6 @@ static void submit_recorded_commands(void)
         abort();
     }
     ID3D12CommandList* cmd_lists[] = {(ID3D12CommandList*)s_d3d.cmd_list};
-    if(!rsx_submission_commit())gpu_submission_fail("commit");
     started = perf_on() ? perf_now() : 0.0;
     s_d3d.cmd_queue->lpVtbl->ExecuteCommandLists(s_d3d.cmd_queue, 1, cmd_lists);
     if (perf_on()) s_perf_execute += perf_now() - started;

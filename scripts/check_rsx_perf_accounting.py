@@ -77,21 +77,9 @@ def main():
     submit = function(source, "submit_recorded_commands")
     finish = function(source, "perf_batch_finish")
     globals_ = source[source.index("static double s_perf_tex"):source.index("static double perf_now")]
-    has_commit = "rsx_submission_commit()" in submit
-    commit_stub = """
-static int rsx_submission_commit(void) {
-    ++commits; order[order_n++] = 'M'; return !fail_commit;
-}
-static void gpu_submission_fail(const char* label) {
-    fprintf(stderr, "fixture submission failure: %s\\n", label); fixture_abort();
-}
-""" if has_commit else ""
     template = (Path(__file__).parent / "fixtures/rsx_perf_accounting.c.in").read_text()
-    code = template.replace("@GLOBALS@", globals_).replace("@COMMIT_STUB@", commit_stub)
+    code = template.replace("@GLOBALS@", globals_)
     code = code.replace("@SUBMIT@", submit).replace("@FINISH@", finish)
-    code = code.replace("@ORDER@", "CME" if has_commit else "CE")
-    if not has_commit:
-        code = code.replace(", commits, reports", ", reports")
     environment = os.environ.copy()
     if os.name == "nt":
         from project import build_environment
@@ -107,8 +95,16 @@ static void gpu_submission_fail(const char* label) {
             command = [compiler, "/nologo", "/W4", "/WX", "/std:c11", str(c), "/Fe" + str(exe)]
         else:
             command = [compiler, "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", str(c), "-o", str(exe)]
+        if os.name == "nt":
+            video = ROOT / "vendor/ps3recomp"
+            syntax_command = [environment["MV_CLANG"], "/nologo", "/std:c11", "/Zs"]
+            syntax_command += ["/I" + str(video / part) for part in ("include", "runtime", "libs", "libs/video")]
+            syntax_command += [str(args.source.resolve())]
+            syntax = subprocess.run(syntax_command, cwd=path, env=environment,
+                                    capture_output=True, text=True, timeout=120)
+            assert syntax.returncode == 0, syntax.stdout + syntax.stderr
         subprocess.run(command, cwd=path, env=environment, check=True, timeout=120)
-        for mode in [[], ["--disabled"], ["--fail-close"]] + ([["--fail-commit"]] if has_commit else []):
+        for mode in [[], ["--disabled"], ["--fail-close"]]:
             result = subprocess.run([str(exe), *mode], capture_output=True, text=True, timeout=15)
             assert result.returncode == (77 if mode and mode[0].startswith("--fail-") else 0), result
             if not mode:
@@ -118,6 +114,16 @@ static void gpu_submission_fail(const char* label) {
                 assert "command_close 0.060s | command_execute 0.140s" in result.stderr, result
             if mode == ["--fail-close"]:
                 assert "Command list close failed" in result.stderr, result
+        # The first curated port accidentally retained an unavailable fork API.
+        # Never invent stubs for that missing production subsystem.
+        hook = '    if(!rsx_submission_commit())gpu_submission_fail("commit");\n'
+        missing_owner = code.replace("    HRESULT hr =", hook + "    HRESULT hr =", 1)
+        assert missing_owner != code
+        c.write_text(missing_owner)
+        broken = subprocess.run(command, cwd=path, env=environment,
+                                capture_output=True, text=True, timeout=120)
+        assert broken.returncode != 0, "unavailable submission owner accepted"
+        assert "rsx_submission_commit" in broken.stderr and "gpu_submission_fail" in broken.stderr, broken
         c.write_text(code.replace("s_perf_rf += now - started;", "s_perf_rf += 0.010;", 1))
         subprocess.run(command, cwd=path, env=environment, check=True, timeout=120)
         control = subprocess.run([str(exe)], capture_output=True, text=True, timeout=15)
