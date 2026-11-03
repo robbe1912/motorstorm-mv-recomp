@@ -52,6 +52,8 @@ jobs:
         run: python scripts/check_native_leaf_dispatch.py
       - name: Actual indexed strip restart regression
         run: python scripts/check_rsx_restart.py
+      - name: Lifter jump tables with spilled bases and lwax
+        run: python scripts/check_ppu_spilled_jumptables.py
       - name: Actual indexed vertex reuse regression
         run: python scripts/check_rsx_indexed_strip.py
       - name: Named SPU extraction identities and rejections
@@ -231,6 +233,8 @@ jobs:
         run: python scripts/check_rsx_capture_schedule.py
       - name: Actual indexed strip restart regression
         run: python scripts/check_rsx_restart.py
+      - name: Lifter jump tables with spilled bases and lwax
+        run: python scripts/check_ppu_spilled_jumptables.py
       - name: Actual indexed vertex reuse regression
         run: python scripts/check_rsx_indexed_strip.py
       - name: Named SPU extraction identities and rejections
