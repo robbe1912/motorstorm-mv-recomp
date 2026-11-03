@@ -1,0 +1,82 @@
+{
+  "_comment": [
+    "Stable SPU registration ids for MS1's named debug-EBOOT inputs (issue #36).",
+    "Ids never renumber: logs and docs reference them. New registrants append after the highest id.",
+    "220/221 reserve the disabled named MP3 lifts of the same bytes as 218/217.",
+    "identities: staged FNV-1a-64 = fnv(image[:imageSize-0x20]); PM whole/text FNV per docs/research/SPU_INVENTORY.md."
+  ],
+  "ids": {
+    "jobmod_056ac0eea1a6_e12270": 210,
+    "jobmod_0c12886b2f86_e2100": 211,
+    "jobmod_16b664ad80c1_e7850": 212,
+    "jobmod_556b30b5e654_e12e20": 213,
+    "jobmod_9b7dc8fddc7c_e1540": 214,
+    "jobmod_b4196ba13cc2_eaf80": 215,
+    "jobmod_0b04db5f915b_e6230": 216,
+    "jobmod_218cf6782924_ea9b0": 217,
+    "jobmod_3dfb7150a008_e12928": 218,
+    "jobmod_8de1770ee613_e1cd40": 219,
+    "nli_mp3StereoJobCode": 220,
+    "nli_mp3SurroundJobCode": 221
+  },
+  "names": {
+    "jobmod_056ac0eea1a6_e12270": "spupvs",
+    "jobmod_0c12886b2f86_e2100": "spuconstraints",
+    "jobmod_16b664ad80c1_e7850": "spuvertexbuffer",
+    "jobmod_556b30b5e654_e12e20": "spuparticlesystem",
+    "jobmod_9b7dc8fddc7c_e1540": "spuxform",
+    "jobmod_b4196ba13cc2_eaf80": "spugroundrush",
+    "jobmod_0b04db5f915b_e6230": "spucodec_sase",
+    "jobmod_218cf6782924_ea9b0": "mp3SurroundJobCode",
+    "jobmod_3dfb7150a008_e12928": "mp3StereoJobCode",
+    "jobmod_8de1770ee613_e1cd40": "spuvehicle"
+  },
+  "identities": {
+    "jobmod_056ac0eea1a6_e12270": {
+      "symbol": "_binary_spupvs_wwsjob_image_start",
+      "staged_fnv": "1D912920D52B9FE0"
+    },
+    "jobmod_0c12886b2f86_e2100": {
+      "symbol": "_binary_spuconstraints_wwsjob_image_start",
+      "staged_fnv": "B103D0BED870FD18"
+    },
+    "jobmod_16b664ad80c1_e7850": {
+      "symbol": "_binary_spuvertexbuffer_wwsjob_image_start",
+      "staged_fnv": "BCAE4F4D8FE977EE"
+    },
+    "jobmod_556b30b5e654_e12e20": {
+      "symbol": "_binary_spuparticlesystem_wwsjob_image_start",
+      "staged_fnv": "3547CC163D6E1A54"
+    },
+    "jobmod_9b7dc8fddc7c_e1540": {
+      "symbol": "_binary_spuxform_wwsjob_image_start",
+      "staged_fnv": "AB8F5CD64EEA2166"
+    },
+    "jobmod_b4196ba13cc2_eaf80": {
+      "symbol": "_binary_spugroundrush_wwsjob_image_start",
+      "staged_fnv": "35986289503E9DF5"
+    },
+    "jobmod_0b04db5f915b_e6230": {
+      "symbol": "_binary_spucodec_sase_wwsjob_image_start",
+      "staged_fnv": "FAA4A92841B958F4"
+    },
+    "jobmod_218cf6782924_ea9b0": {
+      "symbol": "mp3SurroundJobCode",
+      "staged_fnv": "270672D46A0816D3"
+    },
+    "jobmod_3dfb7150a008_e12928": {
+      "symbol": "mp3StereoJobCode",
+      "staged_fnv": "9CF193289333F04F"
+    },
+    "jobmod_8de1770ee613_e1cd40": {
+      "symbol": "_binary_spuvehicle_wwsjob_image_start",
+      "staged_fnv": "4F93B96EBF624615"
+    },
+    "spu_0002_policy_10135e00": {
+      "symbol": "_binary_jobmanager_file_start",
+      "id": 3,
+      "whole_fnv": "DF936AC685721F53",
+      "text_fnv": "C042E76A9A90E5BF"
+    }
+  }
+}
