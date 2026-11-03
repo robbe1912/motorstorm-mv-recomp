@@ -4945,10 +4945,17 @@ static void render_frame(void)
     phase_gpu_collect();
 
     /* Resolve depth resources before recording. No color-target change
-     * discards an existing guest depth surface. */
+     * discards an existing guest depth surface. Only records that test or
+     * clear depth/stencil get an attachment: colour-only records keep stale
+     * zeta offsets, and preparing those filled the address-keyed cache
+     * (#245). Slot 0 means no DSV is bound for that record. */
     for (u32 d = 0; d < s_d3d.draw_count && d < MAX_DRAWS; ++d) {
         D3D12DrawRecord* dr = &s_d3d.draws[d];
         if (!dr->is_vp) continue;
+        if (!rsx_d3d12_depth_required(dr->is_clear, dr->clear_flags, (uint32_t)dr->ds_key)) {
+            dr->depth_slot = 0;
+            continue;
+        }
         u32 w = dr->rt_w > s_d3d.width ? dr->rt_w : s_d3d.width;
         u32 h = dr->rt_h > s_d3d.height ? dr->rt_h : s_d3d.height;
         if (w < 2048) w = 2048;
@@ -5666,19 +5673,25 @@ static void render_frame(void)
             /* Keep pointer identity stable across PSO-cache eviction. */
             if (bind_reuse_on()) bound_pso->lpVtbl->AddRef(bound_pso);
             u64 bound_srv = gh.ptr;
-            u32 bound_depth_slot = 0;
+            u32 bound_depth_slot = UINT32_MAX;   /* force the first bind */
             for (u32 d = 0; d < s_d3d.draw_count && d < MAX_DRAWS; d++) {
                 const D3D12DrawRecord* dr = &s_d3d.draws[d];
                 if (!dr->is_vp) continue;
-                dsv_handle = rsx_d3d12_depth_handle(
-                    s_d3d.dsv_heap, s_d3d.dsv_step, dr->depth_slot);
-                rsx_d3d12_depth_surface* depth_surface =
-                    &s_d3d.depth_cache.surfaces[dr->depth_slot - 1];
-                if (!depth_surface->initialized) {
-                    s_d3d.cmd_list->lpVtbl->ClearDepthStencilView(s_d3d.cmd_list,
-                        dsv_handle, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
-                        1.0f, 0, 0, NULL);
-                    depth_surface->initialized = 1;
+                /* No depth use: bind no DSV, and leave every guest depth
+                 * surface (and its initialization state) untouched. */
+                const D3D12_CPU_DESCRIPTOR_HANDLE* dsv = NULL;
+                if (dr->depth_slot) {
+                    dsv_handle = rsx_d3d12_depth_handle(
+                        s_d3d.dsv_heap, s_d3d.dsv_step, dr->depth_slot);
+                    dsv = &dsv_handle;
+                    rsx_d3d12_depth_surface* depth_surface =
+                        &s_d3d.depth_cache.surfaces[dr->depth_slot - 1];
+                    if (!depth_surface->initialized) {
+                        s_d3d.cmd_list->lpVtbl->ClearDepthStencilView(s_d3d.cmd_list,
+                            dsv_handle, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
+                            1.0f, 0, 0, NULL);
+                        depth_surface->initialized = 1;
+                    }
                 }
                 /* The reduced-viewport passes (this title's reflection, drawn
                  * into a region of the same target) finish here -- snapshot
@@ -5694,7 +5707,7 @@ static void render_frame(void)
                         screen_copy_capture(fi);
                         subvp_capture(fi);
                         s_d3d.cmd_list->lpVtbl->OMSetRenderTargets(
-                            s_d3d.cmd_list, 1, &rtv_handle, FALSE, &dsv_handle);
+                            s_d3d.cmd_list, 1, &rtv_handle, FALSE, dsv);
                     }
                 }
                 /* Color and depth attachments have independent identities. */
@@ -5742,7 +5755,7 @@ static void render_frame(void)
                     }
                     D3D12_RECT sc = {0, 0, (LONG)vp.Width, (LONG)vp.Height};
                     vp_last_w = vp.Width; vp_last_h = vp.Height;
-                    s_d3d.cmd_list->lpVtbl->OMSetRenderTargets(s_d3d.cmd_list, nrt, rh, FALSE, &dsv_handle);
+                    s_d3d.cmd_list->lpVtbl->OMSetRenderTargets(s_d3d.cmd_list, nrt, rh, FALSE, dsv);
                     bound_depth_slot = dr->depth_slot;
                     s_d3d.cmd_list->lpVtbl->RSSetViewports(s_d3d.cmd_list, 1, &vp);
                     s_d3d.cmd_list->lpVtbl->RSSetScissorRects(s_d3d.cmd_list, 1, &sc);
@@ -5950,7 +5963,7 @@ static void render_frame(void)
                       for (int _m = 0; _m < 3; _m++)
                           if (cur_m[_m] >= 0) brh[bn++] = off_rt_rtv(cur_m[_m]);
                       s_d3d.cmd_list->lpVtbl->OMSetRenderTargets(
-                          s_d3d.cmd_list, bn, brh, FALSE, &dsv_handle);
+                          s_d3d.cmd_list, bn, brh, FALSE, dsv);
                   } }
                 /* VP_PROBE=<hex fp[,hex...]>: magenta-clear every bound colour
                  * target immediately before each matching draw. If the
