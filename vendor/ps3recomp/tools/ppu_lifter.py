@@ -114,19 +114,21 @@ typedef struct ppu_context {
 struct ppu_nonlocal_jump { ppu_context* ctx; uint32_t pc; uint64_t sp; };
 #endif
 
-# Memory access helpers (provided by runtime).
-#
-# ppu_fastmem.h declares the out-of-line slow paths AND defines inline fast
-# paths for them (F-tr-08): the diagnostics the out-of-line family carries
-# -- read/write/value watches, PT tracking, hotmaps -- cost more per access
-# than the access itself, and lifted code makes millions of accesses per
-# frame. Every vm_read / vm_write the lifter emits goes through the inline
-# bodies, which delegate 1:1 to the slow paths whenever a diagnostic knob is
-# armed, so behavior with any knob set is byte-identical to the old path.
-#
-# The renames below redirect the names declared here (and called by the
-# lifted code) to those bodies. The one TU that DEFINES the out-of-line
-# family (runtime/ppu/ppu_loader.cpp) defines PPU_FASTMEM_NO_RENAME first.
+/*
+Memory access helpers (provided by runtime).
+
+ppu_fastmem.h declares the out-of-line slow paths AND defines inline fast
+paths for them (F-tr-08): the diagnostics the out-of-line family carries
+-- read/write/value watches, PT tracking, hotmaps -- cost more per access
+than the access itself, and lifted code makes millions of accesses per
+frame. Every vm_read / vm_write the lifter emits goes through the inline
+bodies, which delegate 1:1 to the slow paths whenever a diagnostic knob is
+armed, so behavior with any knob set is byte-identical to the old path.
+
+The renames below redirect the names declared here (and called by the
+lifted code) to those bodies. The one TU that DEFINES the out-of-line
+family (runtime/ppu/ppu_loader.cpp) defines PPU_FASTMEM_NO_RENAME first.
+ */
 #include "ps3emu/ppu_fastmem.h"
 #ifndef PPU_FASTMEM_NO_RENAME
 #  define vm_read8   ppu_fm_read8
