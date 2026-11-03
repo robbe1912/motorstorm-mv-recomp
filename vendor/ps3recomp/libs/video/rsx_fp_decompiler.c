@@ -392,7 +392,11 @@ static void emit_src(const Src* s, u32 input_src, const float* k, int has_k,
     const char* pre = "";
     const char* post = "";
     if (s->abs)    { pre = "abs("; post = ")"; }
-    if (s->negate) snprintf(buf, bufsz, "-(%s%s%s)", pre, swz, post);
+    /* XOR negates; OR negates after absolute, preserving payload bits.
+     * FXC can otherwise propagate float negation through asuint into an
+     * integer bitfield instruction, producing invalid DXBC. */
+    if (s->negate) snprintf(buf, bufsz,
+        "asfloat(asuint(%s) %s 0x80000000u)", swz, s->abs ? "|" : "^");
     else           snprintf(buf, bufsz, "%s%s%s", pre, swz, post);
 }
 
