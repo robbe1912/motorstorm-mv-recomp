@@ -49,7 +49,7 @@ def main():
     source = args.source.resolve()
     text = source.read_text(encoding="utf-8")
     a = text.index('static u32 upload_strip_vp_indexed(')
-    b = text.index('\nstatic void d3d12_draw_arrays(', a)
+    b = text.index('\nstatic ', a + 1)
     body = text[a:b]
     header = source.with_name('rsx_index_strip.h')
     include = '#include "' + header.as_posix() + '"\n' if 'rsx_index_strip_push' in body else ''
