@@ -1161,3 +1161,20 @@ control/alpha checks remain intact. Actual callback fixtures reject the previous
 ordering on Windows and the restored-order mutant on Windows/Linux at reduced
 and normal capacity. Authored upload/submission adapters do not establish GPU
 ordering, native presentation, race entry or frame-time improvement.
+
+### Fragment source sign bits
+
+Issue #134 restores the exact source modifier expression from own-fork commit
+`bab553d81166bcbe0c5b8ec071394eda909b5a2e`, which was absent from the curated
+decompiler. Source negation toggles the IEEE sign bit; negate-after-absolute
+sets it. This prevents FXC from folding float negation into an invalid integer
+bitfield operand while preserving signed zeros, infinities and NaN payloads.
+The authored GPU fixture is copied from that fork commit, with a local runner
+and updated third-source modifier contract. Production compiler validation and
+flags remain enabled and unchanged.
+
+`scripts/check_rsx_fp_source_sign.py` tests 16 raw-bit and partial-word cases
+per WARP/hardware adapter. The unchanged legacy-expression control reproduces
+the invalid-bytecode error. CI runs WARP; the portable third-source modifier
+check also remains in source audit. These tests do not prove that source
+negation caused the separate device hang or that a race reaches 30 FPS.

@@ -23,7 +23,7 @@ static int check(unsigned flags,const char *expected){
 }
 int main(void){
  if(check(1u<<18,"abs((fp_constants[0]).xyzw)"))return 1;
- if(check((1u<<18)|(1u<<17),"-(abs((fp_constants[0]).xyzw))"))return 2;
+ if(check((1u<<18)|(1u<<17),"asfloat(asuint((fp_constants[0]).xyzw) | 0x80000000u)"))return 2;
  if(check(0,"+ ((fp_constants[0]).xyzw)"))return 3;
  puts("PASS actual MAD decompiler: SRC2 absolute, negation-after-absolute, plain operand");return 0;
 }
