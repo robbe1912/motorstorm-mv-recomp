@@ -1,5 +1,31 @@
 # Vendor provenance and upstream
 
+## Restored renderer working-set ownership (issues 135 and 140)
+
+PR #251 selectively restores own-fork commits `94d1c05f24033fee643f6a9e7a376d4676edfc0d`
+(recorded PSO lifetime), `1c8e25d0aeaef2a8a4c39a55817b0427a0dc07a3`
+(pinned texture metadata) and `3da8d801467054bea0578e40f165d74e33eb35a4`
+(bounded pipeline metadata). The three helper headers and authored helper/GPU
+fixtures match their fork sources. Public runners adapt paths and build commands.
+
+All draw calls use one adapter that retains distinct pipelines until the next
+checked GPU retirement. The maximum is one pipeline per record plus the optional
+diagnostic triangle's pipeline. Retirement rejects device errors, incomplete
+fences and the device-removal sentinel; it preserves references and reports
+failure. Shutdown checks retirement before releasing any owned texture/upload
+or pipeline working-set resource. Its production helper replaces the prior
+release-before-check ordering. The leading frame drain performs one checked
+retirement instead of adding another wait to the existing drain.
+
+The portable source audit executes the actual draw/retirement and working-set
+release adapters with authored COM objects, as well as the original fork
+cache-eviction, bounded-growth and allocation-failure fixtures. Missing-reference,
+fixed-capacity and late-retirement controls must fail the relevant assertions.
+When the PR #251 object is available locally, its actual historical shutdown
+prefix is also checked for premature texture release. Windows CI executes real
+evicted pipelines on WARP; local hardware coverage uses the same authored draw.
+These controls do not establish native race completion or an FPS improvement.
+
 ## Exact-byte fragment snapshot reuse (issue 213)
 
 The generic `rsx_fp_snapshot.h` decision helper originates on own-fork modular

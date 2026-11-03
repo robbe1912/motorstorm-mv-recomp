@@ -2,6 +2,9 @@
 #include <stdint.h>
 #include <stdio.h>
 #define S_OK 0
+typedef uint32_t u32;
+typedef uint64_t u64;
+typedef int32_t HRESULT;
 typedef struct Device Device;
 typedef struct Fence Fence;
 struct DeviceOps { int32_t (*GetDeviceRemovedReason)(Device*); };
@@ -27,7 +30,7 @@ int main(void)
     struct DeviceOps dv={device_reason}; Device d={&dv};
     struct FenceOps fv={fence_completed}; Fence f={&fv};
     s_d3d.device=&d; s_d3d.fence=&f;
-    for(unsigned frame=0;frame<2;++frame) for(mode=0;mode<4;++mode) {
+    for(unsigned frame=0;frame<2;++frame) for(mode=0;mode<5;++mode) {
         s_d3d.frame_index=frame; s_d3d.fence_values[0]=7; s_d3d.fence_values[1]=29;
         unsigned before=waits;
         if(vp_upload_retire(NULL)!=(mode==0) || waits!=before+1) {

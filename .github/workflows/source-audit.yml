@@ -57,6 +57,10 @@ jobs:
           python scripts/check_rsx_triangle_capacity.py
       - name: Actual indexed strip restart regression
         run: python scripts/check_rsx_restart.py
+      - name: Recorded PSO ownership and checked teardown
+        run: python scripts/check_rsx_pso_retention.py
+      - name: Bounded texture and pipeline working sets
+        run: python scripts/check_rsx_working_sets.py
       - name: Actual indexed vertex reuse regression
         run: python scripts/check_rsx_indexed_strip.py
       - name: Actual VP upload capacity preservation
@@ -214,6 +218,12 @@ jobs:
         run: python scripts/check_rsx_fp_pack.py --warp-only
       - name: Fragment source sign bits and invalid-DXBC control (WARP)
         run: python scripts/check_rsx_fp_source_sign.py --warp-only
+      - name: Recorded PSO ownership and checked teardown
+        run: python scripts/check_rsx_pso_retention.py
+      - name: Bounded texture and pipeline working sets
+        run: python scripts/check_rsx_working_sets.py
+      - name: Evicted recorded pipelines execute (WARP)
+        run: python scripts/check_rsx_pso_gpu.py --warp-only
       - name: Independent MRT masks and blending (WARP)
         run: python scripts/check_rsx_mrt.py
       - name: Vertex homogeneous clipping pixel regression (WARP)

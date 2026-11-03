@@ -1522,28 +1522,49 @@ static int vp_upload_allocate(void* context, uint64_t bytes, rsx_upload_buffer* 
 static int vp_upload_retire(void* context)
 {
     (void)context;
+    u32 fi = s_d3d.frame_index;
     wait_for_gpu();
-    return s_d3d.device->lpVtbl->GetDeviceRemovedReason(s_d3d.device) == S_OK &&
-        s_d3d.fence->lpVtbl->GetCompletedValue(s_d3d.fence) >=
-        s_d3d.fence_values[s_d3d.frame_index];
+    HRESULT removed = s_d3d.device->lpVtbl->GetDeviceRemovedReason(s_d3d.device);
+    u64 completed = s_d3d.fence->lpVtbl->GetCompletedValue(s_d3d.fence);
+    return removed == S_OK && completed != UINT64_MAX &&
+        completed >= s_d3d.fence_values[fi];
 }
-#include "rsx_gpu_references.h"
 #include "rsx_slot_pool.h"
+/* Command lists borrow PSOs: cache eviction must not destroy a recorded draw's
+ * pipeline before execution. One normal PSO per record plus the optional debug
+ * triangle's fallback PSO bounds the submission's distinct references. */
+#define RSX_GPU_REFERENCES_MAX (MAX_DRAWS + 1)
+#include "rsx_gpu_references.h"
 static rsx_gpu_references s_gpu_pso_refs;
-static void gpu_pso_add(void *context,void *object) {
- (void)context;ID3D12PipelineState *p=object;p->lpVtbl->AddRef(p);
+static void gpu_pso_add(void* context, void* object)
+{
+    (void)context;
+    ID3D12PipelineState* pso = object;
+    pso->lpVtbl->AddRef(pso);
 }
-static void gpu_pso_release(void *context,void *object) {
- (void)context;ID3D12PipelineState *p=object;p->lpVtbl->Release(p);
+static void gpu_pso_release(void* context, void* object)
+{
+    (void)context;
+    ID3D12PipelineState* pso = object;
+    pso->lpVtbl->Release(pso);
 }
-static const rsx_gpu_reference_ops s_gpu_pso_ops={NULL,gpu_pso_add,gpu_pso_release,vp_upload_retire};
-static void gpu_pso_hold(ID3D12PipelineState *pso) {
- if(!rsx_gpu_reference_hold(&s_gpu_pso_refs,pso,&s_gpu_pso_ops)) {
-  fprintf(stderr,"[RSXPSO] Recorded pipeline reference capacity exceeded or invalid pipeline\n");abort();
- }
+static const rsx_gpu_reference_ops s_gpu_pso_ops = {
+    NULL, gpu_pso_add, gpu_pso_release, vp_upload_retire
+};
+static void gpu_pso_draw(ID3D12PipelineState* pso, u32 count, u32 first)
+{
+    if (!rsx_gpu_reference_hold(&s_gpu_pso_refs, pso, &s_gpu_pso_ops)) {
+        fprintf(stderr, "[D3D12] Recorded PSO reference capacity exceeded or invalid pipeline\n");
+        abort();
+    }
+    s_d3d.cmd_list->lpVtbl->DrawInstanced(s_d3d.cmd_list, count, 1, first, 0);
 }
-static int gpu_pso_retire(void) {
- return rsx_gpu_reference_retire(&s_gpu_pso_refs,&s_gpu_pso_ops);
+static void gpu_pso_retire(void)
+{
+    if (!rsx_gpu_reference_retire(&s_gpu_pso_refs, &s_gpu_pso_ops)) {
+        fprintf(stderr, "[D3D12] PSO GPU retirement failed\n");
+        abort();
+    }
 }
 
 static void vp_upload_dispose(void* context, rsx_upload_buffer* b)
@@ -1570,6 +1591,22 @@ static void vp_upload_reserve(u64 vertices)
     s_d3d.vp_capacity = b.capacity;
     if (b.capacity != old_capacity)
         fprintf(stderr, "[VPVB] grew per-parity capacity %u -> %u vertices\n", old_capacity, b.capacity);
+}
+
+static void gpu_working_sets_release(void)
+{
+    gpu_pso_retire();
+    for (unsigned i = 0; i < s_d3d.vp_fp_store.count; ++i)
+        if (s_d3d.vp_fp[i].pso) s_d3d.vp_fp[i].pso->lpVtbl->Release(s_d3d.vp_fp[i].pso);
+    free(s_d3d.vp_fp_store.data);
+    memset(&s_d3d.vp_fp_store, 0, sizeof(s_d3d.vp_fp_store));
+    s_d3d.vp_fp = NULL;
+    for(unsigned i=0;i<s_d3d.vp_tex_capacity;i++) {
+        VPTexSlot* t=&s_d3d.vp_tex[i];
+        if(t->res)t->res->lpVtbl->Release(t->res);
+        if(t->up)t->up->lpVtbl->Release(t->up);
+    }
+    free(s_d3d.vp_tex);s_d3d.vp_tex=NULL;s_d3d.vp_tex_capacity=0;
 }
 
 static void move_to_next_frame(void)
@@ -4903,12 +4940,7 @@ static void render_frame(void)
      * (gcm/cube: triangles mixing stale and new vertices -> missing/sliver
      * polygons). These workloads are a few draws/frame, so full serialisation
      * costs little. */
-    wait_for_gpu();
-    /* The previous batch is retired: release the pipelines it borrowed. */
-    if (!gpu_pso_retire()) {
-        fprintf(stderr, "[RSXPSO] GPU retirement failed; recorded PSO references retained\n");
-        abort();
-    }
+    gpu_pso_retire();
     if (phase_on()) s_phase.drain = perf_now() - ph0;
     phase_gpu_collect();
 
@@ -5576,10 +5608,8 @@ static void render_frame(void)
                 s_d3d.cmd_list->lpVtbl->IASetPrimitiveTopology(s_d3d.cmd_list, topo_to_d3d(dr->topology));
                 last_topo = dr->topology;
             }
-            gpu_pso_hold(target_pso);
             u32 start_vert = dr->vb_byte_offset / VERTEX_STRIDE;
-            s_d3d.cmd_list->lpVtbl->DrawInstanced(
-                s_d3d.cmd_list, dr->vertex_count, 1, start_vert, 0);
+            gpu_pso_draw(target_pso, dr->vertex_count, start_vert);
             if (dr->rt_off == 0) rsx_record_batch_display_write(&s_record_batch);
         }
     }
@@ -5753,7 +5783,7 @@ static void render_frame(void)
                               dstv[0] = tri[_v][0]; dstv[1] = tri[_v][1];
                               dstv[2] = tri[_v][2]; dstv[3] = tri[_v][3];
                           }
-                          s_d3d.cmd_list->lpVtbl->DrawInstanced(s_d3d.cmd_list, 3, 1, 1000, 0);
+                          gpu_pso_draw(bound_pso, 3, 1000);
                           { static int _n = 0;
                             if (_n++ < 3) fprintf(stderr, "[TESTTRI] issued on rt=%d off=0x%08X%c",
                                                   want, s_d3d.off_rt[want].off, 10); }
@@ -6012,9 +6042,7 @@ static void render_frame(void)
                 if (phase_on()) { s_phase.draws++; s_phase.small_draws += is_small; }
                 phase_gpu_draw(is_small, 0);
                 cpu_surface_written(cur_rt,cur_m);
-                gpu_pso_hold(dpso ? dpso : vpso);
-                s_d3d.cmd_list->lpVtbl->DrawInstanced(s_d3d.cmd_list,
-                    dr->vertex_count, 1, dr->vb_byte_offset / 256, 0);
+                gpu_pso_draw(dpso ? dpso : vpso, dr->vertex_count, dr->vb_byte_offset / 256);
                 if (dr->rt_off == 0) rsx_record_batch_display_write(&s_record_batch);
                 phase_gpu_draw(is_small, 1);
                 /* VP_SUBMIT=<N>: prove the VP pass actually reaches the GPU.
@@ -8300,27 +8328,12 @@ void rsx_d3d12_backend_shutdown(void)
     if (!s_d3d.initialized) return;
     cpu_surface_shutdown();
 
-    int pso_retired = gpu_pso_retire();   /* waits; on failure references stay retained */
-    for(unsigned i=0;i<s_d3d.vp_tex_capacity;i++) {
-        VPTexSlot* t=&s_d3d.vp_tex[i];
-        if(t->res)t->res->lpVtbl->Release(t->res);
-        if(t->up)t->up->lpVtbl->Release(t->up);
-    }
-    free(s_d3d.vp_tex);s_d3d.vp_tex=NULL;s_d3d.vp_tex_capacity=0;
+    gpu_working_sets_release();
     for(int i=0;i<s_d3d.vp_vs_n;i++){
         shader_forget_vs_source(s_d3d.vp_vs[i].disk_source);s_d3d.vp_vs[i].disk_source=NULL;
     }
     shader_pool_finish();
     rsx_shader_cache_clear(&s_fp_bytecode,&s_fp_blob_ops);
-    if (!pso_retired) {
-        fprintf(stderr, "[RSXPSO] Pipeline shutdown retirement failed\n");
-        abort();
-    }
-    for (unsigned i = 0; i < s_d3d.vp_fp_store.count; ++i)
-        if (s_d3d.vp_fp[i].pso) s_d3d.vp_fp[i].pso->lpVtbl->Release(s_d3d.vp_fp[i].pso);
-    free(s_d3d.vp_fp_store.data);
-    memset(&s_d3d.vp_fp_store, 0, sizeof(s_d3d.vp_fp_store));
-    s_d3d.vp_fp = NULL;
     /* Per-draw decompiled VS cache had no teardown of its own. */
     for (int i = 0; i < s_d3d.vp_vs_n; i++)
         if (s_d3d.vp_vs[i].vs) s_d3d.vp_vs[i].vs->lpVtbl->Release(s_d3d.vp_vs[i].vs);
