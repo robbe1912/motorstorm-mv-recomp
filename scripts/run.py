@@ -79,7 +79,7 @@ def main():
     (out/'pad.txt').write_text('0\n')
     if args.capture_menu or args.menu_replay:
         (out/'rsx').mkdir()
-        env.update(RSX_CAP='1:100:120',RSX_CAP_DIR=str(out/'rsx'))
+        env.update(RSX_CAP='1:100:120',RSX_CAP_DIR=str(out/'rsx'),RSX_CAP_SCREEN_ONLY='1')
     if args.capture_burst_frames:
         env.update(RSX_CAP_ARM_FILE=str(out/'capture-burst.arm'),RSX_CAP_BURST=str(args.capture_burst_frames))
     if args.capture_on_pad:

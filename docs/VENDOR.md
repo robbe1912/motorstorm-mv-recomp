@@ -1253,3 +1253,25 @@ fail. The curated fixture also rejects an unavailable submission-owner call
 without inventing replacement APIs. Windows checks compile the complete
 backend translation unit against the SDK. Windows clang-cl and Linux GCC
 pass; this establishes no game speedup or stable race FPS.
+
+### Screen capture deferral (#257)
+
+Own-fork modular branch `codex/issue-257-screen-capture` and combined commit
+`b7c1ff3f9c80246bcae85777264e972a8f73dab9` add explicit `RSX_CAP_SCREEN_ONLY` selection. The
+curated port takes only the mode field, strict 0/1 parser, offscreen deferral
+and checked backend initialization; the fork's separate late-presented phase
+API remains outside this port. Default/raw diagnostic capture is unchanged.
+
+A due screen capture remains due across empty/offscreen batches without
+spending periodic or burst budgets. Capture indices remain monotonic, overlap
+spends both budgets once, and maximum counts/stride behavior are preserved.
+The normal menu/replay launcher explicitly selects screen mode and retains
+the setting in launch identity. No Present, GPU wait or guest write is added.
+
+The actual selector/event fixture retains raw-mode and overflow checks and
+adds fourteen screen/parser/alias/burst checks. The historical disabled-mode
+control reproduces offscreen-budget loss. The checker executes the actual
+launcher capture/identity expressions in isolation and rejects omission of
+the mode, without creating a native process. Windows full-backend syntax and
+Linux GCC checks cover composition. Native fresh-present observation remains
+a separate acceptance requirement; no race/FPS or performance gain is claimed.

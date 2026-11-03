@@ -1,5 +1,7 @@
 """Check the actual frame capture selector with authored, game-free inputs."""
 import argparse
+import ast
+import copy
 import datetime
 import hashlib
 import json
@@ -8,8 +10,42 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def screen_launch(tree, out):
+    """Execute only the real capture selection/record expressions; never launch."""
+    out.mkdir()
+    selections = [node for node in ast.walk(tree) if isinstance(node, ast.If)
+                  and ast.unparse(node.test) == 'args.capture_menu or args.menu_replay']
+    assert len(selections) == 1, 'ambiguous capture selection'
+    records = [node.value for node in ast.walk(tree) if isinstance(node, ast.Assign)
+               and any(isinstance(target, ast.Name) and target.id == 'record'
+                       for target in node.targets)]
+    assert len(records) == 1 and isinstance(records[0], ast.Dict), 'ambiguous launch record'
+    fields = {key.value: value for key, value in zip(records[0].keys, records[0].values)}
+    receipts = []
+    for label, menu, replay in [('raw', False, None), ('menu', True, None),
+                                ('replay', False, 'observed-profile.json')]:
+        case = out / label
+        case.mkdir()
+        env = {'RSX_CAP': 'authored-raw-config'}
+        namespace = {'env': env, 'out': case,
+                     'args': SimpleNamespace(capture_menu=menu, menu_replay=replay)}
+        exec(compile(ast.Module(body=selections, type_ignores=[]),
+                     'actual capture selection', 'exec'), namespace)
+        recorded = eval(compile(ast.Expression(fields['environment']),
+                                'actual launch environment', 'eval'), namespace)
+        if label == 'raw':
+            assert env == {'RSX_CAP': 'authored-raw-config'}, 'raw diagnostic selection changed'
+        else:
+            assert env.get('RSX_CAP_SCREEN_ONLY') == '1', 'screen mode not selected'
+            assert recorded.get('RSX_CAP_SCREEN_ONLY') == '1', 'screen mode not recorded'
+            assert env['RSX_CAP'] == '1:100:120', 'capture budget changed'
+        receipts.append(dict(case=label, environment=recorded))
+    return receipts
 
 
 def main():
@@ -43,6 +79,24 @@ def main():
         raise SystemExit(compiled.returncode)
     result = subprocess.run([str(exe)], capture_output=True, timeout=15)
     (out/'check.log').write_bytes(result.stdout+result.stderr)
+    if result.returncode or b'screen_checks=14 failures=0' not in result.stdout:
+        raise SystemExit((result.stdout+result.stderr).decode(errors='replace'))
+    control = subprocess.run([str(exe), '--ignore-screen'], capture_output=True, timeout=15)
+    (out/'screen-control.log').write_bytes(control.stdout+control.stderr)
+    assert control.returncode == 1 and b'screen_checks=14 failures=1' in control.stdout
+    assert b'periodic offscreen alias' in control.stderr, 'historical alias control failed elsewhere'
+    tree = ast.parse((ROOT/'scripts/run.py').read_text())
+    launch_receipts = screen_launch(tree, out/'launcher')
+    old = copy.deepcopy(tree)
+    for node in ast.walk(old):
+        if isinstance(node, ast.Call):
+            node.keywords = [kw for kw in node.keywords if kw.arg != 'RSX_CAP_SCREEN_ONLY']
+    try:
+        screen_launch(old, out/'historical-launcher')
+    except AssertionError as error:
+        assert str(error) == 'screen mode not selected', error
+    else:
+        raise AssertionError('historical launcher omission accepted')
     guards = []
     # A second independent duration guard prevents launching even if a burst
     # preflight regresses. Assert which validation rejects the invocation.
@@ -59,13 +113,15 @@ def main():
         guards.append(dict(name=name, passed=passed))
     (out/'result.json').write_text(json.dumps(dict(game_inputs=False,
         sha256={str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in (source, header, event, event.with_suffix('.h'), exe)},
-        returncode=result.returncode, launch_preflight=guards), indent=2))
+        returncode=result.returncode, screen_control=control.returncode,
+        screen_launch=launch_receipts, launch_preflight=guards), indent=2))
     print(result.stdout.decode(errors='replace').strip())
     print(result.stderr.decode(errors='replace').strip())
     print('Evidence:', out)
     if not all(check['passed'] for check in guards):
         raise SystemExit('FAIL: burst preflight did not reject before launch validation')
     print('PASS: invalid burst budgets and missing menu capture rejected before launch')
+    print('PASS: screen selection, launch record and historical alias/launcher controls')
     raise SystemExit(result.returncode)
 
 
