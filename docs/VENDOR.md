@@ -1,5 +1,34 @@
 # Vendor provenance and upstream
 
+## Restored warm MFC engine lookup (issue 261)
+
+This selective integration restores own-fork modular `codex/mfc-context-cache`
+commit `087ab42c1d6442a16b75e12e7f04b8d97870554b` and its whitespace cleanup
+`a516a99f`. Both were already integrated into the fork's single `combined`
+branch for issue 141. The registry header and authored fixture are byte-identical
+to that cleanup commit. This preserves the curated eight inline owners and
+private overflow engines; it does not import the newer upstream registry layout.
+Owner publication uses acquire/release operations. A thread cache remembers the
+last context and engine; an acquire-read global generation rejects that pointer
+after any release, including release by another host thread and address reuse.
+Release retains the existing requirement that the affected SPU has stopped.
+Channel, queue, tag, DMA, SIMD and observer behavior are otherwise unchanged.
+
+The current native profile behind issue 261 binds repeated overflow-list lookup
+to the busy async worker. Earlier issue 141 tested the cache, but the current
+curated source lacked it; the history of that source-integration gap remains
+unresolved. The suspended profile includes waits and perturbation and cannot
+predict an exclusive CPU fraction or game speedup.
+
+`check_spu_mfc_registry.py` executes the actual registry header with authored
+engine payloads. Its 11 contracts cover concurrent claims, 32 retained owners,
+private state, 32,000 warm lookups, cross-thread release/address reuse, unrelated
+release and final cleanup. Disabling the cache preserves ownership but fails the
+warm-lock contract with 24,000 locks; the actual previous curated registry fails
+the same contract through `--historical-source`. No guest or original game data
+is included. Native race and stable-30-FPS acceptance remain unproven. This
+bounded restoration does not add newer stopped-thread range-cleanup behavior.
+
 ## Depth admission and attachment-compatible fallbacks (issue 245)
 
 PR #252 ports the depth-use predicate and allocation diagnostics from own-fork
