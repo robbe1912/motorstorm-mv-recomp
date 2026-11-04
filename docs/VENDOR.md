@@ -1253,3 +1253,25 @@ fail. The curated fixture also rejects an unavailable submission-owner call
 without inventing replacement APIs. Windows checks compile the complete
 backend translation unit against the SDK. Windows clang-cl and Linux GCC
 pass; this establishes no game speedup or stable race FPS.
+
+## Checked host byte shuffle restoration (#264)
+
+The curated baseline helper used the scalar SHUFB path when `__SSE4_1__`
+was absent, even though the hot generated SPU TU had O2 enabled. Restore only
+our existing fork's capability-checked header from modular `a373063e` and its
+portable/link/AArch64 follow-ups, combined `8d9f65fc4db12fb85daae230a5300b0adffb03d2`.
+The production `spu_shuffle.h` and authored dispatch fixture are byte-identical
+to the current fork copies; the old inline selector implementation is removed.
+Other integer/float helpers, channel semantics, ISA baseline and native scopes
+are unchanged. This does not overlay the remaining combined runtime.
+
+The supported Windows/Linux check compiles actual baseline C and C++ callers,
+checks 204096 values against an authored oracle per variant, validates host
+SIMD admission, and verifies emitted `pshufb` only in the admitted variants.
+Forced scalar checks the unsupported-host fallback implementation. The optional
+`--historical-helper` control admits the real old helper's values but rejects
+its SIMD admission. Replacing production with that actual old helper makes
+the identical CI command fail with the required checked-dispatch owner named.
+This guards restoration without a whole-program ISA increase. Windows clang-cl
+and Linux GCC pass; helper admission is not game FPS. Native verification and
+sustained race performance remain separate obligations under #155/#27.
