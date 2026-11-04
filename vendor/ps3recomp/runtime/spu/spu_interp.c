@@ -1062,7 +1062,7 @@ static uint32_t interp_run_until_impl(spu_context* ctx, uint32_t start_lsa, uint
         }
         int _rej = (!in_span && !in_kh && ctx->image_id >= 0 &&
                     !s_forceint && spu_lifted_lookup(ctx, ctx->pc));
-        if (((stop_lsa && ctx->pc == stop_lsa) || _rej)) {
+        if (((stop_lsa && ctx->pc == (stop_lsa & SPU_LS_MASK)) || _rej)) {
             /* M21: a rejoin hands control back to the DISPATCHER -- re-arm the
              * trampoline like the SMC microstep exits do. Without this the
              * SPU_DRAIN loop (which clears g_spu_trampoline_fn before each
@@ -1071,7 +1071,7 @@ static uint32_t interp_run_until_impl(spu_context* ctx, uint32_t start_lsa, uint
              * brsl->0x2210 stall-ack service never dispatched, 487 run-end
              * cycles at pc=0x2210 status=RUNNING). The stop_lsa disjunct stays
              * unarmed: that return pops the caller's drain frame. */
-            if (_rej) g_spu_trampoline_fn = spu_indirect_branch;
+            if (_rej && !(stop_lsa && ctx->pc == (stop_lsa & SPU_LS_MASK))) g_spu_trampoline_fn = spu_indirect_branch;
             g_spu_interp_steps = steps; g_spu_interp_last_pc = ctx->pc; return ctx->pc; }
         { static int _rj = 0; /* M21: trace the kh handler's 0xA8C brsl->0x2210 rejoin decision */
           if (ctx->policy_mode && ctx->image_id == 200 && ctx->pc >= 0x2000 && ctx->pc < 0x3000 && _rj++ < 40)

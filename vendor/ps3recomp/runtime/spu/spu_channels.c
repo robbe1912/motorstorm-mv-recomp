@@ -554,6 +554,7 @@ int spu_run_with_halt(void (*entry)(spu_context*), spu_context* ctx)
         /* A one-way guest stack reset invalidates every lifted host caller.
          * Re-enter its target with the same guest state on the driver stack. */
         ctx->host_depth = 0;
+        ctx->drain_ret_pc = 0;
         g_spu_trampoline_fn = 0;
         spu_indirect_branch(ctx);
         SPU_DRAIN(ctx);
@@ -678,6 +679,7 @@ int spu_run_with_halt(void (*entry)(spu_context*), spu_context* ctx)
               fflush(stderr); } }
         SPU_DRAIN(ctx);
     }
+    ctx->drain_ret_pc = 0; /* no compiled caller survives this driver return */
     yz_lockstep_unregister(ctx);   /* leave the ring; hand the token onward */
     s_spu_halt_armed = outer_armed;
     if (outer_armed) memcpy(s_spu_halt_env, outer_env, sizeof(jmp_buf));
@@ -2860,7 +2862,9 @@ static int spu_smc_microstep(spu_context* ctx)
         /* Stop at the drain's return point too: it sits mid-function, so it is
          * no lifted entry, and a job's return would otherwise run on through
          * the caller's code (GH3's song-freeze; see drain_ret_pc). */
-        return spu_interp_run_until(ctx, pc, ctx->drain_ret_pc) ? 1 : 0;
+        uint32_t end_pc = spu_interp_run_until(ctx, pc, ctx->drain_ret_pc);
+        return end_pc || (ctx->drain_ret_pc &&
+               (end_pc & SPU_LS_MASK) == (ctx->drain_ret_pc & SPU_LS_MASK)) ? 1 : 0;
     }
     { static int _n = 0; if (_n++ < 4)
         fprintf(stderr, "[spu-smc] microstep img=%d runaway (4096 steps from 0x%05X)\n",

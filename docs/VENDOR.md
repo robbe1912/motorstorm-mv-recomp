@@ -1326,3 +1326,44 @@ launcher capture/identity expressions in isolation and rejects omission of
 the mode, without creating a native process. Windows full-backend syntax and
 Linux GCC checks cover composition. Native fresh-present observation remains
 a separate acceptance requirement; no race/FPS or performance gain is claimed.
+
+
+## Exact native SPU call return boundaries (#270)
+
+The bounded return-boundary correction starts on the toolkit fork:
+`c06a3da36fff2d53d049c11bf8937f3ca89ce7cd`, with compiled-return controls
+`a17a7df7`; both are integrated on the fork's `combined` branch. This selective
+port keeps the curated policy interpretation, statistics/unwind and staged-span
+rules. It publishes the emitted return before callee/dispatcher entry, restores
+the enclosing boundary after drain, distinguishes a live return to LS zero, and
+clears boundaries whose native caller has unwound. A matching explicit return
+takes precedence over ordinary compiled rejoin. Existing fork prerequisites also
+preserve the indirect target before overwriting an aliased link register and
+mask wrapped guest links; no whole runtime replacement is used.
+
+[Production checker](../scripts/check_spu_call_boundaries.py) compiles the actual
+curated runtime and actual lifter emission. Windows and Linux pass 16 call cases,
+16 real pre-change-emitter failures and 13 existing transition cases. Coverage
+includes alternate links, indirect target/link aliasing, LS-zero returns,
+registered/unregistered continuation PCs, enclosing boundaries and host FP state.
+The canonical explicit-return queue regression fails before the curated priority
+adaptation. The source audit runs the same checker on Windows and Linux.
+
+The curated baseline intentionally differs from the toolkit baseline in two
+pre-existing contracts, independently reproduced with main `8405b2a` runtime
+sources: ordinary compiled rejoin queues the dispatcher, and nested-stop retains
+STOP_BY_STOP with its existing unresolved-fallback diagnostic. The fixture
+preserves those contracts and retains stderr; this does not establish complete
+architectural stop/halt correctness.
+
+[Separate-copy updater](../scripts/update_spu_call_boundaries.py)
+converts only recognized generated call brackets, records hashes, refuses the
+source path/existing outputs/unknown brackets, and is checked against the actual
+fork emitter plus idempotency and rejection controls. Original private generated
+trees stay read-only: run it as `python <tool> <input.c> <new-local-copy.c>` before
+building from a separately prepared private SPU tree. The actual old curated
+emitter is retained separately from the fork updater-equivalence control.
+
+This port is preparation for native owned-job execution, not a measured speedup.
+Live IRQ/DMA and normal-route native acceptance remain pending; experimental
+owned-job admission (#269) remains outside the combined and game runtime.
