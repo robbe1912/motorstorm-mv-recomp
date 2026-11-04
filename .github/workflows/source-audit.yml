@@ -16,6 +16,8 @@ jobs:
         run: python scripts/check_native_window.py
       - name: Screen-gated menu replay regression
         run: python scripts/check_menu_replay.py
+      - name: Explicit native resource budgets
+        run: python scripts/check_native_resource_guard.py
       - name: Run retention filesystem safety
         run: python scripts/check_run_retention.py
       - name: Bounded frame capture selector
@@ -252,6 +254,8 @@ jobs:
         run: python scripts/check_rsx_texture_alias.py
       - name: Screen-gated menu replay regression
         run: python scripts/check_menu_replay.py
+      - name: Explicit native resource budgets
+        run: python scripts/check_native_resource_guard.py
       - name: Run retention filesystem safety
         run: python scripts/check_run_retention.py
       - name: Bounded frame capture selector

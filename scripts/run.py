@@ -4,6 +4,7 @@ from pathlib import Path
 import psutil
 from project import ROOT, config
 from native_window import visible_native_window
+from native_resource_guard import commit_reserve, limits, first_breach
 
 class Memory(ctypes.Structure):
     _fields_=[('length',ctypes.c_ulong),('load',ctypes.c_ulong)]+[(x,ctypes.c_ulonglong) for x in ('total_phys','available_phys','total_commit','available_commit','total_virtual','available_virtual','available_extended')]
@@ -25,7 +26,9 @@ def main():
     ap.add_argument('--menu-replay',type=Path,help='Private observed-screen profile; normal PAD_FILE input, not a scene jump')
     ap.add_argument('--profile-renderer',action='store_true',help='CPU renderer phases and GPU timestamps, without broad asset/Havok probes; adds timing overhead')
     ap.add_argument('--replay-observe-seconds',type=int,default=5,help='Observe after the gated replay target (default 5; overall --seconds guard still applies)')
+    ap.add_argument('--min-free-commit-gib',type=commit_reserve,default=12,help='Host free-commit reserve, 4..12 GiB (default 12); records budget and preserves other guards')
     args=ap.parse_args()
+    resource_policy=limits(args.min_free_commit_gib)
     if not 0<=args.capture_burst_frames<=120: raise SystemExit('Capture burst must be 0 (disabled) or 1..120 frames')
     if not 0<=args.capture_on_pad<=0xffff: raise SystemExit('Capture event mask must be 0 (disabled) or 1..0xffff')
     if args.capture_on_pad and not args.capture_burst_frames: raise SystemExit('Capture input event requires --capture-burst-frames')
@@ -92,6 +95,10 @@ def main():
     p=subprocess.Popen([str(exe),str(c['elf'])],cwd=ROOT,env=env,stdout=log,stderr=err,creationflags=subprocess.CREATE_NO_WINDOW,startupinfo=startup)
     proc=psutil.Process(p.pid); start=time.monotonic(); reason='guard tooling failure'; terminated=False
     record={'pid':p.pid,'create_time':proc.create_time(),'exe':str(exe),'exe_sha256':hashlib.sha256(exe.read_bytes()).hexdigest(),'elf_sha256':hashlib.sha256(c['elf'].read_bytes()).hexdigest(),'output':str(out),'muted':True,'capture_menu':bool(args.capture_menu or args.menu_replay),'menu_replay':str(args.menu_replay.resolve()) if args.menu_replay else None,'capture_textures':args.capture_textures,'trace_video':args.trace_video,'capture_havok':args.capture_havok or args.capture_havok_only,'capture_bike':args.capture_bike,'loadtime_trace':args.loadtime_trace,'capture_profile':'broad' if args.capture_havok else 'havok-only' if args.capture_havok_only else 'none','environment':{k:v for k,v in env.items() if k in ('PS3_VFS_ROOT','PS3_HDD0_ROOT','PS3_SAVEDATA_ROOT','AUDIO_MUTE','PAD_FILE','CAP_HAVOK_DIR','CAP_BIKE_DIR','CAP_BIKE_ARM_FILE','LOADTIME_TRACE','LOADTIME_TRACE_FILE','SPU_PM_INTERP') or k.startswith(('SPU_PM_','TEX_','RSX_')) or k in ('VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG') or k=='SPU_WP'}}
+    record['resource_limits']=resource_policy
+    record['resource_breach']=None
+    record['launcher_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    record['resource_guard_sha256']=hashlib.sha256(Path(__file__).with_name('native_resource_guard.py').read_bytes()).hexdigest()
     record['capture_burst_frames']=args.capture_burst_frames
     record['capture_on_pad']=args.capture_on_pad
     record['profile_renderer']=args.profile_renderer
@@ -133,8 +140,12 @@ def main():
                 if not ok:reason='menu replay failed: '+str(value);break
                 if time.monotonic()-finished>=args.replay_observe_seconds:reason='menu replay target observed; graphics verdict separate';break
             if elapsed>args.seconds:reason='bounded duration elapsed';break
-            if disk_available<8*1024**3:reason='disk space limit reached';break
-            if private>14*1024**3 or m.available_phys<4*1024**3 or m.available_commit<12*1024**3:reason='resource limit reached';break
+            breach=first_breach(dict(private=private,physical_available=m.available_phys,commit_available=m.available_commit,disk_available=disk_available),resource_policy)
+            if breach:
+                record['resource_breach']=breach
+                prefix='disk space limit reached' if breach['metric']=='disk_available' else 'resource limit reached'
+                reason=f"{prefix}: {breach['metric']}={breach['actual_bytes']} bytes; {breach['kind']}={breach['limit_bytes']} bytes"
+                break
             time.sleep(2)
         else: reason='guest process exited; inspect logs for outcome'
     finally:
