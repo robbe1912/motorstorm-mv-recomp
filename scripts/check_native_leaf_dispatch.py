@@ -127,6 +127,11 @@ undo('uint32_t spu_interp_run_until(spu_context* ctx, uint32_t start_lsa, uint32
      'uint32_t spu_interp_run_until(spu_context* ctx, uint32_t start_lsa, uint32_t stop_lsa)\n{')
 assert reference.count('interp_run_until_impl(ctx, start_lsa, stop_lsa, local_budget)')==3
 reference=reference.replace('interp_run_until_impl(ctx, start_lsa, stop_lsa, local_budget)','interp_run_until_impl(ctx, start_lsa, stop_lsa)')
+# Reconstruct the same hash-pinned historical source, excluding the separately
+# verified native call-boundary port. Production above retains both fixes.
+undo('            if (_rej && !(stop_lsa && ctx->pc == (stop_lsa & SPU_LS_MASK))) g_spu_trampoline_fn = spu_indirect_branch;',
+     '            if (_rej) g_spu_trampoline_fn = spu_indirect_branch;')
+undo('ctx->pc == (stop_lsa & SPU_LS_MASK)', 'ctx->pc == stop_lsa')
 assert hashlib.sha256(reference.encode('utf-8')).hexdigest()=='45115b8e51070e7be2a393edc51a2531325a2229674216fa59c54ab476ec91b2','Pre-port source identity changed; review the actual baseline'
 path=out/'pre-port.c';path.write_text(reference,encoding='utf-8')
 baseline=build('pre-port',path,baseline=True)

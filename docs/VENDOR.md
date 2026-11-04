@@ -1367,3 +1367,11 @@ emitter is retained separately from the fork updater-equivalence control.
 This port is preparation for native owned-job execution, not a measured speedup.
 Live IRQ/DMA and normal-route native acceptance remain pending; experimental
 owned-job admission (#269) remains outside the combined and game runtime.
+
+
+The existing [native-leaf checker](../scripts/check_native_leaf_dispatch.py)
+retains its original hash-pinned pre-port interpreter and compares 56 empty-
+registry full-state/IRQ/FP/budget records. Its historical reconstruction reverses
+only the separately covered call-boundary lines; production retains them.
+Windows and Linux pass that comparison and reject the unsafe dispatch/environment
+mutants and faulty TLS callback. This is not live owned-job IRQ/DMA acceptance.
