@@ -20,6 +20,14 @@ atomic snapshot or race acceptance. It is disabled by default.
 
 Owned child limits: 600s, available physical ≥4GiB, available commit ≥12GiB, private ≤14GiB. Write stop.txt in its run directory for closure. final.json distinguishes guards from natural exits; always inspect fatal logs even on exit 0. Match PID/create_time before attaching/stopping; preserve ordinary user RPCS3.
 
+Menu/replay captures select `RSX_CAP_SCREEN_ONLY=1` and record it in launch
+identity. A periodic sample due during an offscreen capacity drain stays due
+until a nonempty presenting batch; it spends neither the scheduled nor burst
+budget on the drain. Raw diagnostic capture remains the backend default
+(unset or `RSX_CAP_SCREEN_ONLY=0`). This changes capture selection only, not
+rendering, submission order or guest presentation. A presenting manifest still
+requires successful-Present/error checks and semantic image inspection.
+
 For a renderer timing trial, add `--profile-renderer` to the normal launcher.
 It enables the existing CPU phase counters and GPU timestamp queries, retaining
 `rsx_phases.csv`, `[PERF]`/`[RSXPHASE]` logs and the exact timing environment in
