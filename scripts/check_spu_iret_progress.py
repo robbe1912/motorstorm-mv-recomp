@@ -10,15 +10,10 @@ p=argparse.ArgumentParser();p.add_argument('--runtime',type=Path,default=root/'v
 fixture=root/'scripts/fixtures/spu_iret_progress.c';binary=out/('test.exe' if os.name=='nt' else 'test')
 env={k:v for k,v in os.environ.items() if not k.startswith(('SPU_','SPURS_','LBP_','YDKJ_','DIAG_'))};env['SPU_PM_INTERP']='1'
 inputs=[fixture,src/'spu_interp.c',src/'spu_context.h',src/'spu_helpers.h',src/'spu_float_simd.c',src/'spu_float_simd.h',src/'spu_float.h'];(out/'inputs.json').write_text(json.dumps({str(x):hashlib.sha256(x.read_bytes()).hexdigest() for x in inputs},indent=2))
-owned=[]
-if (src/'spu_native_owned.h').exists():
-    channels=(src/'spu_channels.c').read_text()
-    readers=channels[channels.index('int spu_native_owned_enabled(void)'):channels.index('void spu_native_owned_interpret(')]
-    config=out/'owned-config.c'
-    config.write_text('#include "spu_native_owned.h"\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n'+readers+'\nvoid spu_native_owned_interpret(spu_context* c){(void)c;fputs("unexpected owned adapter\\n",stderr);abort();}\n')
-    owned=[str(config)]
-    inputs += [src/'spu_channels.c',src/'spu_native_owned.h',config]
-    (out/'inputs.json').write_text(json.dumps({str(x):hashlib.sha256(x.read_bytes()).hexdigest() for x in inputs},indent=2))
+from native_owned_fixture import write_owned_config
+config,extra=write_owned_config(src,out);owned=[str(config)] if config else []
+inputs+=extra
+(out/'inputs.json').write_text(json.dumps({str(x):hashlib.sha256(x.read_bytes()).hexdigest() for x in inputs},indent=2))
 if os.name=='nt':cmd=[os.environ.get('MV_CLANG','clang-cl'),'/nologo','/TC','/O1','/UNDEBUG','/I'+str(src),'/I'+str(src.parent.parent/'include'),str(fixture),str(src/'spu_interp.c'),str(src/'spu_float_simd.c'),'/Fe'+str(binary),'/Fo'+str(out)+'/' ]
 else:cmd=[os.environ.get('CC','cc'),'-std=gnu17','-O1','-UNDEBUG','-I'+str(src),'-I'+str(src.parent.parent/'include'),str(fixture),str(src/'spu_interp.c'),str(src/'spu_float_simd.c'),'-lm','-o',str(binary)]
 cmd[1:1]=owned
