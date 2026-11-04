@@ -511,7 +511,7 @@ uint32_t spu_interp_run(spu_context* ctx, uint32_t start_lsa) {
     return spu_interp_run_until(ctx, start_lsa, 0);
 }
 
-static uint32_t interp_run_until_impl(spu_context* ctx, uint32_t start_lsa, uint32_t stop_lsa, uint64_t local_budget) {
+static uint32_t interp_run_until_impl(spu_context* ctx, uint32_t start_lsa, uint32_t stop_lsa, uint64_t local_budget, int native_call) {
     native_freeze();
     ctx->pc = start_lsa & 0x3FFFC;
     ctx->status = SPU_STATUS_RUNNING;
@@ -1062,7 +1062,8 @@ static uint32_t interp_run_until_impl(spu_context* ctx, uint32_t start_lsa, uint
             if (used) { steps+=used; g_spu_interp_last_pc=last; continue; }
         }
         int owned_mode=spu_native_owned_policy(ctx);
-        int owned_rejoin=owned_mode && !in_kh && !local_budget && !stop_lsa &&
+        int owned_rejoin=owned_mode && !in_kh && !local_budget &&
+            (!stop_lsa || (native_call && ctx->host_depth>0 && stop_lsa==ctx->drain_ret_pc)) &&
             !g_spu_interp_budget && !_tr && !_cap && !_g1 && !s_kh &&
             !native_instrumented && spu_native_owned_can_run(ctx,ctx->pc);
         int _rej = owned_mode
@@ -1318,7 +1319,7 @@ uint32_t spu_interp_run_until(spu_context* ctx, uint32_t start_lsa, uint32_t sto
     return spu_interp_run_until_budget(ctx,start_lsa,stop_lsa,0);
 }
 
-static uint32_t spu_interp_run_until_budget_scoped_body(spu_context* ctx, uint32_t start_lsa, uint32_t stop_lsa, uint64_t local_budget)
+static uint32_t spu_interp_run_until_budget_scoped_body(spu_context* ctx, uint32_t start_lsa, uint32_t stop_lsa, uint64_t local_budget, int native_call)
 {
 #ifdef _WIN32
     /* Wall time includes channel waits. The driver closes samples on longjmp.
@@ -1326,16 +1327,16 @@ static uint32_t spu_interp_run_until_budget_scoped_body(spu_context* ctx, uint32
     InterpStats* s = &s_interp_stats;
     if (s->enabled < 0) { const char* e = getenv("SPU_INTERP_STATS");
         s->enabled = e && atoi(e) != 0; }
-    if (!s->enabled || s->depth) return interp_run_until_impl(ctx, start_lsa, stop_lsa, local_budget);
+    if (!s->enabled || s->depth) return interp_run_until_impl(ctx, start_lsa, stop_lsa, local_budget, native_call);
     if (!s->frequency.QuadPart) QueryPerformanceFrequency(&s->frequency);
     QueryPerformanceCounter(&s->begin);
     s->policy = ctx->policy_mode != 0;
     s->depth = 1;
-    uint32_t result = interp_run_until_impl(ctx, start_lsa, stop_lsa, local_budget);
+    uint32_t result = interp_run_until_impl(ctx, start_lsa, stop_lsa, local_budget, native_call);
     interp_stats_finish(0);
     return result;
 #else
-    return interp_run_until_impl(ctx, start_lsa, stop_lsa, local_budget);
+    return interp_run_until_impl(ctx, start_lsa, stop_lsa, local_budget, native_call);
 #endif
 }
 
@@ -1360,7 +1361,17 @@ void spu_dispatch(spu_context* ctx, uint32_t target) {
 uint32_t spu_interp_run_until_budget(spu_context* ctx, uint32_t start_lsa, uint32_t stop_lsa, uint64_t local_budget)
 {
     uint64_t saved = spu_sf_simd_enter();
-    uint32_t result = spu_interp_run_until_budget_scoped_body(ctx, start_lsa, stop_lsa, local_budget);
+    uint32_t result = spu_interp_run_until_budget_scoped_body(ctx, start_lsa, stop_lsa, local_budget, 0);
+    spu_sf_simd_leave(saved);
+    return result;
+}
+
+/* Permission belongs to this invocation, never TLS; retain stats/unwind and SIMD scopes. */
+uint32_t spu_interp_run_native_call(spu_context* ctx,uint32_t start,uint32_t stop) {
+    int authorized=spu_native_owned_policy(ctx) && ctx->host_depth>0 &&
+        stop && stop==ctx->drain_ret_pc;
+    uint64_t saved=spu_sf_simd_enter();
+    uint32_t result=spu_interp_run_until_budget_scoped_body(ctx,start,stop,0,authorized);
     spu_sf_simd_leave(saved);
     return result;
 }

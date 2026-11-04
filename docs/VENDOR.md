@@ -1450,3 +1450,40 @@ owned checker exercises the actual adapter. Default call/IRQ controls also pass.
 
 Normal-PLAY game admission, emitted native job execution and performance remain
 pending. This restoration does not establish a speedup or stable 30 FPS.
+
+
+### Native job rejoin within an actual host call (#277)
+
+Selective source: own-fork modular `fdc59c6d2f90cf2c48b297385c6f67efedbdeb6b`,
+canonical combined `882f70b09c814f76d8613bdad76e9517058ec8d1`.
+The PR276 native race profile positively reached PVS/vehicle functions, but the
+PVS subtree returned to interpretation beneath a native call with a real return
+boundary. That boundary previously disabled every nested owned-job rejoin.
+
+`spu_interp_run_native_call` uses invocation-local permission for the actual
+native frame/return; ordinary explicit-stop and budget APIs keep permission off.
+The curated statistics/unwind and SIMD wrappers remain on both paths. Existing
+required policy interpretation, IRQ/IRET handling, kernel-home exclusions,
+first-owner/fingerprint invalidation, observer denial and global ceilings stay.
+Owned-mode queued tails reaching the genuine native return stop before executing
+a compiled caller continuation. There is no mutable TLS authorization or game
+address exception.
+
+Actual production controls reproduce one rather than two native callbacks before
+the correction, and a forbidden compiled return before the tail correction.
+Windows Clang and Linux GCC pass nested owned calls/tails, arbitrary inside-body
+stops, invalid native-call frames/returns and a live native-call global ceiling,
+plus prior ownership/IRQ/DMA/observer/default controls. Clang additionally tests
+the actual musttail dispatcher. All six interpreter-related CPU checks pass on
+both platforms: owned transitions, 19 production/19 historical/13 baseline call
+cases, pinned native-leaf comparisons/mutants, execution observers, productive
+IRET and 401 thread-reporting programs. The historical reference digest remains
+unchanged; only this separately tested scope is reversed in its reconstruction.
+
+Five original saved states, each under three controlled clock values, again pass
+15 cases/495 instruction positions through policy 0x2AC8, using the unchanged PVS
+function and an independent full-register/LS/PC/status/IRQ oracle. Fresh host
+registries and uncaptured-channel failure boundaries limit that proof; it is not
+whole-job replay. The previous bridge-only EXE remains about 1.72 recorded API
+Presents/s with shading defects. Native admission and performance of this scoped
+follow-up require a new normal-PLAY race; no speedup is claimed here.

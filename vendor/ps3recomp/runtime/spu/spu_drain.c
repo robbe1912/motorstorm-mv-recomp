@@ -443,7 +443,8 @@ static void spu_drain_call_scoped_body(spu_context* ctx, uint32_t return_pc)
 #define SPU_DRAIN_POP_IRQ() do { if (ctx->irq_frame == &f) ctx->irq_frame = f.prev; ctx->drain_ret_pc = 0; } while (0)
     for (;;) {
         while (g_spu_trampoline_fn) {
-            if (g_spu_trampoline_fn == spu_indirect_branch &&
+            /* Owned tails may name the genuine native caller continuation. */
+            if ((g_spu_trampoline_fn == spu_indirect_branch || spu_native_owned_policy(ctx)) &&
                 (ctx->pc & SPU_LS_MASK) == (return_pc & SPU_LS_MASK)) {
                 g_spu_trampoline_fn = 0;
                 SPU_DRAIN_POP_IRQ();

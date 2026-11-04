@@ -11,6 +11,8 @@ extern "C" {
 int spu_native_owned_enabled(void);
 int spu_native_owned_observed(void);
 void spu_native_owned_interpret(spu_context* ctx);
+/* Bounded native dispatcher call; ordinary stop/budget APIs stay reference. */
+uint32_t spu_interp_run_native_call(spu_context* ctx,uint32_t start,uint32_t stop);
 extern int g_spu_ls_probe;
 static inline int spu_native_owned_policy(const spu_context* ctx) {
     return ctx && ctx->policy_mode && spu_native_owned_enabled();

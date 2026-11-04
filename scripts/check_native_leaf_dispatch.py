@@ -91,6 +91,19 @@ source=(spu/'spu_interp.c').read_text(encoding='utf-8')
 # Recover the exact pre-port public implementation, not a second model of its
 # behavior. The pinned digest prevents the reconstruction from hiding drift.
 reference=source
+# Undo only the separately verified native-call scope in the pinned reference.
+marker='\n/* Permission belongs to this invocation, never TLS; retain stats/unwind and SIMD scopes. */'
+assert reference.count(marker)==1
+reference=reference[:reference.index(marker)]
+assert reference.count(', int native_call)')==2
+reference=reference.replace(', int native_call)',')')
+assert reference.count('interp_run_until_impl(ctx, start_lsa, stop_lsa, local_budget, native_call)')==3
+reference=reference.replace('interp_run_until_impl(ctx, start_lsa, stop_lsa, local_budget, native_call)','interp_run_until_impl(ctx, start_lsa, stop_lsa, local_budget)')
+assert reference.count('spu_interp_run_until_budget_scoped_body(ctx, start_lsa, stop_lsa, local_budget, 0)')==1
+reference=reference.replace('spu_interp_run_until_budget_scoped_body(ctx, start_lsa, stop_lsa, local_budget, 0)','spu_interp_run_until_budget_scoped_body(ctx, start_lsa, stop_lsa, local_budget)')
+new_scope='owned_mode && !in_kh && !local_budget &&\n            (!stop_lsa || (native_call && ctx->host_depth>0 && stop_lsa==ctx->drain_ret_pc)) &&'
+assert reference.count(new_scope)==1
+reference=reference.replace(new_scope,'owned_mode && !in_kh && !local_budget && !stop_lsa &&',1)
 # Keep the original historical identity; remove only the separately exercised
 # default-off owned-job bridge from the reconstructed reference.
 assert reference.count('#include "spu_native_owned.h"\n')==1

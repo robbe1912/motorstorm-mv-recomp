@@ -11,7 +11,7 @@
  * assertions and error handling remain unchanged. */
 #define OWNED_CHECK(x) do { if (!(x)) { fprintf(stderr,"FAIL %s:%d: %s\n",__FILE__,__LINE__,#x);exit(1); } } while (0)
 static unsigned native_calls, native_in_irq;
-static int call_policy, queued_irq;
+static int call_policy, queued_irq, nested_owned, nested_tail;
 extern void spu_wrch(spu_context*,uint32_t,u128);
 extern u128 spu_rdch(spu_context*,uint32_t);
 static void forbidden_policy(spu_context* c) { (void)c; fputs("FORBIDDEN compiled policy\n",stderr); exit(2); }
@@ -34,6 +34,14 @@ static void owned_job(spu_context* c) {
     if (call_policy) c->gpr[0]=c->gpr[4];
     SPU_RET(c);
 }
+static void spu_func_00004008(spu_context* c) { forbidden_policy(c); }
+static void owned_subjob(spu_context* c) {
+    ++native_calls;
+    if(c->irq_saved || c->irq_frame) ++native_in_irq;
+    c->gpr[3]=spu_ai(c->gpr[3],5);
+    if(nested_tail) { spu_context* ctx=c; OWNED_SUBJOB_TAIL; }
+    SPU_RET_REG(c,6);
+}
 static spu_context reference;
 int main(int argc,char** argv) {
 #ifdef _WIN32
@@ -48,7 +56,9 @@ int main(int argc,char** argv) {
 #endif
         return 0;
     }
-    call_policy=!strcmp(mode,"call-policy");queued_irq=!strcmp(mode,"queued-irq");
+    nested_tail=!strcmp(mode,"nested-tail");
+    nested_owned=nested_tail || !strcmp(mode,"nested-owned");
+    call_policy=nested_owned || !strcmp(mode,"call-policy");queued_irq=!strcmp(mode,"queued-irq");
     spu_context_init(&ctx,0);ctx.image_id=77;ctx.policy_mode=1;ctx.img_ls_base=0x200;
     ctx.pc=0x200;ctx.status=SPU_STATUS_RUNNING;
     word(0x200,0x31080000); /* brasl r0,0x4000 */
@@ -82,6 +92,14 @@ int main(int argc,char** argv) {
             ctx.resident_code[1]=ctx.resident_code[0];ctx.resident_code[0].image_id=26;
         }
     }
+    if (nested_owned || !strcmp(mode,"live-explicit-stop")) {
+        word(0x304,0x310A0006); /* brasl r6,0x5000; preserve outer link r0 */
+        word(0x308,0x35000000); /* bi r0 */
+        word(0x5000,0x1C014183); /* ai r3,r3,5 */
+        word(0x5004,nested_tail?0x327E0080:0x35000300); /* br native caller / bi r6 */
+        ctx.resident_code[1].lsa=0x5000;ctx.resident_code[1].size=8;
+        ctx.resident_code[1].image_id=25;
+    }
     if (!strcmp(mode,"dma-invalidate")) {
         ppu_vm_size=0x20000;vm_base=calloc(1,ppu_vm_size);OWNED_CHECK(vm_base);
         const uint8_t replacement[16]={0x1C,0x02,0x41,0x83,0x35,0,0,0};
@@ -105,7 +123,9 @@ int main(int argc,char** argv) {
     spu_register_function(0x204,forbidden_policy);spu_register_function(0x300,forbidden_policy);
     spu_register_function(0x4000,forbidden_policy); /* stale primary must lose */
     spu_register_function(0x600,forbidden_policy);
+    spu_register_function(0x308,forbidden_policy);
     spu_begin_image(25);
+    spu_register_function(0x5000,owned_subjob);
     if (strcmp(mode,"owner-miss")) spu_register_function(0x4000,owned_job);
 #ifndef OWNED_HISTORICAL
     if (!strcmp(mode,"admission")) {
@@ -123,6 +143,37 @@ int main(int argc,char** argv) {
         OWNED_CHECK(!spu_native_owned_can_run(&ctx,0x4001));
         OWNED_CHECK(!spu_native_owned_can_run(&ctx,SPU_LS_SIZE));
         puts("admission PASS");return 0;
+    }
+#endif
+#ifndef OWNED_HISTORICAL
+    if (!strcmp(mode,"native-call-no-frame") || !strcmp(mode,"native-call-wrong-return")) {
+        ctx.resident_code[1].lsa=0x5000;ctx.resident_code[1].size=8;
+        ctx.resident_code[1].image_id=25;
+        word(0x5000,0x1C014183);word(0x5004,0x35000300);
+        ctx.host_depth=!strcmp(mode,"native-call-wrong-return")?1:0;
+        ctx.drain_ret_pc=ctx.host_depth?0x5008:0x5004;
+        spu_interp_run_native_call(&ctx,0x5000,0x5004);
+        OWNED_CHECK(!native_calls && ctx.pc==0x5004 && ctx.gpr[3]._u32[0]==5);
+        puts("invalid native call scope retains reference PASS");return 0;
+    }
+#endif
+    if (!strcmp(mode,"live-explicit-stop")) {
+        ctx.host_depth=1;ctx.drain_ret_pc=0x5004;
+        spu_interp_run_until(&ctx,0x5000,0x5004);
+        OWNED_CHECK(!native_calls && ctx.pc==0x5004 && ctx.gpr[3]._u32[0]==5);
+        puts("live-explicit-stop PASS");return 0;
+    }
+#ifndef OWNED_HISTORICAL
+    if (!strcmp(mode,"native-call-global-budget")) {
+        word(0x5000,0x1C014183);word(0x5004,0x35000300);
+        ctx.gpr[6]=spu_link(0x5008);
+        ctx.resident_code[1].lsa=0x5000;ctx.resident_code[1].size=8;
+        ctx.resident_code[1].image_id=25;spu_register_function(0x5000,owned_subjob);
+        ctx.host_depth=1;ctx.drain_ret_pc=0x5008;g_spu_interp_budget=2;
+        spu_interp_run_native_call(&ctx,0x5000,0x5008);
+        OWNED_CHECK(!native_calls && ctx.pc==0x5004 && ctx.gpr[3]._u32[0]==5 &&
+                    g_spu_interp_budget_hit && g_spu_interp_steps==2);
+        puts("native-call-global-budget PASS");return 0;
     }
 #endif
     if (!strcmp(mode,"global-budget")) {
@@ -167,9 +218,6 @@ int main(int argc,char** argv) {
 #endif
     spu_run_with_halt(forbidden_policy,&ctx);
     OWNED_CHECK(fegetround()==rounding && fetestexcept(FE_ALL_EXCEPT)==flags);
-    for (unsigned r=0;r<128;++r) for (unsigned lane=0;lane<4;++lane)
-        if (ctx.gpr[r]._u32[lane]!=reference.gpr[r]._u32[lane])
-            fprintf(stderr,"GPR mismatch r%u lane%u actual=%08X reference=%08X\n",r,lane,ctx.gpr[r]._u32[lane],reference.gpr[r]._u32[lane]);
     OWNED_CHECK(!memcmp(ctx.gpr,reference.gpr,sizeof ctx.gpr));
     OWNED_CHECK(!memcmp(ctx.ls,reference.ls,SPU_LS_SIZE));
     OWNED_CHECK(ctx.status==reference.status && ctx.stop_code==reference.stop_code);
@@ -179,8 +227,8 @@ int main(int argc,char** argv) {
         OWNED_CHECK(ctx.event_status==0 && ctx.irq_saved==0 && ctx.int_enable==1 && ctx.srr0==(queued_irq?0x4004u:0x200u));
         OWNED_CHECK(!ctx.irq_frame);
     }
-    OWNED_CHECK(ctx.gpr[3]._u32[0]==(call_policy?12u:!strcmp(mode,"dma-invalidate")?11u:5u));
-    unsigned expected=(!strcmp(mode,"owned")||!strcmp(mode,"irq")||queued_irq||!strcmp(mode,"musttail")||call_policy)?1u:0u;
+    OWNED_CHECK(ctx.gpr[3]._u32[0]==(nested_owned?17u:call_policy?12u:!strcmp(mode,"dma-invalidate")?11u:5u));
+    unsigned expected=(!strcmp(mode,"owned")||!strcmp(mode,"irq")||queued_irq||!strcmp(mode,"musttail")||call_policy)?(nested_owned?2u:1u):0u;
     if (native_calls!=expected || native_in_irq) {
         fprintf(stderr,"FAIL native calls=%u expected=%u native_in_irq=%u\n",native_calls,expected,native_in_irq);exit(1);
     }

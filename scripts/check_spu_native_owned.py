@@ -44,7 +44,8 @@ def build(source,label,historical=False,observed=False):
     from spu_lifter import SPULifter,LiftedFunction
     from spu_disasm import spu_decode
     code=SPULifter()._translate(spu_decode(0x35200100,0x4004),LiftedFunction(name='owned',start_addr=0x4000,end_addr=0x4014))
-    (target/'spu_native_owned_call.h').write_text('#define OWNED_POLICY_CALL '+code+'\n')
+    tail=SPULifter()._translate(spu_decode(0x327E0080,0x5004),LiftedFunction(name='subjob',start_addr=0x5000,end_addr=0x5008))
+    (target/'spu_native_owned_call.h').write_text('#define OWNED_POLICY_CALL '+code+'\n#define OWNED_SUBJOB_TAIL '+tail+'\n')
     compiler=(os.environ.get('MV_CLANG') or shutil.which('clang-cl')) if os.name=='nt' else (os.environ.get('CC') or shutil.which('cc'))
     assert compiler,'supported C compiler required'
     identity=subprocess.run([compiler,'--version'],capture_output=True,text=True,timeout=10)
@@ -93,10 +94,10 @@ def run(binary,entry,mode,flag='1',observed=False,red=False,pm=False):
     else:assert result.returncode==0 and 'PASS' in result.stdout,entry['runs'][-1]
     print(('RED ' if red else 'PASS ')+entry['label']+' '+mode,flush=True)
 binary,entry=build(sdk,'production')
-for mode in ['owned','call-policy','irq','queued-irq','dma-invalidate','unknown','owner-miss','overlap','invalid-range','budget','global-budget','stop-boundary','admission']:run(binary,entry,mode)
+for mode in ['owned','call-policy','live-explicit-stop','native-call-no-frame','native-call-wrong-return','nested-owned','nested-tail','irq','queued-irq','dma-invalidate','unknown','owner-miss','overlap','invalid-range','budget','global-budget','native-call-global-budget','stop-boundary','admission']:run(binary,entry,mode)
 if entry['musttail_compiled']:run(binary,entry,'musttail')
 run(binary,entry,'observed',observed=True);run(binary,entry,'owned',flag='0',red=True);run(binary,entry,'owned',flag='invalid',red=True)
-for mode in ['owned','call-policy','irq','unknown','owner-miss','overlap','invalid-range','budget','global-budget','stop-boundary']:run(binary,entry,mode,pm=True)
+for mode in ['owned','call-policy','live-explicit-stop','native-call-no-frame','native-call-wrong-return','nested-owned','nested-tail','irq','unknown','owner-miss','overlap','invalid-range','budget','global-budget','native-call-global-budget','stop-boundary']:run(binary,entry,mode,pm=True)
 run(binary,entry,'owned',flag='0',pm=True,red=True)
 binary,entry=build(sdk,'compiled-observers',observed=True)
 run(binary,entry,'observed')

@@ -287,7 +287,7 @@ static void spu_pm_interp_trampoline(spu_context* ctx)
     }
     const int owned_mode=spu_native_owned_policy(ctx);
     const uint32_t stop=owned_mode ? ctx->drain_ret_pc : 0;
-    uint32_t r = owned_mode ? spu_interp_run_until(ctx,pc,stop) : spu_interp_run(ctx,pc);
+    uint32_t r = owned_mode ? spu_interp_run_native_call(ctx,pc,stop) : spu_interp_run(ctx,pc);
     { extern int spu_irq_regs_maybe_restore(spu_context*);
       spu_irq_regs_maybe_restore(ctx); }   /* iret-bail contract (see
           spu_indirect_branch prologue): restore the handler's saved regs */
