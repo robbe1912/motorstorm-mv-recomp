@@ -10,8 +10,18 @@ p=argparse.ArgumentParser();p.add_argument('--runtime',type=Path,default=root/'v
 fixture=root/'scripts/fixtures/spu_iret_progress.c';binary=out/('test.exe' if os.name=='nt' else 'test')
 env={k:v for k,v in os.environ.items() if not k.startswith(('SPU_','SPURS_','LBP_','YDKJ_','DIAG_'))};env['SPU_PM_INTERP']='1'
 inputs=[fixture,src/'spu_interp.c',src/'spu_context.h',src/'spu_helpers.h',src/'spu_float_simd.c',src/'spu_float_simd.h',src/'spu_float.h'];(out/'inputs.json').write_text(json.dumps({str(x):hashlib.sha256(x.read_bytes()).hexdigest() for x in inputs},indent=2))
+owned=[]
+if (src/'spu_native_owned.h').exists():
+    channels=(src/'spu_channels.c').read_text()
+    readers=channels[channels.index('int spu_native_owned_enabled(void)'):channels.index('void spu_native_owned_interpret(')]
+    config=out/'owned-config.c'
+    config.write_text('#include "spu_native_owned.h"\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n'+readers+'\nvoid spu_native_owned_interpret(spu_context* c){(void)c;fputs("unexpected owned adapter\\n",stderr);abort();}\n')
+    owned=[str(config)]
+    inputs += [src/'spu_channels.c',src/'spu_native_owned.h',config]
+    (out/'inputs.json').write_text(json.dumps({str(x):hashlib.sha256(x.read_bytes()).hexdigest() for x in inputs},indent=2))
 if os.name=='nt':cmd=[os.environ.get('MV_CLANG','clang-cl'),'/nologo','/TC','/O1','/UNDEBUG','/I'+str(src),'/I'+str(src.parent.parent/'include'),str(fixture),str(src/'spu_interp.c'),str(src/'spu_float_simd.c'),'/Fe'+str(binary),'/Fo'+str(out)+'/' ]
 else:cmd=[os.environ.get('CC','cc'),'-std=gnu17','-O1','-UNDEBUG','-I'+str(src),'-I'+str(src.parent.parent/'include'),str(fixture),str(src/'spu_interp.c'),str(src/'spu_float_simd.c'),'-lm','-o',str(binary)]
-build=subprocess.run(cmd,capture_output=True,text=True);(out/'build.log').write_text(build.stdout+build.stderr)
+cmd[1:1]=owned
+build=subprocess.run(cmd,capture_output=True,text=True,timeout=120);(out/'build.log').write_text(build.stdout+build.stderr)
 if build.returncode:print('\n'.join(x for x in (build.stdout+build.stderr).splitlines() if 'error' in x));raise SystemExit(build.returncode)
 run=subprocess.run([str(binary)],capture_output=True,text=True,env=env,timeout=10);(out/'run.log').write_text(run.stdout+run.stderr);(out/'result.json').write_text(json.dumps(dict(returncode=run.returncode,exe_sha256=hashlib.sha256(binary.read_bytes()).hexdigest()),indent=2));print(run.stdout+run.stderr);print(out);raise SystemExit(run.returncode)
