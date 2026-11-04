@@ -1365,7 +1365,7 @@ building from a separately prepared private SPU tree. The actual old curated
 emitter is retained separately from the fork updater-equivalence control.
 
 This port is preparation for native owned-job execution, not a measured speedup.
-Live IRQ/DMA and normal-route native acceptance remain pending; experimental
+Original-US normal-route native acceptance is recorded below; experimental
 owned-job admission (#269) remains outside the combined and game runtime.
 
 
@@ -1383,3 +1383,25 @@ execute. Windows/Linux now pass 17 production cases, reject 17 actual historical
 emitter controls and preserve all 13 baseline transitions. This added control
 passes the port without a production change; the suspected halt/return ambiguity
 did not reproduce.
+
+
+Fork follow-up `da924142` (combined `4eedf23b`) adds actual pending-event
+interrupt delivery through the production drain/resolver, actual channel event
+acknowledgement, and production-emitted IRET. A second case calls deeper from the
+handler and returns by the real IRQ-frame longjmp, skipping the dead native
+continuation. Both compare all 128 registers and full LS after deliberate handler
+clobbers, verify cleared IRQ ownership, exact call/outer-return ownership and host
+FP state. Windows/Linux pass 19 production cases, reject 19 real historical
+emitter controls, and preserve 13 baseline transitions. These are authored CPU
+transitions, not proof of all live owned-job IRQ/DMA behavior.
+
+Original-US DX12 run `20261104T182435.860264Z`, EXE SHA256
+`f624726a70f71ee7c53bba384c3df8d86a670a53a711817a479ac365ade2b051`,
+completed all seven normal menu gates and once-only observed intro skip, reached
+real race HUD, and stopped at the configured post-target observation boundary.
+The last complete recorded 59.789187-second Present interval measured 1.88997385
+successful API Presents/s. This is not a controlled speedup or stable30; buffered
+CSV termination can lose its tail, so it is not final-process coverage. Original
+menu assets are present, with dark boxes/shading defects still visible. Exact
+EXE/PDB, private-copy generated inputs, captures, resources and qualified profile
+are retained privately outside rolling runs. No shared generated input changed.

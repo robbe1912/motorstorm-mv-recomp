@@ -22,6 +22,9 @@ def emission(module):
         func=module.LiftedFunction(name='test',start_addr=addr,end_addr=addr+4)
         ops={'DIRECT':0x31080006,'RELATIVE':0x33080086 if zero else 0x3307C006,'INDIRECT':0x35200106,'ALIAS':0x35200306}
         for key,word in ops.items():result+='#define EMIT_'+key+('_ZERO' if zero else '')+' '+lifter._translate(spu_decode(word,addr),func)+'\n'
+    for key,word,addr in [('IRQ_CALL',0x31010006,0x600),('IRQ_RETURN',0x35440000,0x800)]:
+        func=module.LiftedFunction(name='irq',start_addr=addr,end_addr=addr+4)
+        result+='#define EMIT_'+key+' '+lifter._translate(spu_decode(word,addr),func)+'\n'
     return result
 if args.historical_lifter:
     import importlib.util,sys
@@ -41,9 +44,9 @@ def build(source,label,historical=False,baseline=False):
         from update_spu_call_boundaries import update
         legacy=(fixtures/'spu_call_brackets_fork_legacy.h').read_text()
         rewritten,changed,existing=update(legacy)
-        assert changed==8 and existing==0
+        assert changed==9 and existing==0
         assert '\n'.join(rewritten.splitlines()[1:])+'\n'==header,'copy updater differs from actual emitter'
-        assert update(header)==(header,0,8),'copy updater is not idempotent'
+        assert update(header)==(header,0,9),'copy updater is not idempotent'
         try:update('spu_drain_call(ctx, variable_return);')
         except ValueError:pass
         else:raise AssertionError('unknown bracket silently accepted')
@@ -80,7 +83,7 @@ def run(binary,entry,case,red=False,baseline=False):
     print(('RED ' if red else 'PASS ')+entry['label']+' '+str(case),flush=True)
 for historical in (False,True):
     binary,entry=build(sdk,'historical' if historical else 'production',historical)
-    for case in range(17):run(binary,entry,case,historical)
+    for case in range(19):run(binary,entry,case,historical)
 binary,entry=build(sdk,'baseline',baseline=True)
 for case in ['top','top-zero','nested-return','nested-return-unlifted','nested-calls','stop-zero','nested-stop','stop-code','halt','smc','pure-interpreter','stepcap','negative-stepcap']:run(binary,entry,case,baseline=True)
 print('Evidence: '+str(out/'result.json'))
