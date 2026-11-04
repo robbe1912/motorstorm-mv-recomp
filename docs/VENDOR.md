@@ -1375,3 +1375,11 @@ registry full-state/IRQ/FP/budget records. Its historical reconstruction reverse
 only the separately covered call-boundary lines; production retains them.
 Windows and Linux pass that comparison and reject the unsafe dispatch/environment
 mutants and faulty TLS callback. This is not live owned-job IRQ/DMA acceptance.
+
+
+Fork test follow-up `5995243b` (combined `3b8602c9`) adds a real interpreted
+STOP before a live LS-zero return: the compiled caller continuation must not
+execute. Windows/Linux now pass 17 production cases, reject 17 actual historical
+emitter controls and preserve all 13 baseline transitions. This added control
+passes the port without a production change; the suspected halt/return ambiguity
+did not reproduce.

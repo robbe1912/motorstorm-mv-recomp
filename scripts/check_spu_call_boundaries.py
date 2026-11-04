@@ -80,7 +80,7 @@ def run(binary,entry,case,red=False,baseline=False):
     print(('RED ' if red else 'PASS ')+entry['label']+' '+str(case),flush=True)
 for historical in (False,True):
     binary,entry=build(sdk,'historical' if historical else 'production',historical)
-    for case in range(16):run(binary,entry,case,historical)
+    for case in range(17):run(binary,entry,case,historical)
 binary,entry=build(sdk,'baseline',baseline=True)
 for case in ['top','top-zero','nested-return','nested-return-unlifted','nested-calls','stop-zero','nested-stop','stop-code','halt','smc','pure-interpreter','stepcap','negative-stepcap']:run(binary,entry,case,baseline=True)
 print('Evidence: '+str(out/'result.json'))
