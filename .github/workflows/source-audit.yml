@@ -26,6 +26,8 @@ jobs:
         run: python scripts/check_spu_decrementer.py
       - name: Actual texture lookup and phase accounting
         run: python scripts/check_rsx_texture_profile.py
+      - name: Full render-batch accounting and submission errors
+        run: python scripts/check_rsx_perf_accounting.py
       - name: Exact SPU fingerprint cache and worker cleanup
         run: python scripts/check_spu_fingerprint_cache.py
       - name: Resident SPU compiled lookup ownership
@@ -50,14 +52,25 @@ jobs:
         run: python scripts/check_native_job_wait.py
       - name: Guarded native leaf interpreter dispatch
         run: python scripts/check_native_leaf_dispatch.py
+      - name: Ordered record batches and retirement controls
+        run: |
+          python scripts/check_rsx_record_batch.py
+          python scripts/check_rsx_record_retire.py
+          python scripts/check_rsx_triangle_capacity.py
       - name: Actual indexed strip restart regression
         run: python scripts/check_rsx_restart.py
       - name: Lifter jump tables with spilled bases and lwax
         run: python scripts/check_ppu_spilled_jumptables.py
+      - name: Recorded PSO ownership and checked teardown
+        run: python scripts/check_rsx_pso_retention.py
+      - name: Bounded texture and pipeline working sets
+        run: python scripts/check_rsx_working_sets.py
       - name: Actual indexed vertex reuse regression
         run: python scripts/check_rsx_indexed_strip.py
       - name: Named SPU extraction identities and rejections
         run: python scripts/check_spu_named_extract.py
+      - name: Actual VP upload capacity preservation
+        run: python scripts/check_rsx_vp_upload.py
       - name: Actual packed vertex fetch regression
         run: python scripts/check_rsx_vertex.py
       - name: Actual fragment source modifier regression
@@ -209,8 +222,20 @@ jobs:
       - run: python scripts/check_bike_observer.py
       - name: Fragment half-float packing (WARP)
         run: python scripts/check_rsx_fp_pack.py --warp-only
+      - name: Recorded PSO ownership and checked teardown
+        run: python scripts/check_rsx_pso_retention.py
+      - name: Bounded texture and pipeline working sets
+        run: python scripts/check_rsx_working_sets.py
+      - name: Evicted recorded pipelines execute (WARP)
+        run: python scripts/check_rsx_pso_gpu.py --warp-only
+      - name: Fragment source sign bits and invalid-DXBC control (WARP)
+        run: python scripts/check_rsx_fp_source_sign.py --warp-only
       - name: Independent MRT masks and blending (WARP)
         run: python scripts/check_rsx_mrt.py
+      - name: Production depth attachment descriptors and fallback selection
+        run: python scripts/check_rsx_depth_contract.py
+      - name: Depth admission, explicit clears and compatible fallbacks (WARP)
+        run: python scripts/check_rsx_depth_admission.py --warp-only
       - name: Vertex homogeneous clipping pixel regression (WARP)
         run: python scripts/check_rsx_clip.py
       - name: Offline native stack replay and actual metadata negative control
@@ -231,6 +256,11 @@ jobs:
         run: python scripts/check_run_retention.py
       - name: Bounded frame capture selector
         run: python scripts/check_rsx_capture_schedule.py
+      - name: Ordered record batches and retirement controls
+        run: |
+          python scripts/check_rsx_record_batch.py
+          python scripts/check_rsx_record_retire.py
+          python scripts/check_rsx_triangle_capacity.py
       - name: Actual indexed strip restart regression
         run: python scripts/check_rsx_restart.py
       - name: Lifter jump tables with spilled bases and lwax
@@ -239,6 +269,8 @@ jobs:
         run: python scripts/check_rsx_indexed_strip.py
       - name: Named SPU extraction identities and rejections
         run: python scripts/check_spu_named_extract.py
+      - name: Actual VP upload capacity preservation
+        run: python scripts/check_rsx_vp_upload.py
       - name: Actual packed vertex fetch regression
         run: python scripts/check_rsx_vertex.py
       - name: Actual fragment source modifier regression
@@ -257,6 +289,8 @@ jobs:
         run: python scripts/check_spu_decrementer.py
       - name: Actual texture lookup and phase accounting
         run: python scripts/check_rsx_texture_profile.py
+      - name: Full render-batch accounting and submission errors
+        run: python scripts/check_rsx_perf_accounting.py
       - name: Exact SPU fingerprint cache and worker cleanup
         run: python scripts/check_spu_fingerprint_cache.py
       - name: Resident SPU compiled lookup ownership

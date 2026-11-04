@@ -23,6 +23,8 @@ def main():
     ap.add_argument('--capture-burst-frames',type=int,default=0,help='Opt-in once-only consecutive presented-frame burst, 1..120; arm via run-local capture-burst.arm')
     ap.add_argument('--capture-on-pad',type=lambda value:int(value,0),default=0,help='Arm capture burst in native code when PAD_FILE consumes a matching button mask')
     ap.add_argument('--menu-replay',type=Path,help='Private observed-screen profile; normal PAD_FILE input, not a scene jump')
+    ap.add_argument('--profile-renderer',action='store_true',help='CPU renderer phases and GPU timestamps, without broad asset/Havok probes; adds timing overhead')
+    ap.add_argument('--replay-observe-seconds',type=int,default=5,help='Observe after the gated replay target (default 5; overall --seconds guard still applies)')
     args=ap.parse_args()
     if not 0<=args.capture_burst_frames<=120: raise SystemExit('Capture burst must be 0 (disabled) or 1..120 frames')
     if not 0<=args.capture_on_pad<=0xffff: raise SystemExit('Capture event mask must be 0 (disabled) or 1..0xffff')
@@ -32,6 +34,8 @@ def main():
         from menu_replay import load_profile
         replay_profile=load_profile(args.menu_replay)  # Reject blind routes before process creation.
     if not 1<=args.seconds<=600: raise SystemExit('Bounded run must be 1..600 seconds')
+    if not 1<=args.replay_observe_seconds<=600: raise SystemExit('Replay observation must be 1..600 seconds')
+    if args.replay_observe_seconds!=5 and not args.menu_replay: raise SystemExit('Replay observation requires --menu-replay')
     if not 0<=args.trace_task_lifecycle<=4096: raise SystemExit('Task lifecycle trace must be 0..4096 events')
     if args.trace_task_image is not None and (args.trace_task_image<0 or not args.trace_task_lifecycle): raise SystemExit('Task image filter requires an enabled trace and nonnegative image ID')
     if any(p.info['name']=='ms1_recomp.exe' for p in psutil.process_iter(['name'])): raise SystemExit('A native instance already exists; close it first')
@@ -43,7 +47,7 @@ def main():
     # Referenced/failed/evidence runs and the supplied profile are protected.
     from prune_runs import automatic
     automatic(ROOT, args.menu_replay)
-    if psutil.disk_usage(ROOT).free < 16*1024**3:
+    if psutil.disk_usage(str(ROOT)).free < 16*1024**3:
         raise SystemExit('Insufficient free disk space: need at least 16 GiB before native startup')
     out=ROOT/'temp/runs'/datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ'); out.mkdir(parents=True)
     env=dict(os.environ)
@@ -70,6 +74,8 @@ def main():
         (out/'textures').mkdir(); env.update(TEX_RAWDBG='1',TEX_RAWDBG_DIR=str(out/'textures'))
     if args.trace_video:
         env.update(VDEC_TRACE='1',FS_READ_ALL='1',SEMTID='1',SEM_WAITDBG='1',PS3_FSLOG='1')
+    if args.profile_renderer:
+        env.update(PERF='1',RSX_PHASE_STATS='1',RSX_PHASE_CSV=str(out/'rsx_phases.csv'))
     (out/'pad.txt').write_text('0\n')
     if args.capture_menu or args.menu_replay:
         (out/'rsx').mkdir()
@@ -88,6 +94,9 @@ def main():
     record={'pid':p.pid,'create_time':proc.create_time(),'exe':str(exe),'exe_sha256':hashlib.sha256(exe.read_bytes()).hexdigest(),'elf_sha256':hashlib.sha256(c['elf'].read_bytes()).hexdigest(),'output':str(out),'muted':True,'capture_menu':bool(args.capture_menu or args.menu_replay),'menu_replay':str(args.menu_replay.resolve()) if args.menu_replay else None,'capture_textures':args.capture_textures,'trace_video':args.trace_video,'capture_havok':args.capture_havok or args.capture_havok_only,'capture_bike':args.capture_bike,'loadtime_trace':args.loadtime_trace,'capture_profile':'broad' if args.capture_havok else 'havok-only' if args.capture_havok_only else 'none','environment':{k:v for k,v in env.items() if k in ('PS3_VFS_ROOT','PS3_HDD0_ROOT','PS3_SAVEDATA_ROOT','AUDIO_MUTE','PAD_FILE','CAP_HAVOK_DIR','CAP_BIKE_DIR','CAP_BIKE_ARM_FILE','LOADTIME_TRACE','LOADTIME_TRACE_FILE','SPU_PM_INTERP') or k.startswith(('SPU_PM_','TEX_','RSX_')) or k in ('VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG') or k=='SPU_WP'}}
     record['capture_burst_frames']=args.capture_burst_frames
     record['capture_on_pad']=args.capture_on_pad
+    record['profile_renderer']=args.profile_renderer
+    record['replay_observe_seconds']=args.replay_observe_seconds
+    record['environment'].update({k:v for k,v in env.items() if k=='PERF' or k.startswith('MS_NATIVE_')})
     record['environment'].update({k:env[k] for k in ('SPU_TASK_LIFECYCLE_TRACE','SPU_TASK_LIFECYCLE_IMAGE') if k in env})
     (out/'launch.json').write_text(json.dumps(record,indent=2)); print('Owned native PID',p.pid,'output',out,flush=True)
     window_ready=False
@@ -116,13 +125,13 @@ def main():
             try:
                 cpu=round(proc.cpu_percent(None),1);threads=proc.num_threads();read_b=proc.io_counters().read_bytes
             except (psutil.Error,AttributeError,NotImplementedError):pass
-            disk_available=psutil.disk_usage(ROOT).free
+            disk_available=psutil.disk_usage(str(ROOT)).free
             with (out/'resources.jsonl').open('a') as f:f.write(json.dumps({'elapsed':elapsed,'private':private,'cpu_percent':cpu,'threads':threads,'io_read_bytes':read_b,'physical_available':m.available_phys,'commit_available':m.available_commit,'disk_available':disk_available})+'\n')
             if (out/'stop.txt').exists():reason='explicit stop marker';break
             if replay_result:
                 ok,value,finished=replay_result[0]
                 if not ok:reason='menu replay failed: '+str(value);break
-                if time.monotonic()-finished>=5:reason='menu replay target observed; graphics verdict separate';break
+                if time.monotonic()-finished>=args.replay_observe_seconds:reason='menu replay target observed; graphics verdict separate';break
             if elapsed>args.seconds:reason='bounded duration elapsed';break
             if disk_available<8*1024**3:reason='disk space limit reached';break
             if private>14*1024**3 or m.available_phys<4*1024**3 or m.available_commit<12*1024**3:reason='resource limit reached';break

@@ -1,0 +1,26 @@
+/* Extracted production retirement/drain functions with authored adapters. */
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include "rsx_record_batch.h"
+typedef uint32_t u32; typedef uint64_t u64; typedef int32_t HRESULT;
+#define S_OK 0
+#define MAX_DRAWS 4
+struct Device; struct Fence;
+struct DeviceOps { HRESULT (*GetDeviceRemovedReason)(struct Device*); };
+struct FenceOps { u64 (*GetCompletedValue)(struct Fence*); };
+struct Device { struct DeviceOps* lpVtbl; }; struct Fence { struct FenceOps* lpVtbl; };
+static struct { struct Device* device; struct Fence* fence; u64 fence_values[2]; u32 frame_index,draw_count; } s_d3d;
+static int mode, waits, renders, s_present_this_frame=1;
+static HRESULT removed(struct Device* d) { (void)d; int m = mode >= 5 && waits == 2 ? mode - 4 : mode < 5 ? mode : 0; return m==2 ? -1 : m==3 ? 1 : 0; }
+static u64 completed(struct Fence* f) { (void)f; int m = mode >= 5 && waits == 2 ? mode - 4 : mode < 5 ? mode : 0; return m==1 ? s_d3d.fence_values[s_d3d.frame_index]-1 : m==4 ? UINT64_MAX : s_d3d.fence_values[s_d3d.frame_index]; }
+static void wait_for_gpu(void) { ++waits; ++s_d3d.fence_values[s_d3d.frame_index]; }
+static void render_frame(void) { if (s_present_this_frame || waits != 1) abort(); ++renders; s_d3d.draw_count=0; }
+@FUNCTIONS@
+int main(int argc,char**argv) {
+ struct DeviceOps dv={removed}; struct Device d={&dv}; struct FenceOps fv={completed}; struct Fence f={&fv};
+ s_d3d.device=&d; s_d3d.fence=&f; s_d3d.frame_index=argc>2?1:0; mode=argc>1?atoi(argv[1]):0; s_d3d.draw_count=MAX_DRAWS;
+ ensure_draw_record_capacity();
+ if(mode||waits!=2||renders!=1||s_present_this_frame!=1||s_d3d.draw_count) return 2;
+ puts("PASS: capacity drain checks retirement before and after submission without present"); return 0;
+}

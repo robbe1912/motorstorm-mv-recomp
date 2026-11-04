@@ -109,8 +109,8 @@ if __name__ == '__main__':
             return backend[start:backend.index('\n}', start) + 2]
         body = function('static int vp_upload_tex_slot_impl(')
         start = body.index('    #define TEX_CSUM')
-        stop = body.index('    rsx_texture_profile_lookup_end(profile, VP_TEX_SLOTS, RSX_TEX_MISS);')
-        stop += len('    rsx_texture_profile_lookup_end(profile, VP_TEX_SLOTS, RSX_TEX_MISS);')
+        end = '    rsx_texture_profile_lookup_end(profile, s_d3d.vp_tex_capacity, RSX_TEX_MISS);'
+        stop = body.index(end) + len(end)
         fixture = SOURCE.replace('@LOOKUP@', body[start:stop])
         fixture = fixture.replace('@CHECKSUM@', function('static u32 tex_csum('))
         fixture = fixture.replace('@PROFILE_CHECKSUM@', function('static u32 texture_profile_csum('))

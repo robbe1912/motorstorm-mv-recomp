@@ -1,5 +1,60 @@
 # Vendor provenance and upstream
 
+## Depth admission and attachment-compatible fallbacks (issue 245)
+
+PR #252 ports the depth-use predicate and allocation diagnostics from own-fork
+`04e10bfb492ce667d96d55d45f86446332542c62`. Its game adapter prepares a guest
+depth surface only for explicit depth/stencil clears or enabled tests; a write
+mask alone does not allocate a stale zeta address. Existing depth/stencil
+contents and explicit clear decoding remain covered by authored pixel checks.
+
+Review correction `62a2390df946de35b897c3a2d41bb53b73f6ef2d` on own-fork modular
+branch `codex/issue-245-depth-fallback` supplies the exact
+`rsx_d3d12_fallback.h` and authored depth fixture. It preserves the original
+attached fallback PSOs and creates matching depthless variants, with both tests
+disabled and DSV format UNKNOWN. The game selector uses the actual record's
+depth slot when a guest fragment program is absent or compilation fails, while
+successfully compiled guest pipelines retain precedence. Final backbuffer
+restoration binds no stale depth descriptor. The fork's older shared-depth
+renderer continues to select its attached variants; its sampler identity table
+recognizes both variants of each fallback shader.
+
+`check_rsx_depth_contract.py` compiles the actual game fallback descriptor and
+selection functions with authored COM adapters, checks the dynamic guest depth
+state (including UNKNOWN format when both tests are disabled), and rejects
+attachment-blind selection. `check_rsx_depth_admission.py`
+uses only authored shaders and pixels. WARP and hardware each pass 18 checks;
+the eager-allocation control fails the capacity case, and the old depth-enabled
+fallback control reports two real null-DSV validation errors. Dynamic pipelines
+with both tests disabled and the original write mask also pass a null-DSV draw.
+These checks do not establish a native race, an FPS improvement, or removal of
+the genuine 128-surface live working-set limit. No game data is included.
+## Restored renderer working-set ownership (issues 135 and 140)
+
+PR #251 selectively restores own-fork commits `94d1c05f24033fee643f6a9e7a376d4676edfc0d`
+(recorded PSO lifetime), `1c8e25d0aeaef2a8a4c39a55817b0427a0dc07a3`
+(pinned texture metadata) and `3da8d801467054bea0578e40f165d74e33eb35a4`
+(bounded pipeline metadata). The three helper headers and authored helper/GPU
+fixtures match their fork sources. Public runners adapt paths and build commands.
+
+All draw calls use one adapter that retains distinct pipelines until the next
+checked GPU retirement. The maximum is one pipeline per record plus the optional
+diagnostic triangle's pipeline. Retirement rejects device errors, incomplete
+fences and the device-removal sentinel; it preserves references and reports
+failure. Shutdown checks retirement before releasing any owned texture/upload
+or pipeline working-set resource. Its production helper replaces the prior
+release-before-check ordering. The leading frame drain performs one checked
+retirement instead of adding another wait to the existing drain.
+
+The portable source audit executes the actual draw/retirement and working-set
+release adapters with authored COM objects, as well as the original fork
+cache-eviction, bounded-growth and allocation-failure fixtures. Missing-reference,
+fixed-capacity and late-retirement controls must fail the relevant assertions.
+When the PR #251 object is available locally, its actual historical shutdown
+prefix is also checked for premature texture release. Windows CI executes real
+evicted pipelines on WARP; local hardware coverage uses the same authored draw.
+These controls do not establish native race completion or an FPS improvement.
+
 ## Exact-byte fragment snapshot reuse (issue 213)
 
 The generic `rsx_fp_snapshot.h` decision helper originates on own-fork modular
@@ -798,6 +853,39 @@ Own-fork modular90bbae9 (fixture portability93a335a), combined621fcfa, adds CPU-
 
 Absolute QPC boundaries and client/renderer IDs supplement optional profile records. The authored regression compiles production completion/request/service functions, verifies a submitted model pixel and waiter event, and rejects premature recording/missing completion; default-off clocks and prior accounting/packing controls remain. This models scheduling, not an actual GPU. Own-fork focused Linux/Windows jobs pass; actual muted DX12 normal-PLAY validation completed on checkedO2/Ob2 EXE61d63b581a423ca8acca09ddc950fb11aa50c9c6424d29738001594fbef491fc/PDB931cb331424d6d5d20967877a11f193bb111f4cdf701ab97d8cd58f49cd4c51f. Native hierarchy/PM1/debug validation retained. Run20261021T175402.989970Z reached observed menu/race/HUD and an explicit owned stop305.875s/native1.77requests from one client are fully QPC-contained in44.863s, with5.283s request wall/3.974s queue/1.245s prior GPU fence. This is an unmatched diagnostic case; it does not prove a causal FPS speedup, and a loading request still queued5.293s. No stable30 claim; see181 for protected evidence and limits.
 
+## VP upload capacity adoption (issue 129)
+
+The selective port comes from own-fork atomic
+[`c919338981269d2298c52743d01aaaf60d84b70d`](https://github.com/robbe1912/ps3recomp/commit/c919338981269d2298c52743d01aaaf60d84b70d),
+`codex/rsx-vp-upload-capacity`, already contained in combined
+`2a37eda34bda36f2a08c647eee34ebe3a4da2396`. The shared upload header is unchanged.
+The curated adapter uses its existing stride constant and updates its additional
+capture parity offset. Its newer indexed vertex cache, render-target handling,
+record queue and guest flip/presentation gates remain intact.
+
+The initial vertex capacity remains 393216. Every VP uploader reserves a complete
+expanded draw, with checked byte limits, before writing. Growth preserves offsets
+within each half and relocates the second half. Allocation and Map failures stay
+visible; failure to verify GPU retirement aborts before old storage is released.
+The queue still uses its existing independent capacity contract under
+[issue 130](https://github.com/robbe1912/motorstorm-mv-recomp/issues/130).
+
+Local Windows Clang/MinGW checks pass the original fork storage/strip fixtures,
+128 authored uploads through all six functions in both trees, the curated
+retirement gate, the existing restart and real-attribute indexed checks, and a
+complete compilation of the curated D3D12 backend. The original strip function
+fails specifically at six required vertices; broken second-half copying and
+unchecked retirement also fail their independent expectations. Storage, vertex
+fetch and fence/wait operations in the new fixtures are adapters, not real GPU
+work. The existing indexed test still uses the actual shared attribute decoder.
+
+Linux execution and the new hosted workflow have not been verified for this port.
+No full game build or native session was run. The original issue's final display
+draw, advancing host presentation and matched normal-PLAY images remain
+unverified. This is a reviewable source correction; it does not close
+[issue 129](https://github.com/robbe1912/motorstorm-mv-recomp/issues/129),
+issue 130, graphics/playability or stable 30 FPS acceptance. No external PR was
+opened; original inputs and captures remain private.
 
 ## Prepared native vertex uploads (issue 215)
 
@@ -1107,3 +1195,61 @@ in issue #24 included this change, but it was absent from the game vendor copy.
 The authored GPU fixture tests the production decompiler on WARP and hardware;
 its missing-instruction control must fail. The Windows source audit runs WARP.
 A new native comparison is required to establish the visual effect in this build.
+
+### Ordered record-capacity drains
+
+Issue #130 selectively ports fork combined commits
+`19805574fe8291e4f187c1683d5c7a20b985dc57` and
+`09eb63f4e275659a5752b48e279e7c76f54984f6` into the diverged DX12 backend.
+A full batch drains without a capacity-triggered present, preserves backing
+initialization and display-write state, and checks GPU retirement around slot
+reuse. Authored ordered-batch and extracted retirement fixtures include negative
+controls; they do not establish GPU ordering or native race presentation.
+
+### Triangle continuation at record capacity
+
+Issue #223's correction is selectively ported from fork modular `6367aead`
+and combined `5c285597`. A compatible TRIANGLES continuation checks the same
+merge predicate before record reservation and after upload, preserving the
+unfinished primitive at a full record queue. Curated depth-target and fragment
+control/alpha checks remain intact. Actual callback fixtures reject the previous
+ordering on Windows and the restored-order mutant on Windows/Linux at reduced
+and normal capacity. Authored upload/submission adapters do not establish GPU
+ordering, native presentation, race entry or frame-time improvement.
+### Fragment source sign bits
+
+Issue #134 restores the exact source modifier expression from own-fork commit
+`bab553d81166bcbe0c5b8ec071394eda909b5a2e`, which was absent from the curated
+decompiler. Source negation toggles the IEEE sign bit; negate-after-absolute
+sets it. This prevents FXC from folding float negation into an invalid integer
+bitfield operand while preserving signed zeros, infinities and NaN payloads.
+The authored GPU fixture is copied from that fork commit, with a local runner
+and updated third-source modifier contract. Production compiler validation and
+flags remain enabled and unchanged.
+
+`scripts/check_rsx_fp_source_sign.py` tests 16 raw-bit and partial-word cases
+per WARP/hardware adapter. The unchanged legacy-expression control reproduces
+the invalid-bytecode error. CI runs WARP; the portable third-source modifier
+check also remains in source audit. These tests do not prove that source
+negation caused the separate device hang or that a race reaches 30 FPS.
+
+### Complete render-batch timing (#255)
+
+Own-fork modular branch `codex/issue-255-render-accounting` and combined commit
+`38ee99de074718d922d6375c50655085fef8157d` move opt-in PERF accounting to the
+successful render-batch boundary, after submission, presentation and
+CPU-surface completion. The first report covers all twenty timed batches.
+Nonpresenting drains count as batches, so the rate is `batches/s`;
+`outside_render` is unclassified time between calls, not exclusive game CPU.
+CPU-wall Close/Execute durations remain inside render time and introduce no
+waits or GPU ordering changes. Failed Close aborts explicitly before Execute.
+
+The curated port omits the fork-only submission-owner commit and bytecode
+cache report, whose subsystems are absent here; existing curated metrics and
+checked ownership remain intact. The actual-helper fixture verifies full
+tail time, first-window coverage, callback ordering, disabled-mode behavior
+and failed-Close refusal. Historical early-placement and omitted-tail controls
+fail. The curated fixture also rejects an unavailable submission-owner call
+without inventing replacement APIs. Windows checks compile the complete
+backend translation unit against the SDK. Windows clang-cl and Linux GCC
+pass; this establishes no game speedup or stable race FPS.

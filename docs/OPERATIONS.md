@@ -20,6 +20,27 @@ atomic snapshot or race acceptance. It is disabled by default.
 
 Owned child limits: 600s, available physical ≥4GiB, available commit ≥12GiB, private ≤14GiB. Write stop.txt in its run directory for closure. final.json distinguishes guards from natural exits; always inspect fatal logs even on exit 0. Match PID/create_time before attaching/stopping; preserve ordinary user RPCS3.
 
+For a renderer timing trial, add `--profile-renderer` to the normal launcher.
+It enables the existing CPU phase counters and GPU timestamp queries, retaining
+`rsx_phases.csv`, `[PERF]`/`[RSXPHASE]` logs and the exact timing environment in
+launch/final records. It does not enable the broad Havok/asset capture profile.
+Queries add overhead and do not establish exclusive guest CPU cost. Match GPU
+results to their reported `gpu_frame`, and distinguish nonpresenting batches
+from completed display intervals in `frames.csv`.
+
+For CPU boundary timing without the per-draw GPU queries, set `PERF=1` in
+the launcher environment and leave `--profile-renderer` off. The report counts
+render batches, including nonpresenting drains, and measures the whole render
+function. `outside_render` is unclassified time between batches. The
+`command_close` and `command_execute` fields isolate CPU wall time in the API
+calls; they include driver work/waits and are not GPU execution durations.
+
+With a private replay, `--replay-observe-seconds 120` retains two minutes after
+the observed target instead of the default five seconds, subject to the same
+overall `--seconds` and resource guards. Target observation remains a navigation
+receipt; inspect images, errors and actual work before reporting a race result.
+The launch identity also records inherited `MS_NATIVE_*` modes and `PERF`.
+
 Process creation is reported separately from window readiness. The launcher
 checks the owned D3D12 window is visible, unminimized and intersects the desktop,
 writes `window.json`, then reports readiness for manual navigation. A hidden

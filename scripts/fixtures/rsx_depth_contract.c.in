@@ -1,0 +1,109 @@
+/* Production fallback creation and selection with authored COM adapters. */
+#include <stdio.h>
+#include <stdint.h>
+#include <string.h>
+#include <d3d12.h>
+#include <d3dcompiler.h>
+#include "rsx_d3d12_fallback.h"
+#include "rsx_d3d12_depth.h"
+typedef uint32_t u32;
+@DEPTH_KEYS@
+typedef struct { unsigned depth_slot, vertex_count, vb_byte_offset; } D3D12DrawRecord;
+static struct {
+    ID3D12Device* device;
+    ID3D12RootSignature* vp_root_sig;
+    ID3D12PipelineState *pipeline_state_vp, *pipeline_state_vp_color;
+    ID3D12PipelineState *pipeline_state_vp_no_depth, *pipeline_state_vp_color_no_depth;
+    int tex_ready;
+} s_d3d;
+static D3D12_GRAPHICS_PIPELINE_STATE_DESC captured[2];
+static ID3D12PipelineState objects[5];
+static unsigned captures, failures;
+static void check(int ok, const char* name) {
+    if (!ok) { fprintf(stderr, "FAIL %s\n", name); ++failures; }
+}
+static HRESULT WINAPI create(ID3D12Device* device,
+    const D3D12_GRAPHICS_PIPELINE_STATE_DESC* desc, REFIID iid, void** result) {
+    (void)device; (void)iid;
+    if (captures >= 2) return E_FAIL;
+    captured[captures] = *desc;
+    *result = &objects[captures++];
+    return S_OK;
+}
+static void* WINAPI blob_data(ID3DBlob* blob) { (void)blob; return &objects; }
+static SIZE_T WINAPI blob_size(ID3DBlob* blob) { (void)blob; return 16; }
+static D3D12_COMPARISON_FUNC rsx_cmp_d3d(uint32_t comparison) {
+    return (D3D12_COMPARISON_FUNC)(comparison + 1);
+}
+@SELECTOR@
+static ID3D12PipelineState* held_pso;
+static u32 held_count, held_first;
+static void gpu_pso_draw(ID3D12PipelineState* pso, u32 count, u32 first) {
+    held_pso = pso; held_count = count; held_first = first;
+}
+static void production_draw(D3D12DrawRecord* dr, ID3D12PipelineState* dpso,
+                            ID3D12PipelineState* vpso) {
+    ID3D12PipelineState* next_pso = vp_select_draw_pso(dr, dpso);
+    @DRAW@
+    check(held_pso == next_pso, "draw holds selected pipeline");
+    check(held_count == dr->vertex_count && held_first == dr->vb_byte_offset / 256,
+          "draw preserves upload coordinates");
+}
+static D3D12_GRAPHICS_PIPELINE_STATE_DESC dynamic(uint64_t ds_key) {
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC pd = {0};
+    @DYNAMIC@
+    return pd;
+}
+int main(void) {
+    ID3D12DeviceVtbl methods = {0}; methods.CreateGraphicsPipelineState = create;
+    ID3D12Device device = {&methods}; s_d3d.device = &device;
+    ID3D10BlobVtbl blob_methods = {0};
+    blob_methods.GetBufferPointer = blob_data; blob_methods.GetBufferSize = blob_size;
+    ID3DBlob blob = {&blob_methods}; ID3DBlob *vb = &blob, *pb = &blob;
+    D3D12_INPUT_ELEMENT_DESC il[16] = {0};
+    HRESULT hr;
+    @CREATION@
+    check(SUCCEEDED(hr) && captures == 2, "production creates both fallback variants");
+    check(captured[0].DepthStencilState.DepthEnable &&
+          captured[0].DepthStencilState.DepthWriteMask == D3D12_DEPTH_WRITE_MASK_ALL &&
+          captured[0].DSVFormat == DXGI_FORMAT_D24_UNORM_S8_UINT,
+          "attached fallback preserves original depth behavior");
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC expected = captured[0];
+    expected.DSVFormat = DXGI_FORMAT_UNKNOWN;
+    expected.DepthStencilState.DepthEnable = FALSE;
+    expected.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+    expected.DepthStencilState.StencilEnable = FALSE;
+    check(memcmp(&expected, &captured[1], sizeof expected) == 0,
+          "depthless fallback preserves shader and other descriptor state");
+    s_d3d.pipeline_state_vp = &objects[0];
+    s_d3d.pipeline_state_vp_color = &objects[1];
+    s_d3d.pipeline_state_vp_no_depth = &objects[2];
+    s_d3d.pipeline_state_vp_color_no_depth = &objects[3];
+    for (unsigned texture = 0; texture < 2; ++texture) {
+        s_d3d.tex_ready = (int)texture;
+        for (unsigned depth = 0; depth < 2; ++depth) {
+            D3D12DrawRecord record = {depth, 9, 1024};
+            ID3D12PipelineState* fallback = &objects[(depth ? 0 : 2) + !texture];
+            check(vp_select_draw_pso(&record, NULL) == fallback,
+                  "missing or failed guest FP selects attachment-compatible fallback");
+            check(vp_select_draw_pso(&record, &objects[4]) == &objects[4],
+                  "successfully compiled guest FP remains selected");
+            production_draw(&record, NULL, &objects[!texture]);
+            production_draw(&record, &objects[4], &objects[!texture]);
+        }
+    }
+    for (unsigned bits = 0; bits < 4; ++bits) {
+        uint64_t key = ((bits & 1) ? RSX_DSK_DEPTH_EN : 0) |
+            ((bits & 2) ? RSX_DSK_STENCIL_EN : 0) | RSX_DSK_WRITE;
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC state = dynamic(key);
+        check(!!state.DepthStencilState.DepthEnable == !!(bits & 1) &&
+              !!state.DepthStencilState.StencilEnable == !!(bits & 2) &&
+              state.DepthStencilState.DepthWriteMask == D3D12_DEPTH_WRITE_MASK_ALL &&
+              state.DSVFormat == (bits ? DXGI_FORMAT_D24_UNORM_S8_UINT : DXGI_FORMAT_UNKNOWN),
+              "dynamic guest PSO retains decoded depth stencil and write state");
+        check(!!rsx_d3d12_depth_required(0, 0, (uint32_t)key) == !!bits,
+              "dynamic depth tests agree with attachment admission");
+    }
+    printf("production depth descriptor/selection failures=%u\n", failures);
+    return failures ? 1 : 0;
+}
