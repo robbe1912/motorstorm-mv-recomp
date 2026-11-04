@@ -163,7 +163,9 @@ uint32_t g_spu_image_src_ea, g_spu_image_ls_start, g_spu_image_span;
 
 /* Additional curated-runtime link boundaries; this fixture performs no guest
  * memory aliasing, DMA watch queries or LV2 thread creation. */
+#ifndef FIXTURE_REAL_SPU_ALIAS
 uint32_t sysmem_spu_alias_fixup(uint32_t ea) { (void)ea; abort(); }
+#endif
 uint32_t spu_thread_register_phantom(void) { abort(); }
 unsigned int mainspin_watch_n(void) { abort(); }
 unsigned int mainspin_watch_at(int i) { (void)i; abort(); }

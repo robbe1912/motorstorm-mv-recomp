@@ -5,6 +5,7 @@
  * spu_<mnemonic> helpers the lifter emits, so interpreted and lifted code are
  * bit-identical. Uncommon opcodes trap loudly (never silently wrong).
  */
+#include "spu_native_owned.h"
 #include "spu_interp.h"
 #include "spu_helpers.h"
 #include "spu_native_leaf.h"
@@ -1060,8 +1061,14 @@ static uint32_t interp_run_until_impl(spu_context* ctx, uint32_t start_lsa, uint
             uint64_t used=native_try(ctx,stop_lsa,remaining,&last);
             if (used) { steps+=used; g_spu_interp_last_pc=last; continue; }
         }
-        int _rej = (!in_span && !in_kh && ctx->image_id >= 0 &&
-                    !s_forceint && spu_lifted_lookup(ctx, ctx->pc));
+        int owned_mode=spu_native_owned_policy(ctx);
+        int owned_rejoin=owned_mode && !in_kh && !local_budget && !stop_lsa &&
+            !g_spu_interp_budget && !_tr && !_cap && !_g1 && !s_kh &&
+            !native_instrumented && spu_native_owned_can_run(ctx,ctx->pc);
+        int _rej = owned_mode
+            ? (owned_rejoin && spu_lifted_lookup(ctx,ctx->pc))
+            : (!in_span && !in_kh && ctx->image_id >= 0 &&
+               !s_forceint && spu_lifted_lookup(ctx,ctx->pc));
         if (((stop_lsa && ctx->pc == (stop_lsa & SPU_LS_MASK)) || _rej)) {
             /* M21: a rejoin hands control back to the DISPATCHER -- re-arm the
              * trampoline like the SMC microstep exits do. Without this the
@@ -1336,7 +1343,8 @@ void spu_dispatch(spu_context* ctx, uint32_t target) {
     for (;;) {
         target &= 0x3FFFC;
         spu_lifted_fn fn = spu_lifted_lookup(ctx, target);
-        if (fn) {
+        if (fn && (!spu_native_owned_policy(ctx) ||
+                   spu_native_owned_can_run(ctx,target))) {
             ctx->pc = target;
             PS3_SPU_RESOLVED(ctx, fn);
             fn(ctx); return;

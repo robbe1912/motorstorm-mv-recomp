@@ -1405,3 +1405,48 @@ CSV termination can lose its tail, so it is not final-process coverage. Original
 menu assets are present, with dark boxes/shading defects still visible. Exact
 EXE/PDB, private-copy generated inputs, captures, resources and qualified profile
 are retained privately outside rolling runs. No shared generated input changed.
+
+
+## Owned native job bridge (issue 269)
+
+The default-off `SPU_NATIVE_OWNED_JOBS=1` bridge selectively follows fork
+combined `f9771b5c` (modular `2b16c4e8`, IRQ correction `720a0df5`, tests
+`80039698`, reference-fixture follow-up `725745cd`). It admits existing x86-compiled job bodies through the first
+resident-code owner already identified by original-US full-span fingerprints.
+Required `SPU_PM_INTERP=1` remains enabled; policy instructions and returns use
+the curated interpreter. No Complete Edition addresses or legacy signature ABI
+are imported.
+
+The curated port preserves its existing per-instruction interrupt delivery,
+IRET restoration, kernel services, statistics and unwind paths. Its adapter
+honors exact native return boundaries and preserves genuine queued dispatch.
+Policy continuations enter that adapter before legacy SMC microsteps; the
+legacy default path is unchanged. Invalid/missing/overlapping ownership,
+active IRQ state, enabled pending events, local/global budgets and observation
+retain reference execution. The option accepts only unset/0/1.
+
+[`check_spu_native_owned.py`](../scripts/check_spu_native_owned.py) compiles the
+actual runtime and authored guest programs. Windows and Linux cover native
+jobs, interpreted policy calls, real pending/queued IRQs, real MFC GET/tag
+completion and owner retirement, full GPR/LS/status/event/FP parity, ownership,
+observation and budget controls. Windows also exercises Clang musttail. Both
+run required-PM-mode cases; disabling the bridge must fail positive native-call
+admission. The actual pre-bridge runtime is an additional historical control.
+The reference removes host ownership while retaining the policy namespace;
+all guest instructions still execute through the real interpreter adapter.
+
+Five SHA-admitted original pre-RdDec states, the unchanged generated PVS entry,
+three controlled clocks and an independent full-architectural oracle passed
+15 cases/495 original instruction positions through policy continuation 0x2AC8
+with required PM interpretation. Host registries/pointers are reconstructed;
+this is not full-job or complete external-state replay. Prior shared-error
+controls establish the independent oracle's rejection behavior.
+
+The existing native-leaf checker links actual option-reader definitions and an
+aborting unexercised owned adapter for its disabled-mode tests. Its pinned
+historical source excludes only the new bridge; the original digest and 56
+full-state/IRQ/FP/budget comparisons remain unchanged. The separate real-runtime
+owned checker exercises the actual adapter. Default call/IRQ controls also pass.
+
+Normal-PLAY game admission, emitted native job execution and performance remain
+pending. This restoration does not establish a speedup or stable 30 FPS.

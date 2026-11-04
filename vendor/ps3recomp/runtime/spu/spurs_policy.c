@@ -22,6 +22,7 @@
  * base; spu_indirect_branch intercepts them (ctx->policy_mode) and HLEs the
  * kernel side: select = "no contention, keep running", exit = end of run.
  */
+#include "spu_native_owned.h"
 #include "spu_context.h"
 #include "spu_coherency.h"
 #include "../platform/win32_compat.h"
@@ -453,6 +454,8 @@ int spu_run_policy_module(spu_lifted_entry_fn entry, int image_id,
     unsigned long long _t0 = ps3_ms_now();
     unsigned _bails0 = g_spu_iret_bails, _staged0 = g_spu_jobmod_staged;
     spu_gread_arm();
+    if (spu_native_owned_enabled() && !getenv("SPU_PM_INTERP"))
+        ctx->pc=ctx->img_ls_base;
     const int pm_halted = spu_run_with_halt(entry, ctx);
     spu_gread_disarm();
     /* Round-8: sample the per-quantum ring every 512th quantum (capped 32

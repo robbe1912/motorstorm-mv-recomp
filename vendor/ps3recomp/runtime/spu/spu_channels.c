@@ -12,6 +12,7 @@
  * embed one), in a small lazily-populated registry.
  */
 
+#include "spu_native_owned.h"
 #include "spu_dma.h"
 #include "ps3emu/native_atomic_observer.h"
 void spu_halt(spu_context*); /* Policy trampolines can precede its definition. */
@@ -284,7 +285,9 @@ static void spu_pm_interp_trampoline(spu_context* ctx)
             return;
         }
     }
-    uint32_t r = spu_interp_run(ctx, pc);
+    const int owned_mode=spu_native_owned_policy(ctx);
+    const uint32_t stop=owned_mode ? ctx->drain_ret_pc : 0;
+    uint32_t r = owned_mode ? spu_interp_run_until(ctx,pc,stop) : spu_interp_run(ctx,pc);
     { extern int spu_irq_regs_maybe_restore(spu_context*);
       spu_irq_regs_maybe_restore(ctx); }   /* iret-bail contract (see
           spu_indirect_branch prologue): restore the handler's saved regs */
@@ -293,7 +296,12 @@ static void spu_pm_interp_trampoline(spu_context* ctx)
         return;
     }
     ctx->pc = r & SPU_LS_MASK;
-    g_spu_trampoline_fn = spu_pm_interp_trampoline;   /* stay interpreted */
+    if (owned_mode && stop && ctx->pc==(stop & SPU_LS_MASK)) {
+        if (g_spu_trampoline_fn==spu_indirect_branch) g_spu_trampoline_fn=0;
+        return;
+    }
+    if (!owned_mode || !g_spu_trampoline_fn)
+        g_spu_trampoline_fn = spu_pm_interp_trampoline;
 }
 
 /* SPU->PPU outbound-mailbox delivery hook. The SPU writing WrOutMbox /
@@ -499,6 +507,36 @@ void spu_stop(spu_context* ctx)
 
 /* Run a lifted SPU entry with a halt landing pad. Returns 1 if the job halted
  * (via spu_halt), 0 if it returned normally. */
+int spu_native_owned_enabled(void) {
+    static SPU_THREAD_LOCAL int mode=-1;
+    if (mode<0) {
+        const char* value=getenv("SPU_NATIVE_OWNED_JOBS");
+        if (!value || !strcmp(value,"0")) mode=0;
+        else if (!strcmp(value,"1")) mode=1;
+        else { fprintf(stderr,"invalid SPU_NATIVE_OWNED_JOBS: expected 0 or 1\n"); abort(); }
+    }
+    return mode;
+}
+int spu_native_owned_observed(void) {
+#if PS3_EXECUTION_OBSERVATION || PS3_ATOMIC_OBSERVATION
+    return 1; /* retain the original interpreter observation granularity */
+#else
+    static SPU_THREAD_LOCAL int observed=-1;
+    if (observed<0) {
+        static const char* const options[]={"SPU_TRACE_CALLS","SPU_BOUNDARY_DIR",
+            "SPU_CALLTRACE","SPU_PCHIST","SPU_LS_LOWREAD","SPU_LS_WATCH",
+            "SPU_SMC_WATCH","SPU_STEPCAP","SPU_TRACE","YDKJ_SPU_TRACE","YDKJ_CRI_GATE1TRACE"};
+        observed=0;
+        for (unsigned i=0;i<sizeof(options)/sizeof(options[0]);++i)
+            observed |= getenv(options[i])!=NULL;
+    }
+    return observed;
+#endif
+}
+void spu_native_owned_interpret(spu_context* ctx) {
+    spu_pm_interp_trampoline(ctx);
+}
+
 int spu_run_with_halt(void (*entry)(spu_context*), spu_context* ctx)
 {
     int halted = 0;
@@ -668,8 +706,9 @@ int spu_run_with_halt(void (*entry)(spu_context*), spu_context* ctx)
             ctx->pm_designed = 0;      /* consume: this pass's exit re-marks it */
             ctx->pm_win_touched = 0;   /* probe window resets per pass (R34) */
             g_spu_trampoline_fn = spu_pm_interp_trampoline;
-        } else
-        entry(ctx);
+        } else if (spu_native_owned_policy(ctx))
+            spu_indirect_branch(ctx);
+        else entry(ctx);
         { static int _e = 0;
           if (getenv("SPU_ARGWATCH") && _e < 8) { _e++;
               fprintf(stderr, "[argwatch] after entry(): img=%d pc=0x%05X "
@@ -3135,6 +3174,12 @@ void spu_indirect_branch(spu_context* ctx)
     /* The launched task owns the shared task-code region: resolve it there FIRST
      * so a co-resident task at the same LS base cannot shadow it. (resident_task
      * is 0 outside the region, so this only ever fires for genuine task code.) */
+    /* Retain the interpreted policy path before legacy SMC microsteps.
+     * Only an existing first-owner registry hit may enter native job code. */
+    if (spu_native_owned_policy(ctx) &&
+        (!spu_native_owned_can_run(ctx,ctx->pc) || !spu_lifted_lookup(ctx,ctx->pc))) {
+        spu_native_owned_interpret(ctx); return;
+    }
     spu_fn fn = NULL;
     int code_owner = 0;
     int span_rel = 0;
