@@ -289,3 +289,5 @@ walk remains explicit. #155 full critical-path cost, #27 stable30 and #137
 rendering remain open; the next native rewrite still requires original/native
 parity and matched gameplay timing. All memory, binaries, symbols and captures
 remain private; CI uploads authored-test logs/JSON only.
+
+For the default-off fingerprint-owned job experiment, pass `--native-owned-jobs` to [run.py](../scripts/run.py). The launcher clears inherited SPU flags, explicitly selects and records `SPU_NATIVE_OWNED_JOBS=1`, and retains required policy interpretation. Environment inheritance alone does not select this mode.

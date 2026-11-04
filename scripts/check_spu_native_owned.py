@@ -11,13 +11,34 @@ if os.name=='nt':
     os.environ.update(build_environment())
 ap=argparse.ArgumentParser();ap.add_argument('--output',type=Path);ap.add_argument('--historical-source-root',type=Path);args=ap.parse_args()
 out=(args.output or root/'temp/checks'/('native-owned-'+str(time.time_ns()))).resolve();out.mkdir(parents=True,exist_ok=False)
+# Execute real launcher sanitization/selection/record expressions without a game.
+import ast,copy
+from types import SimpleNamespace
+launch_path=root/'scripts/run.py';tree=ast.parse(launch_path.read_text())
+sanitize=[n for n in ast.walk(tree) if isinstance(n,ast.For) and ast.unparse(n.target)=='key' and ast.unparse(n.iter)=='list(env)']
+select=[n for n in ast.walk(tree) if isinstance(n,ast.If) and ast.unparse(n.test)=='args.native_owned_jobs']
+assert len(sanitize)==len(select)==1,'explicit launcher mode required'
+record=next(n.value for n in ast.walk(tree) if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='record' for t in n.targets))
+environment=next(v for k,v in zip(record.keys,record.values) if k.value=='environment')
+def launcher_case(selection,enabled):
+    scope={'env':{'SPU_NATIVE_OWNED_JOBS':'1'},'args':SimpleNamespace(native_owned_jobs=enabled)}
+    exec(compile(ast.Module(body=sanitize+selection,type_ignores=[]),'actual owned selection','exec'),scope)
+    recorded=eval(compile(ast.Expression(environment),'actual launch receipt','eval'),scope)
+    expected='1' if enabled else None
+    assert scope['env'].get('SPU_NATIVE_OWNED_JOBS')==expected,'owned jobs not selected'
+    assert recorded.get('SPU_NATIVE_OWNED_JOBS')==expected,'owned jobs not recorded'
+    return recorded
+launcher_receipt={'sha256':hashlib.sha256(launch_path.read_bytes()).hexdigest(),'default':launcher_case(select,False),'enabled':launcher_case(select,True)}
+try:launcher_case([],True)
+except AssertionError as error:assert str(error)=='owned jobs not selected'
+else:raise AssertionError('historical cleared flag accepted')
 names=['spu_channels.c','spu_drain.c','spu_lockstep.c','spu_coherency.c','spu_workload.c','spurs_policy.c','spurs_job.c','spu_tsp_weak.c','spu_vm_pagemap.c','spurs_policy_blob_weak.c','spu_interp.c','spu_float_simd.c','spu_task_lifecycle.c']
 fixture=root/'scripts/fixtures/spu_native_owned.c'
 report={'fixture_sha256':hashlib.sha256(fixture.read_bytes()).hexdigest(),
     'checker_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
     'lifter_sha256':hashlib.sha256((sdk/'tools/spu_lifter.py').read_bytes()).hexdigest(),
     'link_fixture_sha256':hashlib.sha256((fixture.parent/'spu_interpreter_handoff.c').read_bytes()).hexdigest(),
-    'variants':[]}
+    'variants':[],'launcher':launcher_receipt}
 def build(source,label,historical=False,observed=False):
     target=out/label;target.mkdir();spu=source/'runtime/spu'
     from spu_lifter import SPULifter,LiftedFunction

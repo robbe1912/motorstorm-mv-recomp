@@ -27,6 +27,7 @@ def main():
     ap.add_argument('--profile-renderer',action='store_true',help='CPU renderer phases and GPU timestamps, without broad asset/Havok probes; adds timing overhead')
     ap.add_argument('--replay-observe-seconds',type=int,default=5,help='Observe after the gated replay target (default 5; overall --seconds guard still applies)')
     ap.add_argument('--min-free-commit-gib',type=commit_reserve,default=12,help='Host free-commit reserve, 4..12 GiB (default 12); records budget and preserves other guards')
+    ap.add_argument('--native-owned-jobs',action='store_true',help='Opt in to fingerprint-owned native jobs while retaining policy interpretation')
     args=ap.parse_args()
     resource_policy=limits(args.min_free_commit_gib)
     if not 0<=args.capture_burst_frames<=120: raise SystemExit('Capture burst must be 0 (disabled) or 1..120 frames')
@@ -58,6 +59,7 @@ def main():
     for key in list(env):
         if key.startswith(('SPU_','FLOW_','RSX_','GCM_','PAD_','FPS_','PM_','CAP_HAVOK','CAP_BIKE','LOADTIME_','AUDIO_','TEX_')) or key in ('FP_PICK','SCREEN_AS_TEX','RD_WWSJOB_SHIM','VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG'):env.pop(key)
     env.update(PATH=str(c['ffmpeg']/'bin')+os.pathsep+env.get('PATH',''),PS3_VFS_ROOT=str(c['disc']),PS3_HDD0_ROOT=str(c['userdata']),PS3_SAVEDATA_ROOT=str(c['userdata']/'home/00000001/savedata'),AUDIO_MUTE='1',SPU_PM_INTERP='1',SPU_PROBE_INTERP='0',SCREEN_AS_TEX='0',PAD_FILE=str(out/'pad.txt'),FPS_STATS='1',FPS_STATS_CSV=str(out/'frames.csv'),RECOMP_TITLE='MotorStorm MV native')
+    if args.native_owned_jobs:env['SPU_NATIVE_OWNED_JOBS']='1'
     for key in ('SPU_WP','SPU_PM_GATE_TRACE','SPU_PM_RETIRE_GUARD','SPU_PM_PC_RESUME','SPU_PM_FLOW_RESUME','SPU_PM_YIELD_RESUME'):env[key]='0'
     env['PS3_KEYS_FILE']=str(c.get('keys',ROOT/'game/private_keys')/'keys.json')
     if args.trace_task_lifecycle:
@@ -94,7 +96,7 @@ def main():
     startup.wShowWindow=5  # SW_SHOW
     p=subprocess.Popen([str(exe),str(c['elf'])],cwd=ROOT,env=env,stdout=log,stderr=err,creationflags=subprocess.CREATE_NO_WINDOW,startupinfo=startup)
     proc=psutil.Process(p.pid); start=time.monotonic(); reason='guard tooling failure'; terminated=False
-    record={'pid':p.pid,'create_time':proc.create_time(),'exe':str(exe),'exe_sha256':hashlib.sha256(exe.read_bytes()).hexdigest(),'elf_sha256':hashlib.sha256(c['elf'].read_bytes()).hexdigest(),'output':str(out),'muted':True,'capture_menu':bool(args.capture_menu or args.menu_replay),'menu_replay':str(args.menu_replay.resolve()) if args.menu_replay else None,'capture_textures':args.capture_textures,'trace_video':args.trace_video,'capture_havok':args.capture_havok or args.capture_havok_only,'capture_bike':args.capture_bike,'loadtime_trace':args.loadtime_trace,'capture_profile':'broad' if args.capture_havok else 'havok-only' if args.capture_havok_only else 'none','environment':{k:v for k,v in env.items() if k in ('PS3_VFS_ROOT','PS3_HDD0_ROOT','PS3_SAVEDATA_ROOT','AUDIO_MUTE','PAD_FILE','CAP_HAVOK_DIR','CAP_BIKE_DIR','CAP_BIKE_ARM_FILE','LOADTIME_TRACE','LOADTIME_TRACE_FILE','SPU_PM_INTERP') or k.startswith(('SPU_PM_','TEX_','RSX_')) or k in ('VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG') or k=='SPU_WP'}}
+    record={'pid':p.pid,'create_time':proc.create_time(),'exe':str(exe),'exe_sha256':hashlib.sha256(exe.read_bytes()).hexdigest(),'elf_sha256':hashlib.sha256(c['elf'].read_bytes()).hexdigest(),'output':str(out),'muted':True,'capture_menu':bool(args.capture_menu or args.menu_replay),'menu_replay':str(args.menu_replay.resolve()) if args.menu_replay else None,'capture_textures':args.capture_textures,'trace_video':args.trace_video,'capture_havok':args.capture_havok or args.capture_havok_only,'capture_bike':args.capture_bike,'loadtime_trace':args.loadtime_trace,'capture_profile':'broad' if args.capture_havok else 'havok-only' if args.capture_havok_only else 'none','environment':{k:v for k,v in env.items() if k in ('PS3_VFS_ROOT','PS3_HDD0_ROOT','PS3_SAVEDATA_ROOT','AUDIO_MUTE','PAD_FILE','CAP_HAVOK_DIR','CAP_BIKE_DIR','CAP_BIKE_ARM_FILE','LOADTIME_TRACE','LOADTIME_TRACE_FILE','SPU_PM_INTERP','SPU_NATIVE_OWNED_JOBS') or k.startswith(('SPU_PM_','TEX_','RSX_')) or k in ('VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG') or k=='SPU_WP'}}
     record['resource_limits']=resource_policy
     record['resource_breach']=None
     record['launcher_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
