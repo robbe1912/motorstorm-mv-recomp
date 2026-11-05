@@ -28,6 +28,21 @@ budget on the drain. Raw diagnostic capture remains the backend default
 rendering, submission order or guest presentation. A presenting manifest still
 requires successful-Present/error checks and semantic image inspection.
 
+Use `--d3d12-debug default|0|1` to select optional DX12 API validation.
+Inherited `D3D12_DBG` is cleared: `default` retains the compiled policy, `0`
+disables validation, and `1` requests it. Assertions and ordinary device,
+queue and resource error handling remain active. The requested setting and
+actual environment are recorded; confirm the backend's startup result because
+a requested debug interface can be unavailable. Compare the same executable
+with matched options before attributing a frame-time difference to validation.
+
+`--profile-textures` enables existing aggregate texture setup/lookup/checksum/
+remainder timing and cache outcomes (`PERF=1`, `RSX_TEXTURE_PROFILE=1`). It
+records this environment without enabling broad asset captures or GPU queries.
+These counters add overhead; retain the same profiling setting on both sides
+of a comparison. Texture-call remainder includes several kinds of work and
+must not be reported as allocation time alone.
+
 For a renderer timing trial, add `--profile-renderer` to the normal launcher.
 It enables the existing CPU phase counters and GPU timestamp queries, retaining
 `rsx_phases.csv`, `[PERF]`/`[RSXPHASE]` logs and the exact timing environment in

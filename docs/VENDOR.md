@@ -1602,3 +1602,19 @@ stack profiling; it is not scanout, an unprofiled benchmark or controlled gain.
 No speedup or stable 30 FPS is established. The measured async SPU thread remains
 the next CPU-workload lead; per-thread CPU and inclusive stacks do not alone prove
 exclusive frame cost or a critical dependency.
+
+## Explicit DX12 validation control
+
+Contributor [PR 290](https://github.com/robbe1912/motorstorm-mv-recomp/pull/290)
+was ported author-preservingly to fork modular
+`6ef27cc449478afb16d4fd65346782afe7ad36d7`, then canonical combined
+`cf1027f302deaa990f9630f6e66f04441bb4f482`. It permits explicit `D3D12_DBG=0`
+in either build while retaining unset defaults, assertions and normal error
+handling. The fork and curated comments describe generic policy without an
+unmeasured per-title performance claim. The actual fork backend compiled with
+and without `NDEBUG`; this establishes compilation, not validation overhead.
+The launcher records explicit validation and existing texture-profile settings
+for the residency investigation in
+[issue 291](https://github.com/robbe1912/motorstorm-mv-recomp/issues/291).
+No toolkit PR was opened. Cache/lifetime changes and native performance
+acceptance remain separate work.

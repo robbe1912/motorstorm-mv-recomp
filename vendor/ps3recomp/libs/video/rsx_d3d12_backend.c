@@ -778,12 +778,9 @@ static int init_d3d12(u32 width, u32 height)
 {
     HRESULT hr;
 
-    /* Debug layer. D3D12_DBG=1 enables it and D3D12_DBG=0 disables it in any
-     * build. Unset keeps the build default: on without NDEBUG, off with it.
-     * The game build compiles with /UNDEBUG to keep assertions, so without an
-     * explicit 0 the validation layer is always on -- it wraps every D3D12
-     * call, and in a MotorStorm race the renderer thread spent most of its
-     * time inside it. Performance measurements should set D3D12_DBG=0. */
+    /* Keep assertion policy independent of optional API validation. An explicit
+     * D3D12_DBG=0 disables the layer in either build; unset retains the build
+     * default. Device/queue/resource errors remain checked normally. */
     int debug_layer;
     {
         const char* e = getenv("D3D12_DBG");
