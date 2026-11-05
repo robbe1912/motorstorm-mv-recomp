@@ -9,9 +9,9 @@ def commit_reserve(value):
     try:
         number = float(value)
     except (ValueError, TypeError):
-        raise argparse.ArgumentTypeError('Commit reserve must be finite and 4..12 GiB') from None
-    if not math.isfinite(number) or not 4 <= number <= 12:
-        raise argparse.ArgumentTypeError('Commit reserve must be finite and 4..12 GiB')
+        raise argparse.ArgumentTypeError('Commit reserve must be finite and 1..12 GiB') from None
+    if not math.isfinite(number) or not 1 <= number <= 12:
+        raise argparse.ArgumentTypeError('Commit reserve must be finite and 1..12 GiB')
     return number
 
 

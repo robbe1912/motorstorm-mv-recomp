@@ -38,17 +38,22 @@ def main():
         result=first_breach(changed,limits(6));assert result and result['metric']==metric
     boundary=dict(private=14*GIB,physical_available=4*GIB,commit_available=6*GIB,disk_available=8*GIB)
     assert first_breach(boundary,limits(6)) is None
-    for value in ['nan','inf','-inf','x','3.999','12.001',0,None]:
+    for value in ['nan','inf','-inf','x','0.999','12.001',0,None]:
         try: limits(value)
         except argparse.ArgumentTypeError: pass
         else: raise AssertionError(f'Accepted invalid reserve {value!r}')
-    for value in ['4','6','12','6.5']:
+    for value in ['1','1.5','3.999','4','6','12','6.5']:
         assert limits(value)['commit_available']['minimum']==int(float(value)*GIB)
     assert commit_reserve(12)==12
     # Actual resource-stop sample from the concurrent-host diagnostic run.
     observed=dict(private=1409699840,physical_available=4255191040,commit_available=8580882432,disk_available=117147635712)
     assert first_breach(observed,limits(4))['metric']=='physical_available'
     assert first_breach(observed,limits(4,1)) is None
+    commit_stop=dict(private=579960832,physical_available=4717740032,
+                     commit_available=4069134336,disk_available=113808642048)
+    assert first_breach(commit_stop,limits(4,1))['metric']=='commit_available'
+    assert first_breach(commit_stop,launcher_policy(
+        ['--min-free-commit-gib','1','--min-free-physical-gib','1'])) is None
     for value in ['nan','inf','-inf','x','0.999','4.001',0,None]:
         try: limits(4,value)
         except argparse.ArgumentTypeError: pass
@@ -65,7 +70,17 @@ def main():
     assert launcher_policy([])==limits()
     old=launcher_policy(['--min-free-commit-gib','4','--min-free-physical-gib','1'],old_wiring=True)
     assert first_breach(observed,old)['metric']=='physical_available', 'Old CLI omission did not reproduce the stop'
-    print('PASS: two historical admissions, default/explicit launcher policies, old omission RED, finite bounds and all four exact stop boundaries')
+    for reserve in (1,1.5,4,12):
+        policy=launcher_policy(['--min-free-commit-gib',str(reserve),
+                                '--min-free-physical-gib','1'])
+        assert policy==limits(reserve,1)
+        for metric,rule in policy.items():
+            kind,bound=next(iter(rule.items()))
+            at={key:next(iter(bounds.values())) for key,bounds in policy.items()}
+            assert first_breach(at,policy) is None
+            at[metric]=bound+(-1 if kind=='minimum' else 1)
+            assert first_breach(at,policy)['metric']==metric
+    print('PASS: three historical admissions, default/explicit launcher policies, old omission RED, finite bounds and all four exact stop boundaries')
 
 
 if __name__=='__main__': main()
