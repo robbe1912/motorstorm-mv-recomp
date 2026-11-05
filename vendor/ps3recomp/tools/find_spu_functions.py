@@ -109,7 +109,7 @@ def parse_elf(buf):
     return dict(entry=e_entry, phs=phs, shs=shs)
 
 
-def read_symbols(buf, shs):
+def read_symbols(buf, shs, load_bias=0):
     """Return [{addr, size, name}, ...] for every STT_FUNC symbol."""
     funcs = []
     for sh in shs:
@@ -129,6 +129,11 @@ def read_symbols(buf, shs):
                 struct.unpack_from(">IIIBBH", buf, off)
             if (st_info & 0xF) != STT_FUNC:
                 continue
+            if load_bias:
+                if st_shndx == 0:       # undefined symbols have no loaded address
+                    continue
+                if st_shndx < 0xFF00:   # section addresses move; SHN_ABS does not
+                    st_value += load_bias
             name = ""
             if st_name < len(strbuf):
                 e = strbuf.find(b"\x00", st_name)
@@ -579,7 +584,17 @@ def find_end(start, insns_by_addr, sorted_starts, code_end):
     return min(next_start, code_end)
 
 
-def detect_functions(buf, base_override=None, verbose=True, raw=False):
+def detect_functions(buf, base_override=None, verbose=True, raw=False, *, load_bias=0):
+    """Discover entries in their execution address space.
+
+    Apply ELF load bias before decoding relative branches and validating
+    absolute instruction/table targets, rather than shifting found bounds.
+    The historical raw/origin override remains a separate contract.
+    """
+    if not isinstance(load_bias, int) or isinstance(load_bias, bool) or load_bias & 3:
+        raise ValueError("ELF load bias must be an aligned integer")
+    if load_bias and (raw or base_override is not None):
+        raise ValueError("ELF load bias cannot be combined with a raw/origin override")
     if raw:
         # A raw local-store image: a SPURS job binary, which the title loads
         # from its own data files as a flat code+data blob rather than as an
@@ -596,6 +611,13 @@ def detect_functions(buf, base_override=None, verbose=True, raw=False):
     else:
         elf = parse_elf(buf)
         text_off, text_va, text_size = pick_text(elf["phs"])
+        if load_bias:
+            text_va += load_bias
+            if text_va < 0 or text_va + text_size > 0x40000:
+                raise ValueError("Biased executable segment lies outside SPU local store")
+            elf["entry"] += load_bias
+            for ph in elf["phs"]:
+                ph["vaddr"] += load_bias
     code = buf[text_off:text_off + text_size]
     base = base_override if base_override is not None else text_va
     insns = disassemble_spu(code, base_addr=base)
@@ -604,7 +626,7 @@ def detect_functions(buf, base_override=None, verbose=True, raw=False):
     code_end   = base + len(code)
 
     # ---- seeds ----
-    syms = read_symbols(buf, elf["shs"]) if elf["shs"] else []
+    syms = read_symbols(buf, elf["shs"], load_bias) if elf["shs"] else []
     seed_starts = set()
     sized_funcs = []   # (start, end) from symbols with non-zero size
 

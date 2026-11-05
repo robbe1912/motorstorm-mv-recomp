@@ -1095,7 +1095,7 @@ def main() -> None:
     p.add_argument("--header-name", default="spu_recomp.h")
     p.add_argument("--source-name", default="spu_recomp.c")
     p.add_argument("--base", type=lambda x: int(x, 0), default=0,
-                   help="Base local-store address")
+                   help="Raw input LS origin; additive ELF load bias with --auto-functions")
     p.add_argument("--offset", type=lambda x: int(x, 0), default=0)
     p.add_argument("--length", type=lambda x: int(x, 0), default=0)
     p.add_argument("--functions", metavar="FILE",
@@ -1150,20 +1150,9 @@ def main() -> None:
         from find_spu_functions import detect_functions, parse_elf, pick_text
         with open(args.auto_functions, "rb") as f:
             elf_buf = f.read()
-        funcs, (text_off, base, size) = detect_functions(elf_buf)
+        funcs, (text_off, base, size) = detect_functions(elf_buf, load_bias=args.base)
         data = elf_buf[text_off:text_off + size]
-        if args.base != 0:
-            # Base override for auto-detected images (per-base codec lifts):
-            # --base B means "module vaddr 0 lands at LS B" -- the guest
-            # branches to B+e_entry and every label, link and registration
-            # address must land at B+module_off. disassemble_spu() takes the
-            # address of data[0] (= the text segment's p_vaddr), so shift the
-            # auto-detected bounds by B and the disassembly origin by p_vaddr+B.
-            # lqa/stqa immediates stay verbatim (module absolutes): the staged
-            # bytes carry them unpatched and the interpreter serves them raw,
-            # so the lift must too.
-            funcs = [(s + args.base, e + args.base) for (s, e) in funcs]
-            base = base + args.base
+        # Discovery already uses the execution address space.
         bounds = funcs
     else:
         with open(args.input, "rb") as f:

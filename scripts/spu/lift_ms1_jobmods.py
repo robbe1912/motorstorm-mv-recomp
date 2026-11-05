@@ -209,11 +209,11 @@ def main():
         if code_end:
             seeds = {s for s in seeds if s < code_end}
 
-        # Wrap MODULE-RELATIVE (PT_LOAD vaddr 0): the lifter shifts
-        # auto-detected bounds by --base (contract: "module vaddr 0 lands at
-        # LS B"), so an absolute-vaddr wrap here would double-shift every
-        # detected function (observed: 2 of 139 bounds kept -- the manual
-        # seeds only -- the rest died at the code-end cap). e_entry is
+        # Wrap MODULE-RELATIVE (PT_LOAD vaddr 0): --base is an additive ELF
+        # load bias, applied before discovery. Relative branches, entry and
+        # symbols use execution addresses; absolute instruction/table values
+        # remain unchanged. An absolute-vaddr wrap plus this bias would still
+        # place the image twice as high. e_entry is
         # likewise wrap-space: the image start (LS link) sits at -0x30 here
         # because the wrap payload starts at image+0x30, so an entryOff
         # passed raw lands 0x30 high and the true CRT entry never lifts

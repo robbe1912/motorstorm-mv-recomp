@@ -38,6 +38,8 @@ jobs:
         run: python scripts/check_spu_shufb_dispatch.py --require-simd-code
       - name: Exact native SPU call return boundaries
         run: python scripts/check_spu_call_boundaries.py
+      - name: Loaded SPU continuation discovery and native execution
+        run: python scripts/check_spu_load_bias.py
       - name: Owned native SPU jobs with interpreted policy
         run: python scripts/check_spu_native_owned.py
       - name: Resident SPU compiled lookup ownership

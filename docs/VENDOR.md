@@ -1536,3 +1536,45 @@ means (rounding bound 0.0000945 seconds), about 3.15 API Presents/s, intervals
 speedup. Graphics defects and the stable-30 goal remain open. Protected hashed
 packets retain identities, captures, guards and both profiles outside rolling
 run retention; no proprietary bytes are public.
+
+
+## SPU discovery in execution coordinates (issue 283)
+
+This selective integration comes from own-fork modular `9351f7060ade0c68b9cb31818e32f840db0f2e14`
+and canonical combined `5c99615192221edb2b04bc01e5d20da147bf978f`.
+It preserves the curated emitter, runtime, image ownership and required policy
+interpretation. No upstream PR or title-specific toolkit exception is involved.
+
+The ELF load bias now applies before decoding and discovering functions.
+Relative branches, executable-segment addresses, ELF entry and section-defined
+function symbols use the execution address space. Absolute instruction/table
+values and absolute symbols retain their encoded LS addresses; undefined symbols
+are not loaded entries. Raw/origin overrides and zero-bias behavior remain
+separate. Moving discovered bounds afterward could discard valid absolute
+continuations or bias them twice, leaving interpreted fallbacks.
+
+`check_spu_load_bias.py` uses authored ELF inputs for immediate continuations,
+relative/absolute branches, nonzero segment origins, sized/absolute/undefined
+symbols, separate data pointer tables, raw compatibility and rejected invalid
+options. Actual previous curated production successfully emits its source but
+omits the authored continuation: the retained historical RED. Three real emitted
+plain/interrupt-disable/interrupt-enable branches execute the restored native
+entry through the production dispatcher. An independent expected GPR/LS/PC/
+status/IRQ/FP state and a registry-isolated interpreter run agree. Existing
+call-boundary controls retain actual pending-IRQ/IRET coverage; this authored
+fixture does not claim live DMA/job or whole-game equivalence.
+
+Focused fork discovery controls passed Windows, Linux and macOS; owned-job and
+call-boundary workflows also passed. Two unchanged broader harness dependency
+failures remain tracked in issue 284 rather than hidden or counted as passes.
+The curated Windows emitted-code fixture passes with its real diagnostic/thread
+support sources.
+
+Private original-US regeneration retains all ten module identities, link bases,
+entries and staged fingerprints, with zero unsupported instructions reported.
+It restores 68 PVS entries (including the observed missing continuation),
+89 vehicle entries and additional entries in the other modules. Former biased
+seeds are removed; raw function counts are not a performance metric. Original
+states, native observation and performance of the regenerated candidate still
+require validation. This does not establish a speedup, stable 30 FPS or graphics
+acceptance.
