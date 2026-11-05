@@ -114,19 +114,21 @@ typedef struct ppu_context {
 struct ppu_nonlocal_jump { ppu_context* ctx; uint32_t pc; uint64_t sp; };
 #endif
 
-# Memory access helpers (provided by runtime).
-#
-# ppu_fastmem.h declares the out-of-line slow paths AND defines inline fast
-# paths for them (F-tr-08): the diagnostics the out-of-line family carries
-# -- read/write/value watches, PT tracking, hotmaps -- cost more per access
-# than the access itself, and lifted code makes millions of accesses per
-# frame. Every vm_read / vm_write the lifter emits goes through the inline
-# bodies, which delegate 1:1 to the slow paths whenever a diagnostic knob is
-# armed, so behavior with any knob set is byte-identical to the old path.
-#
-# The renames below redirect the names declared here (and called by the
-# lifted code) to those bodies. The one TU that DEFINES the out-of-line
-# family (runtime/ppu/ppu_loader.cpp) defines PPU_FASTMEM_NO_RENAME first.
+/*
+Memory access helpers (provided by runtime).
+
+ppu_fastmem.h declares the out-of-line slow paths AND defines inline fast
+paths for them (F-tr-08): the diagnostics the out-of-line family carries
+-- read/write/value watches, PT tracking, hotmaps -- cost more per access
+than the access itself, and lifted code makes millions of accesses per
+frame. Every vm_read / vm_write the lifter emits goes through the inline
+bodies, which delegate 1:1 to the slow paths whenever a diagnostic knob is
+armed, so behavior with any knob set is byte-identical to the old path.
+
+The renames below redirect the names declared here (and called by the
+lifted code) to those bodies. The one TU that DEFINES the out-of-line
+family (runtime/ppu/ppu_loader.cpp) defines PPU_FASTMEM_NO_RENAME first.
+ */
 #include "ps3emu/ppu_fastmem.h"
 #ifndef PPU_FASTMEM_NO_RENAME
 #  define vm_read8   ppu_fm_read8
@@ -3732,8 +3734,10 @@ def discover_jump_tables(all_insns, read_u32, toc, text_lo, text_hi, func_starts
         if cb:
             tables[all_insns[i].addr] = cb
             continue
-        # the indexed table load
-        lwzx = next((w for w in reversed(win) if w.mnemonic == 'lwzx'), None)
+        # the indexed table load: `lwzx`, or `lwax` (the sign-extending load
+        # some compilers use for signed offset tables; the entries are treated
+        # as signed below either way)
+        lwzx = next((w for w in reversed(win) if w.mnemonic in ('lwzx', 'lwax')), None)
         # 64-bit offset-table idiom emits `sldi rIdx,idx,2; add rT,rIdx,rBase;
         # lwz rEnt,0(rT)` instead of `lwzx rEnt,rIdx,rBase` (gcc -O2 PPC64).
         # Synthesize the equivalent lwzx operands (rEnt,rA,rB) so the base/offset
@@ -3835,13 +3839,59 @@ def discover_jump_tables(all_insns, read_u32, toc, text_lo, text_hi, func_starts
             # Widening is safe for the cases that already worked: the walk stops
             # at the NEAREST definition of `cand`, so when one exists inside the
             # window the result is unchanged.
-            for w in reversed(win_cand):
+            # Only definitions BEFORE the table load count: `add r6, r0, r6`
+            # right after `lwzx r0, r9, r6` reuses the base register for the
+            # case address and is not the base's definition.
+            for w in reversed([x for x in win_cand if x.addr < lwzx.addr]):
                 a = [x.strip() for x in w.operands.split(',')]
                 if not a or a[0] != cand or w.mnemonic.startswith(('st', 'lf')):
                     continue                    # not a GPR def: a store READS it; ppu_disasm names lfs/lfd's FPR target rN
                 if w.mnemonic in ('lwz', 'ld') and len(a) == 2 and '(r2)' in a[1]:
                     disp = mem_disp(a[1]); r_base = cand
                     base_is_ld = (w.mnemonic == 'ld')
+                elif w.mnemonic in ('lwz', 'ld') and len(a) == 2 and '(r1)' in a[1]:
+                    # SPILLED base: the table address was loaded earlier, stored
+                    # to a stack slot and reloaded at the dispatch, and the base
+                    # register is then reused for the case address:
+                    #   lwz r30,d1(r2); lwz r5,d2(r30); std r5,s(r1) ...
+                    #   ld r6,s(r1); lwzx r0,r9,r6; add r6,r0,r6; mtctr r6; bctr
+                    # A dispatcher inside a loop under register pressure does
+                    # this (MotorStorm's hkExportImpulsesAndRhs solver switch).
+                    # The reload read as a non-TOC definition, the dispatcher was
+                    # dropped and its bctr lifted to an indirect tail call that
+                    # skipped the epilogue. Follow the slot to the nearest
+                    # preceding store of it (no frame change in between), then
+                    # the stored register to a one- or two-level TOC load.
+                    _slot, _src = mem_disp(a[1]), None
+                    for w2 in reversed([x for x in win_cand if x.addr < w.addr]):
+                        b = [x.strip() for x in w2.operands.split(',')]
+                        if w2.mnemonic in ('std', 'stw') and len(b) == 2 and '(r1)' in b[1] \
+                                and mem_disp(b[1]) == _slot:
+                            _src = (b[0], w2.addr)
+                            break
+                        if b and b[0] == 'r1' and w2.mnemonic not in ('std', 'stw'):
+                            break               # the frame moved: another slot
+                    if _src is not None:
+                        for w2 in reversed([x for x in win_cand if x.addr < _src[1]]):
+                            b = [x.strip() for x in w2.operands.split(',')]
+                            if not b or b[0] != _src[0] or w2.mnemonic.startswith(('st', 'lf')):
+                                continue
+                            if w2.mnemonic in ('lwz', 'ld') and len(b) == 2 and '(r2)' in b[1]:
+                                disp = mem_disp(b[1]); r_base = cand
+                                base_is_ld = (w2.mnemonic == 'ld')
+                            elif w2.mnemonic in ('lwz', 'ld') and len(b) == 2 and '(' in b[1] \
+                                    and '(r1)' not in b[1]:
+                                _mid = b[1][b[1].index('(') + 1:-1].strip()
+                                for w3 in reversed([x for x in win_cand if x.addr < w2.addr]):
+                                    c = [x.strip() for x in w3.operands.split(',')]
+                                    if not c or c[0] != _mid or w3.mnemonic.startswith(('st', 'lf')):
+                                        continue
+                                    if w3.mnemonic in ('lwz', 'ld') and len(c) == 2 and '(r2)' in c[1]:
+                                        disp = mem_disp(c[1]); r_base = cand
+                                        base_is_ld = (w3.mnemonic == 'ld')
+                                        disp2 = mem_disp(b[1]); disp2_is_ld = (w2.mnemonic == 'ld')
+                                    break       # nearest definition wins, TOC load or not
+                            break               # nearest definition wins, TOC load or not
                 elif w.mnemonic in ('lwz', 'ld') and len(a) == 2 and '(' in a[1]:
                     # TWO-LEVEL base: `lwz r30, d1(r2); lwz r11, d2(r30)`. The
                     # table address is not in the TOC itself but in a global the

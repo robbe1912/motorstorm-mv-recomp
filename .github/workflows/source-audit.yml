@@ -73,6 +73,8 @@ jobs:
           python scripts/check_rsx_triangle_capacity.py
       - name: Actual indexed strip restart regression
         run: python scripts/check_rsx_restart.py
+      - name: Lifter jump tables with spilled bases and lwax
+        run: python scripts/check_ppu_spilled_jumptables.py
       - name: Recorded PSO ownership and checked teardown
         run: python scripts/check_rsx_pso_retention.py
       - name: Bounded texture and pipeline working sets
@@ -277,6 +279,8 @@ jobs:
           python scripts/check_rsx_triangle_capacity.py
       - name: Actual indexed strip restart regression
         run: python scripts/check_rsx_restart.py
+      - name: Lifter jump tables with spilled bases and lwax
+        run: python scripts/check_ppu_spilled_jumptables.py
       - name: Actual indexed vertex reuse regression
         run: python scripts/check_rsx_indexed_strip.py
       - name: Named SPU extraction identities and rejections
