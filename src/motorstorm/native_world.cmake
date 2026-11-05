@@ -129,6 +129,12 @@ function(motorstorm_configure_world_transforms target)
             set_source_files_properties("${math_source}" PROPERTIES COMPILE_OPTIONS "-O2;-fexceptions;-mavx2;-mfma;-ffp-contract=off;-frounding-math")
         endforeach()
     endif()
+    if(PORT_NATIVE_PCM_CUBIC AND MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        # clang-cl forwards /clang flags after driver /O flags. Override the
+        # checked build's forwarded O1 for these two handwritten DSP units.
+        set_property(SOURCE "${pcm_adapter}" "${MOTORSTORM_NATIVE_SOURCE_DIR}/pcm_cubic.cpp"
+            APPEND PROPERTY COMPILE_OPTIONS "/clang:-O2")
+    endif()
     # This scan needs baseline x86-64 only. Its comparisons preserve caller FP
     # state and must retain strict semantics independently of other math units.
     if(PORT_NATIVE_PARTICLE_THRESHOLDS)
