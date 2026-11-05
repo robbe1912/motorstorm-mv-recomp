@@ -24,6 +24,7 @@ def main():
     ap.add_argument('--capture-burst-frames',type=int,default=0,help='Opt-in once-only consecutive presented-frame burst, 1..120; arm via run-local capture-burst.arm')
     ap.add_argument('--capture-on-pad',type=lambda value:int(value,0),default=0,help='Arm capture burst in native code when PAD_FILE consumes a matching button mask')
     ap.add_argument('--menu-replay',type=Path,help='Private observed-screen profile; normal PAD_FILE input, not a scene jump')
+    ap.add_argument('--native-pcm-cubic',choices=('0','shadow','1'),default='0',help='Explicit verified PCM DSP mode; requires matching native-enabled build')
     ap.add_argument('--profile-renderer',action='store_true',help='CPU renderer phases and GPU timestamps, without broad asset/Havok probes; adds timing overhead')
     ap.add_argument('--replay-observe-seconds',type=int,default=5,help='Observe after the gated replay target (default 5; overall --seconds guard still applies)')
     ap.add_argument('--min-free-commit-gib',type=commit_reserve,default=12,help='Host free-commit reserve, 1..12 GiB (default 12); records budget and preserves other guards')
@@ -48,6 +49,10 @@ def main():
     if args.menu_replay and hashlib.sha256(c['elf'].read_bytes()).hexdigest()!=replay_profile['elf_sha256']:
         raise SystemExit('Menu replay target differs from configured ELF; no process launched')
     if not exe.is_file(): raise SystemExit('Build first: python scripts/project.py build')
+    if args.native_pcm_cubic != '0':
+        identity=json.loads((ROOT/'build/native/build_identity.json').read_text())
+        if not identity.get('native_pcm_cubic') or identity.get('sha256') != hashlib.sha256(exe.read_bytes()).hexdigest():
+            raise SystemExit('PCM DSP mode requires a matching --native-pcm-cubic build; no process launched')
     # User-approved storage policy, before any native process or PAD replay.
     # Referenced/failed/evidence runs and the supplied profile are protected.
     from prune_runs import automatic
@@ -56,6 +61,7 @@ def main():
         raise SystemExit('Insufficient free disk space: need at least 16 GiB before native startup')
     out=ROOT/'temp/runs'/datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ'); out.mkdir(parents=True)
     env=dict(os.environ)
+    env['MS_NATIVE_PCM_CUBIC']=args.native_pcm_cubic
     # Clear inherited diagnostics before applying the documented booting configuration.
     for key in list(env):
         if key.startswith(('SPU_','FLOW_','RSX_','GCM_','PAD_','FPS_','PM_','CAP_HAVOK','CAP_BIKE','LOADTIME_','AUDIO_','TEX_')) or key in ('FP_PICK','SCREEN_AS_TEX','RD_WWSJOB_SHIM','VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG'):env.pop(key)

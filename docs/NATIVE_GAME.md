@@ -1,5 +1,38 @@
 # Native game operations
 
+## PCM cubic DSP prototype (#288)
+
+The [typed PCM resampler](../src/motorstorm/pcm_cubic.h) accepts signed PCM16,
+sample positions, phase advances and an output span. Its four-lane x86 kernel
+uses truncate/flush arithmetic with the admitted fused operation boundaries;
+it restores the caller's FP controls and flags. It contains no guest context,
+registers, local store, channel operations or completion markers.
+
+The [game adapter](../src/motorstorm/pcm_cubic_adapter.cpp) replaces 63 of the
+64 original iterations (1,008 samples) and retains the final original iteration
+to preserve scratch lanes, stack restoration and the genuine return. The
+verified binding checks the original ELF/generated body and live code/table
+bytes. Runtime admission additionally checks CPU/OS support, private LS,
+registered image/first containing owner, IRQ/event/DMA state, observer and
+interpreter exclusions, constants, bounds and aliases. Unsupported inputs run
+the original operation once. Invalid mode or shadow mismatch aborts visibly.
+
+Build with `--native-pcm-cubic`; run with `--native-pcm-cubic 0`, `shadow` or `1`.
+Both build and runtime default to reference execution. The launcher rejects
+active mode without a matching native-enabled executable identity. Reference,
+shadow and native use the same binary; inherited PCM mode cannot select a run.
+
+The independent Fraction oracle checks 22 authored cases across 16 caller FP
+configurations, transactional rejection and an unfused-arithmetic mutant.
+Private original-loop comparisons also exercise actual scalar/vector generated
+code, the interpreter, and the production reference/shadow/native adapter.
+Those authored inputs establish bounded outputs/state/FP agreement, not real
+job admission or complete IRQ/DMA/external-state equivalence. Real gameplay
+shadow/admission, captured inputs, controlled operation timing and matched
+end-to-end measurements remain pending. No speedup or stable 30 FPS is claimed.
+This follows the pinned Mac port's measured audio specialization and retained
+reference/guarded arithmetic practice, without importing its title ABI.
+
 ## Particle threshold scan (#204, acceptance pending)
 
 The next bounded operation under [#155](https://github.com/robbe1912/motorstorm-mv-recomp/issues/155)

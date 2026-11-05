@@ -37,6 +37,13 @@ VISIBILITY = Contract(PRODUCTION.elf_sha256,
     context='spu_context', directory='spu/jobmod_056ac0eea1a6_e12270',
     matcher='game_visibility_code_matches',
     windows=((0xf7b320, 0x83a0, 596), (0xf893f0, 0x16470, 16)))
+PCM_CUBIC = Contract(PRODUCTION.elf_sha256,
+    'b05fee5d4213b0ff372550313a07ad170788714135bbe979fbecfa86f4999d4f',
+    'spu_0000_at_00EDE500_spu_func_00009D5C',
+    'game_original_pcm_cubic', 'motorstorm_pcm_cubic',
+    context='spu_context', directory='spu/spu_0000_at_00EDE500',
+    matcher='game_pcm_cubic_code_matches',
+    windows=((0xee535c, 0x9d5c, 1140), (0xeeafc0, 0xf9c0, 368)))
 
 
 def digest(path):
@@ -136,7 +143,7 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
     if any(elf_sha != c.elf_sha256 for c in selected):
         raise ValueError('Unsupported original ELF identity for native game binding')
     known = tuple(known_contracts) if known_contracts is not None else (
-        (PRODUCTION, JOB_WAIT, VISIBILITY) if elf_sha == PRODUCTION.elf_sha256 else selected)
+        (PRODUCTION, JOB_WAIT, VISIBILITY, PCM_CUBIC) if elf_sha == PRODUCTION.elf_sha256 else selected)
     known = tuple(dict.fromkeys((*known, *selected)))
     directories = {Path(entry.directory) for entry in known}
     if any(path.is_absolute() or '..' in path.parts for path in directories):
@@ -219,8 +226,9 @@ def main():
     parser.add_argument('--without-world-transforms', action='store_true')
     parser.add_argument('--job-wait', action='store_true')
     parser.add_argument('--visibility', action='store_true')
+    parser.add_argument('--pcm-cubic', action='store_true')
     args = parser.parse_args()
-    selected = ([] if args.without_world_transforms else [PRODUCTION]) + ([JOB_WAIT] if args.job_wait else []) + ([VISIBILITY] if args.visibility else [])
+    selected = ([] if args.without_world_transforms else [PRODUCTION]) + ([JOB_WAIT] if args.job_wait else []) + ([VISIBILITY] if args.visibility else []) + ([PCM_CUBIC] if args.pcm_cubic else [])
     result = prepare(args.generated, args.output, args.elf, args.manifest, contracts=selected)
     print('Verified native game bindings:', ', '.join(b['symbol'] for b in result['bindings']))
 
