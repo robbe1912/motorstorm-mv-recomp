@@ -28,6 +28,11 @@ jobs:
         run: python scripts/check_spu_decrementer.py
       - name: Actual texture lookup and phase accounting
         run: python scripts/check_rsx_texture_profile.py
+      - name: Persistent texture lookup, byte budget and complete fingerprints
+        run: |
+          python scripts/check_rsx_texture_retention.py
+          python scripts/check_rsx_texture_budget.py
+          python scripts/check_rsx_texture_fingerprint.py
       - name: Full render-batch accounting and submission errors
         run: python scripts/check_rsx_perf_accounting.py
       - name: Exact SPU fingerprint cache and worker cleanup
@@ -301,6 +306,11 @@ jobs:
         run: python scripts/check_spu_decrementer.py
       - name: Actual texture lookup and phase accounting
         run: python scripts/check_rsx_texture_profile.py
+      - name: Persistent texture lookup, byte budget and complete fingerprints
+        run: |
+          python scripts/check_rsx_texture_retention.py
+          python scripts/check_rsx_texture_budget.py
+          python scripts/check_rsx_texture_fingerprint.py
       - name: Full render-batch accounting and submission errors
         run: python scripts/check_rsx_perf_accounting.py
       - name: Exact SPU fingerprint cache and worker cleanup

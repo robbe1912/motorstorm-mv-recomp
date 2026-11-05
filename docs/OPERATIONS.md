@@ -306,3 +306,21 @@ parity and matched gameplay timing. All memory, binaries, symbols and captures
 remain private; CI uploads authored-test logs/JSON only.
 
 For the default-off fingerprint-owned job experiment, pass `--native-owned-jobs` to [run.py](../scripts/run.py). The launcher clears inherited SPU flags, explicitly selects and records `SPU_NATIVE_OWNED_JOBS=1`, and retains required policy interpretation. Environment inheritance alone does not select this mode.
+
+### Persistent DX12 texture cache
+
+`--texture-retention 0|1` explicitly selects the reference or bounded persistent
+cache (default `0`); `--texture-cache-mib 0..4096` sets its allocation target
+(default `512`). The launcher clears inherited selections and records both.
+The target counts owned default texture and upload allocation footprints, not
+all driver memory or physical VRAM residency. Indispensable live batch pins may
+exceed it; `[TEXRESIDENCY]` reports this overage with `--profile-textures`.
+A zero target retains required batch resources until genuine GPU retirement.
+
+Use identical cache targets, validation and profiling settings for comparisons.
+Retention validates every uploaded face with full XXH3; the reference retains
+its sparse source checksum. Complete hashing has a measurable cost. Verify the
+actual selected mode, allocations, evictions and bytes in `[TEXRESIDENCY]`, plus
+the exact executable identity; a requested option is not execution evidence.
+The new cache remains experimental pending native race observation and matched
+measurements. Use the existing normal menu route and resource/ownership guards.

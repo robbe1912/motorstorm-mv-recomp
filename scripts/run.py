@@ -27,12 +27,15 @@ def main():
     ap.add_argument('--native-pcm-cubic',choices=('0','shadow','1'),default='0',help='Explicit verified PCM DSP mode; requires matching native-enabled build')
     ap.add_argument('--d3d12-debug',choices=('default','0','1'),default='default',help='Explicit API validation selection; default preserves build policy and assertions stay enabled')
     ap.add_argument('--profile-textures',action='store_true',help='Existing aggregate DX12 texture phases and cache outcomes; adds timing overhead')
+    ap.add_argument('--texture-retention',choices=('0','1'),default='0',help='Explicit reference or bounded persistent DX12 texture cache')
+    ap.add_argument('--texture-cache-mib',type=int,default=512,help='Default+upload allocation target, 0..4096 MiB; live batch pins may exceed it')
     ap.add_argument('--profile-renderer',action='store_true',help='CPU renderer phases and GPU timestamps, without broad asset/Havok probes; adds timing overhead')
     ap.add_argument('--replay-observe-seconds',type=int,default=5,help='Observe after the gated replay target (default 5; overall --seconds guard still applies)')
     ap.add_argument('--min-free-commit-gib',type=commit_reserve,default=12,help='Host free-commit reserve, 1..12 GiB (default 12); records budget and preserves other guards')
     ap.add_argument('--native-owned-jobs',action='store_true',help='Opt in to fingerprint-owned native jobs while retaining policy interpretation')
     ap.add_argument('--min-free-physical-gib',type=physical_reserve,default=4,help='Host free physical RAM reserve, 1..4 GiB (default 4); lower explicitly for concurrent host work')
     args=ap.parse_args()
+    if not 0<=args.texture_cache_mib<=4096: ap.error("Texture cache target must be 0..4096 MiB")
     resource_policy=limits(args.min_free_commit_gib, args.min_free_physical_gib)
     if not 0<=args.capture_burst_frames<=120: raise SystemExit('Capture burst must be 0 (disabled) or 1..120 frames')
     if not 0<=args.capture_on_pad<=0xffff: raise SystemExit('Capture event mask must be 0 (disabled) or 1..0xffff')
@@ -65,6 +68,7 @@ def main():
     env=dict(os.environ)
     env['MS_NATIVE_PCM_CUBIC']=args.native_pcm_cubic
     env.pop('D3D12_DBG',None)
+    env.pop('PERF',None)
     if args.d3d12_debug != 'default':env['D3D12_DBG']=args.d3d12_debug
     # Clear inherited diagnostics before applying the documented booting configuration.
     for key in list(env):
@@ -94,6 +98,7 @@ def main():
         env.update(PERF='1',RSX_PHASE_STATS='1',RSX_PHASE_CSV=str(out/'rsx_phases.csv'))
     if args.profile_textures:
         env.update(PERF='1',RSX_TEXTURE_PROFILE='1')
+    env.update(RSX_TEXTURE_RETENTION=args.texture_retention,RSX_TEXTURE_CACHE_MIB=str(args.texture_cache_mib))
     (out/'pad.txt').write_text('0\n')
     if args.capture_menu or args.menu_replay:
         (out/'rsx').mkdir()
@@ -120,7 +125,7 @@ def main():
     record['profile_textures']=args.profile_textures
     record['d3d12_debug']=args.d3d12_debug
     record['replay_observe_seconds']=args.replay_observe_seconds
-    record['environment'].update({k:v for k,v in env.items() if k in ('PERF','D3D12_DBG') or k.startswith('MS_NATIVE_')})
+    record['environment'].update({k:v for k,v in env.items() if k in ('PERF','D3D12_DBG','RSX_TEXTURE_RETENTION','RSX_TEXTURE_CACHE_MIB') or k.startswith('MS_NATIVE_')})
     record['environment'].update({k:env[k] for k in ('SPU_TASK_LIFECYCLE_TRACE','SPU_TASK_LIFECYCLE_IMAGE') if k in env})
     (out/'launch.json').write_text(json.dumps(record,indent=2)); print('Owned native PID',p.pid,'output',out,flush=True)
     window_ready=False

@@ -1618,3 +1618,45 @@ for the residency investigation in
 [issue 291](https://github.com/robbe1912/motorstorm-mv-recomp/issues/291).
 No toolkit PR was opened. Cache/lifetime changes and native performance
 acceptance remain separate work.
+
+### Bounded DX12 texture retention (issue 291)
+
+The fork modular branch `codex/d3d12-texture-residency` ends at `d3f1b2ff`;
+its lookup, budget, fingerprint and growth changes are combined in canonical
+`6cab71a1`. The curated port preserves its decoded DXGI field, checked void
+PSO-retirement wrapper and per-draw descriptor implementation. It does not
+replace the backend wholesale with a divergent fork snapshot.
+
+The optional cache prefers empty entries, retains reusable entries while byte
+and metadata headroom remain, then evicts unpinned least-recently-used entries.
+Its target covers actual default+upload allocation footprints; indispensable
+batch pins remain intact with explicit overage. Pins clear only after checked
+GPU retirement. Allocation/map failures remain visible and fatal. Full XXH3
+validates every uploaded top-level cube face using shared checked mip/face
+addressing; unused mip gaps are not hashed. The vendored xxHash v0.8.3 header,
+license and verified upstream blob identities are recorded in its provenance
+file. This follows the pinned Mac cache/content-hash practice without importing
+title-specific addresses or changing guest completion behavior.
+
+The bounded GPU wait rechecks its own target fence after every event wake and
+retains a monotonic six-second deadline; a stale notification cannot admit an
+unfinished submission. Actual historical wait code fails the authored stale-wake
+case. CPU lookup/budget/fingerprint checks exercise production code and reject
+four/four/three mutants, plus the actual historical lookup and sparse-hash paths.
+Full fork backend compilation passes checked and NDEBUG configurations.
+
+Authored headless tests exercise actual uploader/retirement/resource bodies with
+real RTX 3080 and WARP devices: RGBA readback, six cube faces, formerly unsampled
+and later-face mutations, blocked and stale fences, pinned overage, byte trimming,
+metadata growth preserving cached resources, and shader-visible 2D/cube SRVs.
+Production SRV writing feeds two distinct 2D textures and all six cube directions
+through a real compute shader while later uploads preserve recorded bindings.
+The final RTX 3080 run reported zero validation messages/errors. Reference cache
+and historical wait controls fail their specific contracts. Unrelated public
+entry declarations become static only in the test copy for linkage; an unused
+relocation diagnostic boundary aborts. Original game assets are not test inputs.
+
+The curated GPU trial also passes against its actual checked retirement wrapper.
+These functional results do not prove whole-game image correctness, frame-rate
+improvement or stable 30 FPS. Native normal-PLAY/cache admission and matched
+allocation/phase/end-to-end measurements remain pending; PR 292 stays draft.
