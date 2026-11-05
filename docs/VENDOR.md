@@ -587,7 +587,7 @@ unmodified operand. The preserved baseline fails; the candidate passes.
 Both Windows and Linux CI run this contract. No external PR was opened.
 The native menu remains malformed; this is a repaired instruction contract.
 
-### Upstream recheck — October 12, 2026
+### Upstream recheck â€” October 12, 2026
 
 Rechecked all 230 upstream PRs and 14 issues, including open and closed entries.
 Upstream master remains `5244db92669b54831c6d3ebb7a96d58c4dbfa6df`
@@ -760,7 +760,7 @@ buffer against an owned snapshot. Pointer reuse alone never establishes a hit.
 Misses hash that snapshot with the unchanged legacy FNV basis and multiplier;
 allocation failure visibly falls back to the original calculation. Buffers must
 remain stable during the call, as before; this does not make concurrent writes
-atomic. Eligible sizes are 4–256 KiB, with 32 entries and at most 4 MiB retained
+atomic. Eligible sizes are 4â€“256 KiB, with 32 entries and at most 4 MiB retained
 per thread. Windows FLS and POSIX key destructors release the snapshots.
 
 `SPU_FINGERPRINT_CACHE=1` enables the cache; the default makes no snapshot
@@ -1161,7 +1161,7 @@ owner/device spy cover the coordinator; native acceptance remains separate.
 ## Exact SPU float values and scoped SIMD
 
 This selective vendor sync ports runtime `057c56c` and `daeb1575`, preserving
-Robin Fröhlich’s authorship. The [value contract](SPU_FLOAT_VALUES.md) records
+Robin FrÃ¶hlichâ€™s authorship. The [value contract](SPU_FLOAT_VALUES.md) records
 the finite exponent255 range, exact scalar fallback, SIMD scope and authored
 checks. Original vendor test/workflow paths are omitted; curated runners
 exercise the actual helpers and keep existing interpreter assertions. Native
@@ -1575,6 +1575,30 @@ entries and staged fingerprints, with zero unsupported instructions reported.
 It restores 68 PVS entries (including the observed missing continuation),
 89 vehicle entries and additional entries in the other modules. Former biased
 seeds are removed; raw function counts are not a performance metric. Original
-states, native observation and performance of the regenerated candidate still
-require validation. This does not establish a speedup, stable 30 FPS or graphics
-acceptance.
+state regression passes 15 saved-state cases and 495 instruction positions.
+These remain architectural controls with reconstructed host state, not full
+job/DMA replay.
+
+Full candidate EXE `a72249074563e2f231bdfffad2d81944969237f87f4baccabcf6c8b3dac5ac53`
+reached normal PLAY, original bike/rider selection and actual race/HUD/opponents
+in run `20261105T105047.441439Z`. It closed at the configured post-target guard
+(307.860 seconds), without a resource breach. Earlier abnormal selection and a
+one-module isolation observation remain recorded; this subsequent full-candidate
+success means that comparison alone does not establish their cause. Existing
+shadow/shading defects remain; this is not graphics acceptance.
+
+A synchronous exact-symbol probe captured 85 real xform invocation pairs across
+52 functions, with no reported changed reads, exclusions or errors. All 85
+captured architectural exits agree with reconstructed scalar/vector native
+execution and the production interpreter: GPR, full LS, PC, status, stop and
+interrupt-enable. Host pointers/registries and FP environment are reconstructed;
+this is no atomic DMA/IRQ or whole-job proof. Another 818 authored natural-prefix
+comparisons agree under a deterministic fixture clock (262 explicit exclusions).
+The game clock and original execution/completion behavior were unchanged.
+
+The final 60 intact diagnostic groups contain 180 successful API Presents over
+59.693455 reconstructed seconds (about 3.02/s). That interval overlaps suspended
+stack profiling; it is not scanout, an unprofiled benchmark or controlled gain.
+No speedup or stable 30 FPS is established. The measured async SPU thread remains
+the next CPU-workload lead; per-thread CPU and inclusive stacks do not alone prove
+exclusive frame cost or a critical dependency.
