@@ -95,7 +95,6 @@ if(NOT RECOMP_SOURCES)
         "there is nothing to run.")
 endif()
 include("${CMAKE_CURRENT_SOURCE_DIR}/src/motorstorm/native_world.cmake")
-motorstorm_bind_world_transforms()
 list(LENGTH RECOMP_SOURCES RECOMP_SOURCE_COUNT)
 message(STATUS "Lifted sources:  ${RECOMP_SOURCE_COUNT} file(s)")
 
@@ -192,6 +191,9 @@ if(PORT_ENABLE_SPU)
     endif()
 endif()
 
+# Bind only after both generated source lists exist. Each binding replaces
+# its selected TU; the SPU compile properties below apply to that replacement.
+motorstorm_bind_world_transforms()
 add_executable(${PROJECT_NAME}
     src/main.cpp
     src/stubs.cpp
