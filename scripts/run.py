@@ -25,6 +25,7 @@ def main():
     ap.add_argument('--capture-on-pad',type=lambda value:int(value,0),default=0,help='Arm capture burst in native code when PAD_FILE consumes a matching button mask')
     ap.add_argument('--menu-replay',type=Path,help='Private observed-screen profile; normal PAD_FILE input, not a scene jump')
     ap.add_argument('--native-pcm-cubic',choices=('0','shadow','1'),default='0',help='Explicit verified PCM DSP mode; requires matching native-enabled build')
+    ap.add_argument('--native-visibility',choices=('0','shadow','1'),default='0',help='Explicit verified visibility mode; requires matching native-enabled build')
     ap.add_argument('--d3d12-debug',choices=('default','0','1'),default='default',help='Explicit API validation selection; default preserves build policy and assertions stay enabled')
     ap.add_argument('--profile-textures',action='store_true',help='Existing aggregate DX12 texture phases and cache outcomes; adds timing overhead')
     ap.add_argument('--texture-retention',choices=('0','1'),default='0',help='Explicit reference or bounded persistent DX12 texture cache')
@@ -54,10 +55,12 @@ def main():
     if args.menu_replay and hashlib.sha256(c['elf'].read_bytes()).hexdigest()!=replay_profile['elf_sha256']:
         raise SystemExit('Menu replay target differs from configured ELF; no process launched')
     if not exe.is_file(): raise SystemExit('Build first: python scripts/project.py build')
-    if args.native_pcm_cubic != '0':
-        identity=json.loads((ROOT/'build/native/build_identity.json').read_text())
-        if not identity.get('native_pcm_cubic') or identity.get('sha256') != hashlib.sha256(exe.read_bytes()).hexdigest():
-            raise SystemExit('PCM DSP mode requires a matching --native-pcm-cubic build; no process launched')
+    for selected,flag,description in ((args.native_pcm_cubic,'native_pcm_cubic','PCM DSP'),
+                                     (args.native_visibility,'native_visibility','Visibility')):
+        if selected != '0':
+            identity=json.loads((ROOT/'build/native/build_identity.json').read_text())
+            if not identity.get(flag) or identity.get('sha256') != hashlib.sha256(exe.read_bytes()).hexdigest():
+                raise SystemExit(f'{description} mode requires a matching --{flag.replace("_","-")} build; no process launched')
     # User-approved storage policy, before any native process or PAD replay.
     # Referenced/failed/evidence runs and the supplied profile are protected.
     from prune_runs import automatic
@@ -67,6 +70,7 @@ def main():
     out=ROOT/'temp/runs'/datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ'); out.mkdir(parents=True)
     env=dict(os.environ)
     env['MS_NATIVE_PCM_CUBIC']=args.native_pcm_cubic
+    env['MS_NATIVE_VISIBILITY']=args.native_visibility
     env.pop('D3D12_DBG',None)
     env.pop('PERF',None)
     if args.d3d12_debug != 'default':env['D3D12_DBG']=args.d3d12_debug

@@ -135,6 +135,13 @@ function(motorstorm_configure_world_transforms target)
         set_property(SOURCE "${pcm_adapter}" "${MOTORSTORM_NATIVE_SOURCE_DIR}/pcm_cubic.cpp"
             APPEND PROPERTY COMPILE_OPTIONS "/clang:-O2")
     endif()
+    if(PORT_NATIVE_VISIBILITY AND MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        # Preserve the requested native optimization after forwarded Debug O1.
+        # Keep it scoped to the restored operation and its adapter.
+        set_property(SOURCE "${MOTORSTORM_NATIVE_SOURCE_DIR}/visibility_adapter.cpp"
+            "${MOTORSTORM_NATIVE_SOURCE_DIR}/visibility_planes.cpp"
+            APPEND PROPERTY COMPILE_OPTIONS "/clang:-O2")
+    endif()
     # This scan needs baseline x86-64 only. Its comparisons preserve caller FP
     # state and must retain strict semantics independently of other math units.
     if(PORT_NATIVE_PARTICLE_THRESHOLDS)

@@ -324,3 +324,5 @@ actual selected mode, allocations, evictions and bytes in `[TEXRESIDENCY]`, plus
 the exact executable identity; a requested option is not execution evidence.
 The new cache remains experimental pending native race observation and matched
 measurements. Use the existing normal menu route and resource/ownership guards.
+
+The restored native visibility operation uses explicit `--native-visibility 0|shadow|1` during runs. The default `0` overrides inherited `MS_NATIVE_VISIBILITY`; nonzero choices require a matching `--native-visibility` build and recorded executable identity. Shadow/native preserve the original operation fallback and real completion. Treat shadow results and operation timings separately from gameplay frame-rate acceptance.

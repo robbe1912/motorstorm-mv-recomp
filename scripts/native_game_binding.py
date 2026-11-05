@@ -31,7 +31,7 @@ JOB_WAIT = Contract(PRODUCTION.elf_sha256,
     'ab53a9f3f0d538a07d6333eb2b45d78a2dd40e2a3dcbe317e08109f96fad5fca',
     'func_00C5C424', 'game_original_job_marker_wait', 'motorstorm_job_marker_wait')
 VISIBILITY = Contract(PRODUCTION.elf_sha256,
-    '4b14bf2fb492bd7bfc5203af19b9856fc0da9272143d3b84ffd855ce8c9cfa63',
+    '035be34da5f4b00d47d7c7c0637aeaf93635b53ef209e4033f2ada6f918f7bbf',
     'jobmod_056ac0eea1a6_e12270_spu_func_000083A0',
     'game_original_visibility_box', 'motorstorm_visibility_planes',
     context='spu_context', directory='spu/jobmod_056ac0eea1a6_e12270',

@@ -18,12 +18,7 @@
 extern "C" {
 void game_original_visibility_box(spu_context*);
 void jobmod_056ac0eea1a6_e12270_spu_func_000083A0(spu_context*);
-void jobmod_056ac0eea1a6_e12270_spu_func_000083C0(spu_context*);
-void jobmod_056ac0eea1a6_e12270_spu_func_000083C8(spu_context*);
-void jobmod_056ac0eea1a6_e12270_spu_func_000083E0(spu_context*);
-void jobmod_056ac0eea1a6_e12270_spu_func_00008418(spu_context*);
 void jobmod_056ac0eea1a6_e12270_spu_func_00008448(spu_context*);
-void jobmod_056ac0eea1a6_e12270_spu_func_00008450(spu_context*);
 void jobmod_056ac0eea1a6_e12270_spu_func_00008440(spu_context*);
 void jobmod_056ac0eea1a6_e12270_spu_func_0000849C(spu_context*);
 void jobmod_056ac0eea1a6_e12270_spu_func_000084A0(spu_context*);
@@ -143,13 +138,11 @@ Function finish(spu_context* copy, std::size_t count, bool entry) {
         bool allowed = next == jobmod_056ac0eea1a6_e12270_spu_func_000084A0 ||
                        next == jobmod_056ac0eea1a6_e12270_spu_func_00008440 ||
                        next == jobmod_056ac0eea1a6_e12270_spu_func_0000849C;
-        if (entry) for (Function setup : {game_original_visibility_box,
-            jobmod_056ac0eea1a6_e12270_spu_func_000083C0,
-            jobmod_056ac0eea1a6_e12270_spu_func_000083C8,
-            jobmod_056ac0eea1a6_e12270_spu_func_000083E0,
-            jobmod_056ac0eea1a6_e12270_spu_func_00008418,
-            jobmod_056ac0eea1a6_e12270_spu_func_00008448,
-            jobmod_056ac0eea1a6_e12270_spu_func_00008450}) allowed |= next == setup;
+        // Loaded-address discovery combines the former setup fragments into
+        // the authenticated entry and 8448 block. Keep an explicit whitelist;
+        // an arbitrary queued function must never escape the operation.
+        if (entry) allowed |= next == game_original_visibility_box ||
+            next == jobmod_056ac0eea1a6_e12270_spu_func_00008448;
         if (!allowed) throw std::runtime_error("Visibility reference escaped its operation");
     }
     throw std::runtime_error("Visibility reference exceeded bounded operation");
