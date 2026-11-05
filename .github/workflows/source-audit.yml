@@ -77,6 +77,8 @@ jobs:
         run: python scripts/check_rsx_pso_retention.py
       - name: Bounded texture and pipeline working sets
         run: python scripts/check_rsx_working_sets.py
+      - name: Guest sampler tables, checked retirement and compiled-PS mask
+        run: python scripts/check_rsx_sampler_tables.py
       - name: Actual indexed vertex reuse regression
         run: python scripts/check_rsx_indexed_strip.py
       - name: Named SPU extraction identities and rejections
@@ -238,6 +240,8 @@ jobs:
         run: python scripts/check_rsx_pso_retention.py
       - name: Bounded texture and pipeline working sets
         run: python scripts/check_rsx_working_sets.py
+      - name: Guest sampler tables, checked retirement and compiled-PS mask
+        run: python scripts/check_rsx_sampler_tables.py
       - name: Evicted recorded pipelines execute (WARP)
         run: python scripts/check_rsx_pso_gpu.py --warp-only
       - name: Fragment source sign bits and invalid-DXBC control (WARP)
