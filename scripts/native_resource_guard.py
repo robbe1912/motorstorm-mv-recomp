@@ -15,12 +15,23 @@ def commit_reserve(value):
     return number
 
 
-def limits(min_free_commit_gib=12):
+def physical_reserve(value):
+    try:
+        number = float(value)
+    except (ValueError, TypeError):
+        raise argparse.ArgumentTypeError('Physical RAM reserve must be finite and 1..4 GiB') from None
+    if not math.isfinite(number) or not 1 <= number <= 4:
+        raise argparse.ArgumentTypeError('Physical RAM reserve must be finite and 1..4 GiB')
+    return number
+
+
+def limits(min_free_commit_gib=12, min_free_physical_gib=4):
     reserve = commit_reserve(min_free_commit_gib)
+    physical = physical_reserve(min_free_physical_gib)
     return {
         'disk_available': {'minimum': 8 * GIB},
         'private': {'maximum': 14 * GIB},
-        'physical_available': {'minimum': 4 * GIB},
+        'physical_available': {'minimum': int(physical * GIB)},
         'commit_available': {'minimum': int(reserve * GIB)},
     }
 
