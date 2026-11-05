@@ -1621,9 +1621,9 @@ acceptance remain separate work.
 
 ### Bounded DX12 texture retention (issue 291)
 
-The fork modular branch `codex/d3d12-texture-residency` ends at `d3f1b2ff`;
-its lookup, budget, fingerprint and growth changes are combined in canonical
-`6cab71a1`. The curated port preserves its decoded DXGI field, checked void
+The fork modular branch `codex/d3d12-texture-residency` ends at `6191470f`;
+its lookup, budget, fingerprint, growth and required-wait changes are combined
+in canonical `d090e2f6`. The curated port preserves its decoded DXGI field, checked void
 PSO-retirement wrapper and per-draw descriptor implementation. It does not
 replace the backend wholesale with a divergent fork snapshot.
 
@@ -1657,9 +1657,35 @@ entry declarations become static only in the test copy for linkage; an unused
 relocation diagnostic boundary aborts. Original game assets are not test inputs.
 
 The curated GPU trial also passes against its actual checked retirement wrapper.
-These functional results do not prove whole-game image correctness, frame-rate
-improvement or stable 30 FPS. Native normal-PLAY/cache admission and matched
-allocation/phase/end-to-end measurements remain pending; PR 292 stays draft.
+Native candidate `0198d03479a4fc3479a89d564902fc7fbed160145d92a7e72017deb37a9e5544`
+with matched PE/PDB identity completed normal screen-gated PLAY in run
+`20261105T230519.607489Z`: original menu frame 11, loaded bike/rider frame 25,
+and actual player/opponents/race HUD frame 42 were inspected as completed
+presenting backbuffers. Seven normal inputs and one observed Sony skip were
+acknowledged. An additional inspected loaded-bike reference preserves the
+existing threshold, checks, input sequence and race target; unloaded, distant
+and wrong-menu captures remain rejected. An earlier failed navigation trial is
+retained as a failure. Shadow rectangles and shading defects remain.
+
+The configured post-target guard ended the run at 419.875 seconds without a
+resource breach. Aggregate-only diagnostics admitted 299 complete texture
+records: 27,973,970 calls, 453 misses/allocation pairs, 366 stale reuploads,
+365,287 validated hits and no reported resource failures or clock errors.
+Owned default+upload footprints peaked at 255,983,616 bytes under the selected
+512 MiB target; no budget evictions or pinned overage occurred. Texture-call
+wall totals were setup 1.102 s, lookup 14.056 s, checksum 6.897 s and remainder
+2.653 s; these are not exclusive CPU/frame costs. The final report had zero
+misses and 2,437 validated hits. Lookup scanning is now a visible cost.
+
+The final 60 intact diagnostic groups contain 202 successful API Presents over
+60.260426 reconstructed seconds (about 3.352/s, interval 183.674–616.115 ms,
+mean-rounding bound 0.000101 s). No suspended sampler ran. Sequential matched
+thread counters total 253.906 CPU seconds over 60.055 seconds; thread labels
+were unavailable, so this packet does not assign named-thread critical costs.
+These are single-run diagnostics, not scanout, an alternating matched gain or
+stable 30 FPS. Native GPU phase timings and a controlled end-to-end improvement
+remain unproven; the real-GPU fixture establishes functional queue/resource
+semantics. The full performance and graphics goal remains open.
 
 The retirement follow-up `6191470f` is integrated through the same canonical
 combined branch `d090e2f6`. Mandatory resize, resource-reuse and readback callers
