@@ -1448,8 +1448,14 @@ historical source excludes only the new bridge; the original digest and 56
 full-state/IRQ/FP/budget comparisons remain unchanged. The separate real-runtime
 owned checker exercises the actual adapter. Default call/IRQ controls also pass.
 
-Normal-PLAY game admission, emitted native job execution and performance remain
-pending. This restoration does not establish a speedup or stable 30 FPS.
+The bridge-only native run `20261104T220254.756292Z` reached original menus,
+normal PLAY and an actual player/opponent/HUD race. Its exact-symbol suspended
+profile sampled 44 generated job functions, including PVS and vehicle work;
+the PVS subtree still entered the interpreter under a genuine native return,
+motivating #277. The final intact diagnostic interval groups recorded about
+1.72 successful API Presents/s. This is structural admission evidence and one
+run's API cadence, not exclusive CPU attribution, scanout or a controlled gain.
+Dark vehicle shadow boxes and shading defects remain; stable 30 FPS is unmet.
 
 
 ### Native job rejoin within an actual host call (#277)
@@ -1484,6 +1490,43 @@ Five original saved states, each under three controlled clock values, again pass
 15 cases/495 instruction positions through policy 0x2AC8, using the unchanged PVS
 function and an independent full-register/LS/PC/status/IRQ oracle. Fresh host
 registries and uncaptured-channel failure boundaries limit that proof; it is not
-whole-job replay. The previous bridge-only EXE remains about 1.72 recorded API
-Presents/s with shading defects. Native admission and performance of this scoped
-follow-up require a new normal-PLAY race; no speedup is claimed here.
+whole-job replay.
+
+Scoped candidate `e9b13d7` (native integration `e0bebeaf`) completed normal PLAY
+in run `20261104T230007.349933Z`, EXE SHA256
+`894e494e9168256b9bd2f25f573f5c4828bfc2a626e9995f054e648ec33589f2`.
+Seven screen-gated normal inputs and one observed Sony skip reached original
+menu art, the loaded bike and actual rider/opponents/HUD in presenting captures
+34 and 40. The configured 120-second post-target guard ended the run; no
+resource breach was recorded. Dark vehicle shadow boxes and shading defects
+remain. The last 60 intact FPS-log groups contained 153 successful API Presents
+over 60.063285 seconds reconstructed from rounded means (rounding bound
+0.0000765 seconds): about 2.55 API Presents/s. The buffered CSV is incomplete.
+This single run establishes neither a controlled gain nor stable 30 FPS.
+
+That run has no CPU profile. Attempt `20261105T082302.995341Z` stopped at
+the 4 GiB host physical-memory floor before the race sampler; its pre-target
+cadence cannot establish race performance. #280/PR281 adds the
+operator-requested explicit lower reserve.
+
+Run `20261105T083057.978419Z` retained the same EXE and required PM mode,
+using 1 GiB free physical/4 GiB free commit headroom. The automated normal-PLAY
+target was acknowledged in presenting frame 39; a separately inspected frame
+38 shows the player, opponents, timer, boost, lap and position. The configured
+post-target guard stopped at 448.515 seconds, with no resource breach.
+Two nonoverlapping, exact-PE/PDB-admitted suspended profiles collected
+36,608 samples/12.046 seconds and 36,564 samples/12.047 seconds. They contain
+115 and 129 generated job functions respectively, including PVS. Neither has
+a sampled PVS-to-`spu_step` subtree; the earlier bridge-only profile did.
+This supports the intended path change for observed samples, not universal
+absence of fallback or exclusive CPU attribution. Substantial interpreter
+activity remains without a generated-job ancestor and needs active-task binding
+before choosing the next typed rewrite. Audio and visibility also remain active.
+
+The final 60 intact diagnostic groups, after both profiler windows, contain
+189 successful API Presents over 60.051947 seconds reconstructed from rounded
+means (rounding bound 0.0000945 seconds), about 3.15 API Presents/s, intervals
+178.416--637.605 ms. This is one run's API cadence, not scanout or a matched
+speedup. Graphics defects and the stable-30 goal remain open. Protected hashed
+packets retain identities, captures, guards and both profiles outside rolling
+run retention; no proprietary bytes are public.
