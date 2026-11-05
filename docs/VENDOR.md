@@ -1516,10 +1516,16 @@ target was acknowledged in presenting frame 39; a separately inspected frame
 post-target guard stopped at 448.515 seconds, with no resource breach.
 Two nonoverlapping, exact-PE/PDB-admitted suspended profiles collected
 36,608 samples/12.046 seconds and 36,564 samples/12.047 seconds. They contain
-115 and 129 generated job functions respectively, including PVS. Neither has
-a sampled PVS-to-`spu_step` subtree; the earlier bridge-only profile did.
-This supports the intended path change for observed samples, not universal
-absence of fallback or exclusive CPU attribution. Substantial interpreter
+115 and 129 generated job functions respectively. The generated module
+manifest identifies `056ac0eea1a6/e12270` as PVS and `0c12886b2f86/e2100`
+as constraints; the initial profile summary incorrectly called the latter PVS.
+Neither has a sampled constraints-to-`spu_step` subtree; the earlier
+bridge-only profile did. PVS still has interpreted subtrees: suspended
+PVS-containing/with-step weights are 6.1656/0.3791 and 5.7019/0.5125,
+versus 19.5788/14.4399 in the earlier bridge-only window. These are unmatched
+structural samples, not exclusive CPU percentages or a controlled speedup.
+They support the intended path change for observed samples, not universal
+absence of fallback. Substantial interpreter
 activity remains without a generated-job ancestor and needs active-task binding
 before choosing the next typed rewrite. Audio and visibility also remain active.
 
