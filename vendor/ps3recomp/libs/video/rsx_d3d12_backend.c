@@ -47,6 +47,7 @@
 #include <d3dcompiler.h>
 #include "rsx_mrt_masks.h"
 #include "rsx_d3d12_mrt.h"
+#include "rsx_d3d12_guest_sampler.h"
 static u32 rsx_record_color_masks(const rsx_state* state)
 {
     return state ? rsx_mrt_color_masks(state->color_mask, state->color_mask_mrt) : 15u;
@@ -142,6 +143,17 @@ typedef struct {
                          * surface come out with black patches and banding. */
         int set;
     } tex[16];
+    rsx_guest_sampler_regs sampler[16]; /* guest ADDRESS/FILTER/CONTROL0/BORDER
+                                         * per unit at record time */
+    /* Native D24 reads (RSX_DEPTH_TEXTURE=1, rsx_depth_sample.h): resolved
+     * once per batch after every depth attachment is prepared. */
+    rsx_depth_sample_view depth_view[16];
+    u8 depth_sampled_slot[16];  /* depth_cache slot read by the unit, 0 = none */
+    u32 depth_sample_mask;
+    /* Packed-depth reads (RSX_DEPTH_ALIAS=1): A8R8G8B8 at a depth address. */
+    u8 depth_alias_index[16];   /* conversion entry + 1, 0 = none */
+    u32 depth_alias_order[16];  /* last earlier record of the batch that wrote that attachment, +1 */
+    u32 depth_alias_mask;
     int tex_rt[16];     /* pre-pass: OffRT index sampled by unit, -1 = none */
     int tex_slot;       /* legacy single-slot path (atlas); -1 = none */
     int vs_idx;         /* VPVSEntry slot for this draw's vertex program (-1 = primary) */
@@ -208,6 +220,10 @@ typedef struct {
  * fully bound", IQ id690). */
 #define DRAW_SRV_BASE 32
 #define SRV_HEAP_SIZE (DRAW_SRV_BASE + MAX_DRAWS * 16)
+/* Packed-depth (A5) conversions: depth SRV, stencil SRV and RGBA8 UAV each,
+ * after the per-draw windows (rsx_d3d12_native_depth.inc). */
+#define DEPTH_ALIAS_CAPACITY 16
+#define DEPTH_ALIAS_DESCRIPTORS (DEPTH_ALIAS_CAPACITY * 3)
 
 /* Per-frame VP texture slot: a guest texture uploaded for this frame's VP
  * draws (re-uploaded every frame -- gcm/cube's plasma animates in guest
@@ -293,6 +309,7 @@ typedef struct {
                              * -- MotorStorm's blur served 0 of 20). */
     u64 ds_key;              /* packed guest depth+stencil state (PSO key)   */
     u64 alias_key;          /* typed render-target sampling and remap identity */
+    u64 native_depth_key;   /* rsx_depth_sample_key of the draw's D24 views */
     u32 cube_mask;          /* which units are cube textures (PSO key): the HLSL
                              * declares those samplers as TextureCube, so a cube
                              * and a 2D variant of the same program are different
@@ -301,6 +318,7 @@ typedef struct {
                              * to build once (kept so a broken key fails fast
                              * instead of re-decompiling ~30 ms every draw);
                              * generation bumps and normal eviction retry it. */
+    u32 sampler_mask;        /* units the compiled PS samples (rsx_samp[u]) */
 } VPFPEntry;
 /* Pipeline identity remains unchanged. Grow the working set up to a hard
  * metadata bound; capped FIFO replacement must not shift other entries. */
@@ -1281,7 +1299,7 @@ static int init_d3d12(u32 width, u32 height)
         {
             D3D12_DESCRIPTOR_HEAP_DESC hd = {0};
             hd.Type  = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-            hd.NumDescriptors = SRV_HEAP_SIZE;
+            hd.NumDescriptors = SRV_HEAP_SIZE + DEPTH_ALIAS_DESCRIPTORS;
             hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
             hr = s_d3d.device->lpVtbl->CreateDescriptorHeap(
                 s_d3d.device, &hd, &IID_ID3D12DescriptorHeap, (void**)&s_d3d.srv_heap);
@@ -1372,7 +1390,7 @@ static int init_d3d12(u32 width, u32 height)
         srv_range.BaseShaderRegister = 0;
         srv_range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-        D3D12_ROOT_PARAMETER rp[3] = {0};
+        D3D12_ROOT_PARAMETER rp[4] = {0};
         rp[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;   /* b0 = vp_c bank */
         rp[0].Descriptor.ShaderRegister = 0;
         rp[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
@@ -1384,22 +1402,23 @@ static int init_d3d12(u32 width, u32 height)
         rp[2].Descriptor.ShaderRegister = 1;
         rp[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
-        D3D12_STATIC_SAMPLER_DESC samp[16] = {0};
-        for (int _s = 0; _s < 16; _s++) {
-            samp[_s].Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
-            samp[_s].AddressU = samp[_s].AddressV = samp[_s].AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-            samp[_s].ShaderRegister = (UINT)_s;
-            samp[_s].MaxLOD = D3D12_FLOAT32_MAX;
-            samp[_s].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-        }
-        /* s0 keeps point/clamp: the dbgfont atlas PS samples glyph cells and
-         * linear filtering bleeds neighbouring glyphs. */
-        samp[0].Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
-        samp[0].AddressU = samp[0].AddressV = samp[0].AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        /* s0-s15 come from a per-draw guest sampler table (root parameter 3,
+         * see rsx_d3d12_sampler_tables.inc). Fallback atlas/colour pipelines
+         * bind the legacy table: s0 point/clamp for the dbgfont glyph atlas,
+         * others linear/wrap. */
+        D3D12_DESCRIPTOR_RANGE sampler_range = {0};
+        sampler_range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
+        sampler_range.NumDescriptors = 16;
+        sampler_range.BaseShaderRegister = 0;
+        sampler_range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+        rp[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        rp[3].DescriptorTable.NumDescriptorRanges = 1;
+        rp[3].DescriptorTable.pDescriptorRanges = &sampler_range;
+        rp[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
         D3D12_ROOT_SIGNATURE_DESC rd = {0};
-        rd.NumParameters = 3; rd.pParameters = rp;
-        rd.NumStaticSamplers = 16; rd.pStaticSamplers = samp;
+        rd.NumParameters = 4; rd.pParameters = rp;
+        rd.NumStaticSamplers = 0; rd.pStaticSamplers = NULL;
         rd.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
         ID3DBlob* sig = NULL; ID3DBlob* err = NULL;
@@ -2549,14 +2568,16 @@ static DXGI_FORMAT dr_rt_dxgi(const D3D12DrawRecord* dr)
 static int vp_fp_entry_matches(const VPFPEntry* q, u32 fp_addr, u32 vs_hash,
                                u32 blend, int nrt, u32 rtfmt, int exp32,
                                u64 ucode_hash, u32 cmask, u32 cull, u32 alpha_key,
-                               u32 unnorm_key, u32 cube_mask, u64 ds_key, u64 alias_key)
+                               u32 unnorm_key, u32 cube_mask, u64 ds_key, u64 alias_key,
+                               u64 native_depth_key)
 {
     return q->fp_addr == fp_addr && q->vs_hash == vs_hash &&
            q->gen == s_d3d.vp_gen && q->blend == blend && q->nrt == nrt &&
            q->rtfmt == rtfmt && q->exp32 == exp32 &&
            q->ucode_hash == ucode_hash && q->cmask == cmask && q->cull == cull &&
            q->alpha_key == alpha_key && q->unnorm_key == unnorm_key && q->alias_key == alias_key &&
-           q->cube_mask == cube_mask && q->ds_key == ds_key;
+           q->cube_mask == cube_mask && q->ds_key == ds_key &&
+           q->native_depth_key == native_depth_key;
 }
 
 static VPFPEntry* vp_fp_cache_acquire(void)
@@ -2594,6 +2615,10 @@ static void vp_fp_cache_put(const VPFPEntry* e)
  * render path is single-threaded, like every other static cache here). */
 static u32 s_pso_k[VP_FPCB_MAX_CONSTS][4];
 static u32 s_pso_k_n;
+/* Sampled-unit mask of the last vp_get_fp_pso result (0 when it returned NULL). */
+static u32 s_pso_sampler_mask;
+/* Defined with the sampler tables; vp_get_fp_pso records each compiled mask. */
+static void guest_sampler_note_mask(u64 ucode_hash, u32 mask);
 /* ---- Content-addressed FP-ucode snapshots -------------------------------
  * The guest recycles ONE fp-ucode address for several programs per frame
  * (rewrites the window between passes). Hashing/decompiling the bytes lazily
@@ -2673,6 +2698,7 @@ static ID3D12PipelineState* vp_get_fp_pso(int vs_idx, u32 fp_addr, u32 blend, in
                                           u32 cmask, u32 cull, u32 cube_mask, u64 ds_key,
                                           u32 snap_idx, u16* out_fpc_n, const D3D12DrawRecord* dr)
 {
+    s_pso_sampler_mask = 0;
     u32 alias_mask = 0, alias_remap[16] = {0};
     for (unsigned u = 0; u < sizeof dr->tex / sizeof dr->tex[0]; ++u) {
         int rt = dr->tex_rt[u];
@@ -2683,6 +2709,7 @@ static ID3D12PipelineState* vp_get_fp_pso(int vs_idx, u32 fp_addr, u32 blend, in
         }
     }
     u64 alias_key = rsx_texture_alias_key(alias_mask, alias_remap, 1u);
+    const u64 native_depth_key = dr->depth_sample_mask ? rsx_depth_sample_key(dr->depth_view) : 0;
     if (nrt < 1) nrt = 1; if (nrt > 4) nrt = 4;
     if (rtfmt == 0) rtfmt = DXGI_FORMAT_R8G8B8A8_UNORM;
     extern uint8_t* vm_base;
@@ -2736,8 +2763,9 @@ static ID3D12PipelineState* vp_get_fp_pso(int vs_idx, u32 fp_addr, u32 blend, in
         if (s_d3d.vp_fp[i].fp_addr != fp_addr) continue;   /* cheap reject first */
         else if (vp_fp_entry_matches(&s_d3d.vp_fp[i], fp_addr, vs_hash, blend, nrt,
                                      (u32)rtfmt, exp32, uhash, cmask, cull,
-                                     alpha_key, unnorm_key, cube_mask, ds_key, alias_key)) {
+                                     alpha_key, unnorm_key, cube_mask, ds_key, alias_key, native_depth_key)) {
             if (out_fpc_n) *out_fpc_n = s_d3d.vp_fp[i].fpc_n;
+            s_pso_sampler_mask = s_d3d.vp_fp[i].pso ? s_d3d.vp_fp[i].sampler_mask : 0;
             /* Publish this entry's build-time constants for the serve
              * fallback (see vp_serve_pso_consts): the guest may recycle the
              * ucode address after the build, so records can no longer
@@ -2808,6 +2836,7 @@ static ID3D12PipelineState* vp_get_fp_pso(int vs_idx, u32 fp_addr, u32 blend, in
     key.cmask = cmask; key.cull = cull; key.alpha_key = alpha_key;
     key.unnorm_key = unnorm_key; key.cube_mask = cube_mask; key.ds_key = ds_key;
     key.alias_key = alias_key;
+    key.native_depth_key = native_depth_key;
     key.pso = NULL;
 
     /* Register-alias writes can expand a short FP beyond 32 KiB of HLSL. */
@@ -2818,8 +2847,11 @@ static ID3D12PipelineState* vp_get_fp_pso(int vs_idx, u32 fp_addr, u32 blend, in
      * a zero word is a genuine guest request for fp16, not unknown state. */
     u32 fpc_n = 0;
     static rsx_fp_constant_block fblk; /* 32 KB scratch; single-threaded build */
-    int n = rsx_fp_decompile_buffered_ex(uc, 4096, fp_ctrl, cube_mask,
-                                         hlsl, sizeof(hlsl), &fpc_n, &fblk);
+    int n = native_depth_key
+        ? rsx_fp_decompile_buffered_native_depth(uc, 4096, fp_ctrl, cube_mask, dr->depth_view,
+                                                 hlsl, sizeof(hlsl), &fpc_n, &fblk)
+        : rsx_fp_decompile_buffered_ex(uc, 4096, fp_ctrl, cube_mask,
+                                       hlsl, sizeof(hlsl), &fpc_n, &fblk);
     if (n <= 0) { static int _e=0; if(_e++<16) printf("[FP] decompile fail (fp=0x%08X)\n", fp_addr);
         if(!shader_prefetch_active)vp_fp_cache_put(&key); return NULL; }
     /* The emitted cbuffer is fp_constants[fpc_n] + fp_alpha; it must fit the
@@ -3127,6 +3159,9 @@ static ID3D12PipelineState* vp_get_fp_pso(int vs_idx, u32 fp_addr, u32 blend, in
 
     key.pso   = pso;
     key.fpc_n = (u16)fpc_n;
+    key.sampler_mask = rsx_guest_sampler_mask(hlsl);
+    guest_sampler_note_mask(key.ucode_hash, key.sampler_mask);
+    s_pso_sampler_mask = key.sampler_mask;
     if (fpc_n <= VP_FPCB_MAX_CONSTS)
         memcpy(key.k, fblk.values, (size_t)fpc_n * 16u);
     if(!shader_prefetch_active)vp_fp_cache_put(&key);
@@ -3193,6 +3228,20 @@ static u32 rsx_remap_to_d3d(u32 c1, u32 basef)
             fprintf(stderr, "[REMAP] basef=0x%02X c1=0x%04X -> destR=%u destG=%u destB=%u destA=%u%c",
                     basef, c1 & 0xFFFFu, out[1], out[2], out[3], out[0], 10); } } }
     return out[1] | (out[2] << 3) | (out[3] << 6) | (out[0] << 9) | (1u << 12);
+}
+
+/* B8 is uploaded as R8 and presents its one value on every crossbar source,
+ * so only the per-output operation matters: force zero, force one, or the
+ * value. The identity (0xAAE4) is the old fixed replicate-R mapping (0x1000);
+ * MotorStorm's vehicle shadow blobs use 0xA9FF (alpha forced to one). */
+static u32 rsx_remap_b8_to_d3d(u32 c1)
+{
+    u8 out[4];
+    rsx_texture_component_remap(c1, 0x81u, out);
+    u32 sel[4];
+    for (int i = 0; i < 4; ++i) sel[i] = out[i] == RSX_REMAP_ZERO ? 4u : out[i] == RSX_REMAP_ONE ? 5u : 0u;
+    /* out[] is A,R,G,B; D3D12 wants destR | destG<<3 | destB<<6 | destA<<9. */
+    return sel[1] | (sel[2] << 3) | (sel[3] << 6) | (sel[0] << 9) | (1u << 12);
 }
 
 /* Which base formats (fmt & 0x9F) rsx_texture_layout actually decodes -- the
@@ -3999,8 +4048,13 @@ static void vp_serve_pso_consts(u32 slot, D3D12DrawRecord* dr, u32 pso_n)
                   dr->fp_addr, pso_n, 10); } }
 }
 
+#include "rsx_d3d12_sampler_tables.inc"
+#include "rsx_d3d12_native_depth.inc"
+
 static void vp_record_cb(u32 slot, int vs_idx, D3D12DrawRecord* dr)
 {
+    guest_sampler_record(dr);
+    native_depth_clear(dr);
     const rsx_state* st = s_d3d.current_rsx_state;
     if (!s_d3d.vp_cb_mapped || !st || slot >= MAX_DRAWS) return;
     (void)vs_idx;
@@ -5015,6 +5069,7 @@ static void render_frame(void)
      * polygons). These workloads are a few draws/frame, so full serialisation
      * costs little. */
     gpu_pso_retire();
+    guest_sampler_retire();   /* checked: last frame's tables are free only on success */
     if (phase_on()) s_phase.drain = perf_now() - ph0;
     phase_gpu_collect();
 
@@ -5042,6 +5097,14 @@ static void render_frame(void)
                 dr->zeta_off, (unsigned long)result);
             exit(1);
         }
+    }
+    /* Depth resources are now fixed for this batch: resolve D24 texture reads. */
+    {
+        u8 written[RSX_D3D12_DEPTH_CAPACITY + 1] = {0};
+        u32 last_user[RSX_D3D12_DEPTH_CAPACITY + 1] = {0};
+        native_depth_batch_begin();
+        for (u32 d = 0; d < s_d3d.draw_count && d < MAX_DRAWS; ++d)
+            native_depth_prepare(&s_d3d.draws[d], d, written, last_user);
     }
 
     /* Compile the real vertex program once its microcode is captured, and keep
@@ -5433,6 +5496,8 @@ static void render_frame(void)
         for (int _u = 0; _u < 16; _u++) {
             u32 wslot = DRAW_SRV_BASE + _d * 16 + (u32)_u;
             dr->tex_rt[_u] = -1;
+            /* A D24 read of a live depth attachment samples it natively. */
+            if (native_depth_bind(dr, (unsigned)_u, wslot)) continue;
             /* Display-sized sampler source -> the rendered frame. */
             if (dr->tex[_u].set && s_screen_copy &&
                 dr->tex[_u].w == s_d3d.width && dr->tex[_u].h == s_d3d.height) {
@@ -5503,7 +5568,7 @@ static void render_frame(void)
                          * SRVs sampled the bytes at the wrong texel size. */
                         srv_write_ex(wslot, s_d3d.vp_tex[ts].res,
                                      (DXGI_FORMAT)s_d3d.vp_tex[ts].dxgi,
-                                     (_bf == 0x81) ? 0x1000
+                                     (_bf == 0x81) ? rsx_remap_b8_to_d3d(dr->tex[_u].ctrl1)
                                                    : rsx_remap_to_d3d(dr->tex[_u].ctrl1, _bf),
                                      _cube);
                         continue;
@@ -5720,6 +5785,7 @@ static void render_frame(void)
                     (void*)vpso, (void*)s_d3d.vp_root_sig); } }
         if (any && vpso) {
             s_d3d.cmd_list->lpVtbl->SetGraphicsRootSignature(s_d3d.cmd_list, s_d3d.vp_root_sig);
+            s_sampler_bound = NULL;   /* heaps are re-set below; force the first table bind */
             s_d3d.cmd_list->lpVtbl->SetPipelineState(s_d3d.cmd_list, vpso);
             s_d3d.cmd_list->lpVtbl->IASetPrimitiveTopology(s_d3d.cmd_list, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             s_d3d.cmd_list->lpVtbl->SetGraphicsRootConstantBufferView(s_d3d.cmd_list, 0,
@@ -5916,6 +5982,7 @@ static void render_frame(void)
                 /* Per-draw pipeline: prefer the guest's own compiled FP; fall
                  * back to the hardcoded atlas/colour PS pair. */
                 ID3D12PipelineState* dpso = NULL;
+                u32 dsampler_mask = 0;
                 double ph_pso = phase_on() ? perf_now() : 0.0;
                 if (dr->fp_addr) {
                     u32 udim[16][2]; u16 pso_n = 0;
@@ -5925,6 +5992,7 @@ static void render_frame(void)
                                          dr_unnorm(dr, udim), udim, dr->cmask,
                                          dr->cull, dr_cube_mask(dr), dr->ds_key,
                                          dr->fp_snap, &pso_n, dr);
+                    dsampler_mask = s_pso_sampler_mask;
                     if (pso_n && dr->fp_const_n != (u32)pso_n) {
                         /* the guest rewrote the program at this address after
                          * record: refresh the record + its b1 slot to match;
@@ -5991,6 +6059,9 @@ static void render_frame(void)
                         rt != cur_m[0] && rt != cur_m[1] && rt != cur_m[2])
                         off_rt_transition(rt, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
                 }
+                /* Guest sampler table (s0-s15). A heap change invalidates the
+                 * bound SRV table, so force it to be set again. */
+                if (guest_sampler_bind(dr, dpso ? dsampler_mask : 0u)) bound_srv = 0;
                 D3D12_GPU_DESCRIPTOR_HANDLE gh = gh_base;
                 gh.ptr += (u64)s_draw_srv_base[d] * s_d3d.srv_inc;
                 if (!bind_reuse_on() || gh.ptr != bound_srv) {
@@ -6133,7 +6204,9 @@ static void render_frame(void)
                 if (phase_on()) { s_phase.draws++; s_phase.small_draws += is_small; }
                 phase_gpu_draw(is_small, 0);
                 cpu_surface_written(cur_rt,cur_m);
+                native_depth_begin(dr, next_pso);
                 gpu_pso_draw(next_pso, dr->vertex_count, dr->vb_byte_offset / 256);
+                native_depth_end(dr);
                 if (dr->rt_off == 0) rsx_record_batch_display_write(&s_record_batch);
                 phase_gpu_draw(is_small, 1);
                 /* VP_SUBMIT=<N>: prove the VP pass actually reaches the GPU.
@@ -7702,6 +7775,7 @@ static int vp_triangle_can_merge(u32 primitive, u32 first, u32 rec, int check_co
         pv->alpha_ctl != alpha || pv->alpha_ref_raw != (state ? state->alpha_ref : 0))) return 0;
     return pv->is_vp && pv->topology == RSX_TOPOLOGY_TRIANGLES &&
         pv->fp_addr == (state ? state->shader_program : 0) &&
+        guest_sampler_matches(pv) &&
         pv->cmask == rsx_record_color_masks(state) &&
         pv->blend_key == rsx_blend_key(state, state ? state->blend_enable : 1) &&
         pv->begin_epoch == (state ? state->begin_epoch : 0) &&
@@ -8396,6 +8470,8 @@ void rsx_d3d12_backend_shutdown(void)
     cpu_surface_shutdown();
 
     gpu_working_sets_release();
+    guest_sampler_shutdown();
+    native_depth_shutdown();
     for(int i=0;i<s_d3d.vp_vs_n;i++){
         shader_forget_vs_source(s_d3d.vp_vs[i].disk_source);s_d3d.vp_vs[i].disk_source=NULL;
     }
