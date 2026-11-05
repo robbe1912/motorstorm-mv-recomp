@@ -18,6 +18,7 @@ static int near(double a, double b) { return a > b - 0.00000001 && a < b + 0.000
 static double perf_now(void) { ++clock_reads; return clock_s; }
 static int perf_on(void) { return enabled; }
 static void texture_profile_log(void) { ++reports; }
+static void vp_tex_cache_log(void) {}
 @GLOBALS@
 typedef struct command_list command_list;
 typedef command_list ID3D12CommandList;

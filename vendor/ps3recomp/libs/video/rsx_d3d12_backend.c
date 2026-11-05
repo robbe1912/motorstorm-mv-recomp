@@ -224,6 +224,7 @@ typedef struct {
                          * shift it, so keying on off never matches the raw offset
                          * a later draw arrives with, and every draw re-uploads. */
     int used;           /* referenced this frame */
+    u64 last_frame;     /* guest frame (s_d3d.frame_count + 1) of the last bind; 0 = never */
 } VPTexSlot;
 /* Distinct textures uploadable per frame. Four was enough for a UI/atlas-style
  * frame but not for a scene: this title binds ~20 distinct textures per frame,
@@ -3275,6 +3276,67 @@ static void texture_profile_log(void)
     memset(&s_texture_profile, 0, sizeof(s_texture_profile));
 }
 
+/* Texture slot replacement on a cache miss. Every batch clears `used`, and
+ * the miss used to take the FIRST unused slot -- usually a texture another
+ * batch of the same frame binds again, so a frame larger than one batch
+ * evicted its own working set in a loop: each miss evicted a live texture,
+ * whose next bind missed in turn and evicted another (full decode + upload
+ * each time, and a resource Release/Create whenever the sizes differed).
+ * Now the miss takes, in order: an empty slot; the least recently bound slot
+ * not bound in this or the previous frame, preferring one of the same shape
+ * so its resources are reused; growing the pool while it is under
+ * RSX_TEX_SLOTS_MAX (default 1024); and only then the least recently bound
+ * unused slot. Returns -1 to ask the caller to grow. RSX_TEX_LRU=0 keeps the
+ * first-unused policy (A/B). */
+typedef struct {
+    unsigned long long misses, empty, cold_same, cold_other, grow, evict_recent, recreate;
+} vp_tex_cache_stats;
+static vp_tex_cache_stats s_vp_tex_stats;
+static int vp_tex_lru_on(void)
+{
+    static int v = -1;
+    if (v < 0) { const char* e = getenv("RSX_TEX_LRU"); v = !(e && e[0] == '0'); }
+    return v;
+}
+static unsigned vp_tex_slots_max(void)
+{
+    static unsigned v = 0;
+    if (!v) { const char* e = getenv("RSX_TEX_SLOTS_MAX"); unsigned long n = e ? strtoul(e, NULL, 10) : 0;
+              v = n >= 16 && n <= 65536 ? (unsigned)n : 1024u; }
+    return v;
+}
+static int vp_tex_victim(const VPTexSlot* pool, unsigned capacity, u64 frame,
+                         u32 w, u32 h, u32 fmt, int cube, unsigned max_slots,
+                         vp_tex_cache_stats* st)
+{
+    int lru = -1, same = -1;
+    st->misses++;
+    for (unsigned i = 0; i < capacity; i++) {
+        const VPTexSlot* c = &pool[i];
+        if (c->used) continue;
+        if (!c->res) { st->empty++; return (int)i; }
+        if (lru < 0 || c->last_frame < pool[lru].last_frame) lru = (int)i;
+        if (c->w == w && c->h == h && c->fmt == fmt && c->cube == cube &&
+            (same < 0 || c->last_frame < pool[same].last_frame)) same = (int)i;
+    }
+    /* last_frame is the bind frame + 1: cold = not bound this frame or last. */
+    #define VP_TEX_COLD(i) (pool[i].last_frame + 1u < frame + 1u)
+    if (same >= 0 && VP_TEX_COLD(same)) { st->cold_same++; return same; }
+    if (lru >= 0 && VP_TEX_COLD(lru)) { st->cold_other++; return lru; }
+    #undef VP_TEX_COLD
+    if (capacity < max_slots || lru < 0) { st->grow++; return -1; }
+    st->evict_recent++;
+    return lru;
+}
+static void vp_tex_cache_log(void)
+{
+    vp_tex_cache_stats* t = &s_vp_tex_stats;
+    fprintf(stderr, "[TEXCACHE] lru=%d misses=%llu empty=%llu cold_same=%llu cold_other=%llu grow=%llu evict_recent=%llu recreate=%llu capacity=%u max=%u\n",
+            vp_tex_lru_on(), t->misses, t->empty, t->cold_same, t->cold_other, t->grow,
+            t->evict_recent, t->recreate, s_d3d.vp_tex_capacity, vp_tex_slots_max());
+    memset(t, 0, sizeof *t);
+}
+
 static int vp_upload_tex_slot_impl(u32 off, u32 w, u32 h, u32 fmt, int cube, u32 mips, rsx_texture_profile_call* profile)
 {
     /* TEX_BUDGET=<n>: cap texture uploads per frame. Off by default -- it was
@@ -3354,6 +3416,10 @@ static int vp_upload_tex_slot_impl(u32 off, u32 w, u32 h, u32 fmt, int cube, u32
         if (!c->used && freeslot < 0) freeslot = i;
     }
     rsx_texture_profile_lookup_end(profile, s_d3d.vp_tex_capacity, RSX_TEX_MISS);
+    if (slot < 0 && vp_tex_lru_on())
+        freeslot = vp_tex_victim(s_d3d.vp_tex, s_d3d.vp_tex_capacity, s_d3d.frame_count,
+                                 w, h, fmt, cube, vp_tex_slots_max(), &s_vp_tex_stats);
+    else if (slot < 0) s_vp_tex_stats.misses++;
     /* TEX_OFF_BIAS=1: sample the image one whole level-0 BELOW the bound offset.
      * Measured on the Rubber Ducky demo: at the bind offset every texture reads
      * as all-zero, while [off - w*h*bpp, off) holds the image (3800-4160 of 4298
@@ -3477,6 +3543,7 @@ static int vp_upload_tex_slot_impl(u32 off, u32 w, u32 h, u32 fmt, int cube, u32
      * cube path copies 6 subresources and writes a 6x upload buffer -- which
      * crashes. */
     if (t->res && (t->w != w || t->h != h || t->fmt != fmt || t->cube != cube)) {
+        s_vp_tex_stats.recreate++;
         t->res->lpVtbl->Release(t->res); t->res = NULL;
         if (t->up) { t->up->lpVtbl->Release(t->up); t->up = NULL; }
     }
@@ -3872,11 +3939,16 @@ static int vp_upload_tex_slot_impl(u32 off, u32 w, u32 h, u32 fmt, int cube, u32
 
 static int vp_upload_tex_slot(u32 off, u32 w, u32 h, u32 fmt, int cube, u32 mips)
 {
-    if (!texture_profile_on()) return vp_upload_tex_slot_impl(off,w,h,fmt,cube,mips,NULL);
-    rsx_texture_profile_call call;
-    rsx_texture_profile_begin(&call,&s_texture_profile,texture_profile_clock,NULL);
-    int result = vp_upload_tex_slot_impl(off,w,h,fmt,cube,mips,&call);
-    rsx_texture_profile_finish(&call,result);
+    int result;
+    if (!texture_profile_on()) result = vp_upload_tex_slot_impl(off,w,h,fmt,cube,mips,NULL);
+    else {
+        rsx_texture_profile_call call;
+        rsx_texture_profile_begin(&call,&s_texture_profile,texture_profile_clock,NULL);
+        result = vp_upload_tex_slot_impl(off,w,h,fmt,cube,mips,&call);
+        rsx_texture_profile_finish(&call,result);
+    }
+    if (result >= 0 && (unsigned)result < s_d3d.vp_tex_capacity)
+        s_d3d.vp_tex[result].last_frame = s_d3d.frame_count + 1u;
     return result;
 }
 
@@ -4974,6 +5046,7 @@ static void perf_batch_finish(double started)
     s_t_prev = now;
     if (++s_n % 20 == 0) {
         texture_profile_log();
+        vp_tex_cache_log();
         double fr = s_perf_frame > 0 ? s_perf_frame : 1;
         fprintf(stderr, "[PERF] %.2f batches/s | tex %.2fs (%.0f%%, %d calls) | vtx %.2fs"
                         " (%.0f%%, %.0fk verts) | render_frame %.2fs (%.0f%%)"
