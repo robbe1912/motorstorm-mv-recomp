@@ -1535,6 +1535,14 @@ static int vp_upload_allocate(void* context, uint64_t bytes, rsx_upload_buffer* 
     }
     b->resource = resource; b->memory = mapped; return 1;
 }
+static void wait_for_gpu_required(void)
+{
+    if (!wait_for_gpu()) {
+        fprintf(stderr, "[D3D12] Required GPU retirement failed; no resource reuse or readback\n");
+        abort();
+    }
+}
+
 static int vp_upload_retire(void* context)
 {
     (void)context;
@@ -1788,7 +1796,7 @@ static void cap_readback_write(ID3D12Resource* res, u32 w, u32 h, u32 dxgi,
             &IID_ID3D12Resource, (void**)&rb)) || !rb)
         return;
 
-    wait_for_gpu();
+    wait_for_gpu_required();
     s_d3d.cmd_allocators[fi]->lpVtbl->Reset(s_d3d.cmd_allocators[fi]);
     s_d3d.cmd_list->lpVtbl->Reset(s_d3d.cmd_list, s_d3d.cmd_allocators[fi], NULL);
 
@@ -1832,7 +1840,7 @@ static void cap_readback_write(ID3D12Resource* res, u32 w, u32 h, u32 dxgi,
     s_d3d.cmd_list->lpVtbl->Close(s_d3d.cmd_list);
     ID3D12CommandList* cl[] = { (ID3D12CommandList*)s_d3d.cmd_list };
     s_d3d.cmd_queue->lpVtbl->ExecuteCommandLists(s_d3d.cmd_queue, 1, cl);
-    wait_for_gpu();
+    wait_for_gpu_required();
 
     void* mp = NULL; D3D12_RANGE rr = {0, (SIZE_T)pitch * h};
     if (SUCCEEDED(rb->lpVtbl->Map(rb, 0, &rr, &mp)) && mp) {
@@ -4283,7 +4291,7 @@ static int off_rt_grow(void)
                 s_d3d.device, pool[i].res, NULL, rh);
         rh.ptr += inc;
     }
-    wait_for_gpu();
+    wait_for_gpu_required();
     if (s_d3d.rt_rtv_heap) s_d3d.rt_rtv_heap->lpVtbl->Release(s_d3d.rt_rtv_heap);
     s_d3d.rt_rtv_heap = heap;
     s_d3d.off_rt_cap = cap;
@@ -4314,7 +4322,7 @@ static int off_rt_get(u32 off, u32 w, u32 h, u32 rsx_fmt)
          * and every draw recorded against it silently lands nowhere while the
          * replacement reads back empty. Let the GPU finish first. Recreations are
          * rare (a surface changing size), so the stall costs nothing. */
-        wait_for_gpu();
+        wait_for_gpu_required();
         cpu_surface_retire(r);
         r->res->lpVtbl->Release(r->res); r->res = NULL;   /* dims/format changed */
         if (r->up) { r->up->lpVtbl->Release(r->up); r->up = NULL; }
@@ -4332,7 +4340,7 @@ static int off_rt_get(u32 off, u32 w, u32 h, u32 rsx_fmt)
                     return -1;
                 }
             } else {
-                wait_for_gpu();
+                wait_for_gpu_required();
                 cpu_surface_retire(&s_d3d.off_rt[slot]);
                 s_d3d.off_rt[slot].res->lpVtbl->Release(s_d3d.off_rt[slot].res);
                 s_d3d.off_rt[slot].res = NULL;
@@ -4814,7 +4822,7 @@ static void composite_present(u32 fi)
          * frame's copy feed the next: one frame of latency, irrelevant for a
          * menu/attract composite. First frame past the gate just arms. */
         if (!rb_valid) { rb_valid = 1; return; }
-        wait_for_gpu();   /* ensure last frame's list (the rb copy) completed */
+        wait_for_gpu_required();   /* ensure last frame's list (the rb copy) completed */
         u32* spx = NULL; D3D12_RANGE rr = {0, (SIZE_T)sp * sh};
         if (SUCCEEDED(rb->lpVtbl->Map(rb, 0, &rr, (void**)&spx)) && spx) {
             /* Uniform/empty readback: no real content is being presented
@@ -6500,13 +6508,13 @@ skip_dump_consider: ;
 
     if (s_sc_dump_pending) {
         s_sc_dump_pending = 0;
-        wait_for_gpu();
+        wait_for_gpu_required();
         s_dump_name = "screencopy";
         dump_backbuffer_bmp();
         s_dump_name = NULL;
     }
     if (dumping) {
-        wait_for_gpu();            /* ensure the copy finished before mapping */
+        wait_for_gpu_required();            /* ensure the copy finished before mapping */
         dump_backbuffer_bmp();
         s_d3d.dump_frames_left--;
     }
@@ -6514,7 +6522,7 @@ skip_dump_consider: ;
     if (s_rtsave_state) {
         fprintf(stderr, "[RTT_SAVERT] writing rt_save.bmp %ux%u\n", s_rtsave_w, s_rtsave_h);
         if (!dumping) { double _g = perf_on() ? perf_now() : 0.0;
-                        wait_for_gpu();
+                        wait_for_gpu_required();
                         if (perf_on()) s_perf_gpu += perf_now() - _g; }
         void* mp = NULL; D3D12_RANGE rr = {0, (SIZE_T)s_rtsave_pitch * s_rtsave_h};
         if (SUCCEEDED(s_rtsave_buf->lpVtbl->Map(s_rtsave_buf, 0, &rr, &mp)) && mp) {
@@ -6824,7 +6832,7 @@ static int blink_dbg(void)
 static void record_batch_retire(void)
 {
     u32 fi = s_d3d.frame_index;
-    wait_for_gpu();
+    wait_for_gpu_required();
     HRESULT removed = s_d3d.device->lpVtbl->GetDeviceRemovedReason(s_d3d.device);
     u64 completed = s_d3d.fence->lpVtbl->GetCompletedValue(s_d3d.fence);
     if (removed != S_OK || completed == UINT64_MAX || completed < s_d3d.fence_values[fi]) {

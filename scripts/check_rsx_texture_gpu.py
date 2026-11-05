@@ -55,8 +55,7 @@ def main():
         old=args.historical_backend.read_text();result['historical_sha256']=hashlib.sha256(args.historical_backend.read_bytes()).hexdigest()
         before=function(source,'wait_for_gpu');after=function(old,'wait_for_gpu')
         assert 'static void wait_for_gpu' in after and before!=after,'Historical control must predate completion-recheck fix'
-        historical=source.replace(before,after).replace('static int wait_for_gpu(void);','static void wait_for_gpu(void);')
-        historical=historical.replace(function(source,'vp_upload_retire'),function(old,'vp_upload_retire'))
+        historical=source.replace(function(source,'vp_upload_retire'),after.replace('wait_for_gpu(', 'historical_wait_for_gpu(')+'\n'+function(old,'vp_upload_retire').replace('wait_for_gpu(', 'historical_wait_for_gpu('))
         old_exe=build(historical,'historical-wait');p=command([str(old_exe),'stale-wake-only'],'historical-stale-wake-red')
         assert p.returncode==7 and 'retired_ok' in p.stderr,f'Old wait did not fail the stale-wake contract: {out}/result.json';print('PASS actual historical wait RED')
     result['passed']=True;(out/'result.json').write_text(json.dumps(result,indent=2));print(out/'result.json')

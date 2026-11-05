@@ -1,7 +1,7 @@
 """Actual cache budget helpers + checked retirement, using authored CPU objects.
 Does not validate real D3D12 allocations, fence progress, pixels or performance.
 """
-import argparse,hashlib,json,os,shutil,subprocess,time
+import re,argparse,hashlib,json,os,shutil,subprocess,time
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 VENDOR=ROOT/"vendor/ps3recomp"
@@ -17,6 +17,7 @@ def main():
     backend=(VENDOR/'libs/video/rsx_d3d12_backend.c').read_text()
     # Both actual call sites unpin only after the checked descriptor/PSO gate.
     assert backend.count('    texture_retention_begin_batch();')==2
+    assert not re.search(r'(?<![A-Za-z_])wait_for_gpu\(\);',backend),'Use checked retirement or wait_for_gpu_required at every call site'
     assert backend.count('    gpu_pso_retire();\n    texture_retention_begin_batch();')==2
     gate=function(backend,'gpu_pso_retire')
     header=VENDOR/'libs/video/rsx_d3d12_texture_residency.h';text=header.read_text()
@@ -53,7 +54,7 @@ static rsx_gpu_references refs;
 static void retain(void*c,void*p){(void)c;(void)p;}
 static void release_pso(void*c,void*p){(void)c;(void)p;++pso_releases;fprintf(stderr,"PSO RELEASE\n");}
 static int wait_for_gpu(void){++retire_calls;return wait_ok;}
-"""+function(backend,'vp_upload_retire','int')+r"""
+"""+function(backend,'wait_for_gpu_required')+'\n'+function(backend,'vp_upload_retire','int')+r"""
 static int retire(void*c){int ok=vp_upload_retire(c);if(ok)retired=1;return ok;}
 static const rsx_gpu_reference_ops ops={NULL,retain,release_pso,retire};
 #define s_gpu_pso_refs refs
@@ -76,6 +77,7 @@ int main(int argc,char**argv){
 #endif
     if(argc>1&&!strcmp(argv[1],"budget")){printf("BUDGET=%llu\n",(unsigned long long)texture_retention_budget());return 0;}
     setup();
+    if(argc>1&&!strcmp(argv[1],"required-wait")){wait_ok=0;wait_for_gpu_required();return 9;}
     if(argc>1&&!strcmp(argv[1],"blocked")){
         completed=0;gpu_pso_retire();texture_retention_begin_batch();return 4;
     }
@@ -119,6 +121,8 @@ int main(int argc,char**argv){
     exe=build(text,'production');assert run([exe],'production','1').returncode==0,f'{out}/result.json'
     blocked=run([exe,'blocked'],'blocked','1')
     assert blocked.returncode!=0 and 'GPU retirement failed' in blocked.stderr and 'RELEASE' not in blocked.stderr
+    required=run([exe,'required-wait'],'required-wait','1')
+    assert required.returncode!=0 and 'Required GPU retirement failed' in required.stderr and 'RELEASE' not in required.stderr
     for value,expected in [(None,512),('0',0),('1',1),('4096',4096)]:
         p=run([exe,'budget'],'budget-valid',value);assert p.returncode==0 and p.stdout.strip()==f'BUDGET={expected*1024*1024}'
     for value in ['', '-1','+1','1.5','nan','inf','4097','999999999999999999999999999999999999']:

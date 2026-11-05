@@ -1660,3 +1660,10 @@ The curated GPU trial also passes against its actual checked retirement wrapper.
 These functional results do not prove whole-game image correctness, frame-rate
 improvement or stable 30 FPS. Native normal-PLAY/cache admission and matched
 allocation/phase/end-to-end measurements remain pending; PR 292 stays draft.
+
+The retirement follow-up `6191470f` is integrated through the same canonical
+combined branch `d090e2f6`. Mandatory resize, resource-reuse and readback callers
+now abort visibly on a failed target-fence wait. The curated backend has ten
+such callers; its checked void retirement wrapper remains unchanged. CPU
+fixtures cover failure before and after capacity submission and preserve
+recorded ownership when the wait fails, even with an otherwise completed fence.
