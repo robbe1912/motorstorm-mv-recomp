@@ -26,10 +26,34 @@ The independent Fraction oracle checks 22 authored cases across 16 caller FP
 configurations, transactional rejection and an unfused-arithmetic mutant.
 Private original-loop comparisons also exercise actual scalar/vector generated
 code, the interpreter, and the production reference/shadow/native adapter.
-Those authored inputs establish bounded outputs/state/FP agreement, not real
-job admission or complete IRQ/DMA/external-state equivalence. Real gameplay
-shadow/admission, captured inputs, controlled operation timing and matched
-end-to-end measurements remain pending. No speedup or stable 30 FPS is claimed.
+Those authored inputs establish bounded outputs/state/FP agreement, not complete
+IRQ/DMA/external-state equivalence. The checked optimized candidate (EXE
+`716ede82e23639a298d0870aff73ccc2af8cb8bec9d9b588790ee1878d8945df`)
+subsequently reached normal PLAY, original menus/bike and actual race HUD and
+opponents in both modes. Shadow run `20261105T174019.629793Z` reported at least
+282,624 comparisons; native run `20261105T175614.187163Z` reported 647,168
+completions. Both retained 1,016 early reference fallbacks, with no reported
+DSP error, and ended at their configured post-target guard without a resource
+breach. Existing shadow rectangles and shading defects remain.
+
+All 32 captured real entry/exit pairs agree with original vector-native,
+typed-native and canonical interpreter execution. Native comparisons cover the
+whole context and LS after normalizing its backing pointer; interpreter
+comparisons cover architectural state rather than host accounting fields.
+Unknown captured host FP state and atomic external-state equivalence remain
+outside that replay proof.
+
+In a separate unsuspended CPU replay executable, five alternating windows per
+side used one captured input, 50,000 operations, 32 warmups and consistent owned
+thread affinity. Reference median was 133.501 microseconds (132.223–135.296);
+native was 22.381 (21.890–23.229), a 5.965 median ratio. Both include the same
+268,960-byte context restore, actual adapter and real return, with output checks
+after every window and SIMD admission for reference. Concurrent host work was
+uncontrolled. This establishes a bounded operation improvement; matched
+end-to-end measurements remain pending. The native run's final 60 intact API
+Present groups contained 189 presents over reconstructed 60.173134 seconds
+(about 3.14/s), not scanout, a controlled game speedup or stable 30 FPS. Renderer
+CPU work and remaining interpreted jobs still need work.
 This follows the pinned Mac port's measured audio specialization and retained
 reference/guarded arithmetic practice, without importing its title ABI.
 
