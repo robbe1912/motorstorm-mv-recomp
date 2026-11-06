@@ -20,6 +20,8 @@ jobs:
         run: python scripts/check_native_resource_guard.py
       - name: Native mode admission
         run: python scripts/check_native_mode_guard.py
+      - name: Native short wait deadlines and failure controls
+        run: python scripts/check_native_short_sleep.py
           python scripts/check_menu_luminance_gate.py
       - name: Checked renderer optimization scope
         run: python scripts/check_renderer_optimization.py
@@ -278,6 +280,8 @@ jobs:
         run: python scripts/check_native_resource_guard.py
       - name: Native mode admission
         run: python scripts/check_native_mode_guard.py
+      - name: Native short wait deadlines and failure controls
+        run: python scripts/check_native_short_sleep.py
           python scripts/check_menu_luminance_gate.py
       - name: Checked renderer optimization scope
         run: python scripts/check_renderer_optimization.py

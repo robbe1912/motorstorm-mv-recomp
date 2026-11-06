@@ -134,6 +134,9 @@ def main():
                         native_job_wait=args.native_job_wait)
         identity['native_visibility']=args.native_visibility
         identity['native_pcm_cubic']=args.native_pcm_cubic
+        short_wait_source=ROOT/'vendor/ps3recomp/runtime/platform/native_short_sleep.c'
+        identity['native_short_sleep']=os.name=='nt' and short_wait_source.is_file()
+        identity['native_short_sleep_sha256']=hashlib.sha256(short_wait_source.read_bytes()).hexdigest() if short_wait_source.is_file() else None
         identity['native_particle_thresholds']=args.native_particle_thresholds
         identity['renderer_optimization']=json.loads((binary/'renderer-optimization.json').read_text())
         if identity['renderer_optimization']['enabled'] != args.optimize_renderer:
