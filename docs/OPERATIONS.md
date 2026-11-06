@@ -80,6 +80,16 @@ hide mechanism was not traced, and this run does not verify menu or race renderi
 
 Inherited probes are cleared; development SPU_PM_INTERP=1 remains. Six known pre-menu wedge probes are zeroed: SPU_WP, SPU_PM_GATE_TRACE, SPU_PM_RETIRE_GUARD, SPU_PM_PC_RESUME, SPU_PM_FLOW_RESUME, SPU_PM_YIELD_RESUME. Probe-off boots both clean/instrumented menus; individual guilty knob is not isolated. FLOW_FSDBG=1 correlated with early resourcesystem 938 fatal and is omitted. Hooks alone were exonerated for this pre-menu wedge, not permanent stability.
 
+CPU surface dependency diagnostics use `scripts/run.py --profile-cpu-surfaces`.
+This explicitly enables and records the existing `RSX_CPU_SURFACE_PROFILE=1`
+backend diagnostics after inherited RSX settings are cleared. Each completed
+request reports absolute QPC timestamps, client/renderer IDs, exact-range
+matches, clean hits, copies, bytes, and disjoint queue/service/copy/fence phases.
+Use matches and copies to distinguish stale page dispatches from required GPU
+synchronization before changing ownership or waits. Per-request timing and log
+I/O perturb execution; keep these captures separate from performance comparisons.
+The option changes no readback, completion, error or deadline behavior.
+
 ## Input and proof
 
 Write one ASCII line MASK POLLS to the current pad.txt:
