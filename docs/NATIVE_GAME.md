@@ -1,5 +1,32 @@
 # Native game operations
 
+## Deformation depth sampling prototype (#302)
+
+The [typed depth sampler](../src/motorstorm/deformation_depth.h) accepts four
+byte-valued depth samples, two fractional coordinates and a point/bilinear mode.
+It uses ordinary sample data rather than guest registers, memory or GPU handles.
+Its arithmetic retains the original single-precision rounding boundaries and
+three double fused multiply-add operations. Inputs outside the admitted finite
+unit interval are rejected before calculation; caller FP rounding, exception
+flags and x86 DAZ/FTZ state are restored.
+
+`python scripts/check_deformation_depth.py` compares 1,317 authored cases across
+16 caller FP settings against an independent exact-rational rounding oracle. It
+rejects four actual-source mutants: omitted single rounding, a wrong corner,
+ignored filtering and lost caller MXCSR. A separate private check extracts the
+actual emitted arithmetic and its real generated helpers: all 1,302 admitted
+cases agree. That fixture uses authored storage and does not exercise the
+texture callbacks, coordinate transformation, borders or GPU synchronization.
+
+Original ELF instruction bytes match all 346 GetDepth, 144 TransformPoint and
+six pixel-size instructions exported from an isolated copy of the saved Ghidra
+project. Original project hashes remain unchanged. GetDepth brackets its four
+sample loads with virtual texture operations; concrete live callback ownership,
+FIFO/GPU visibility and border semantics still need proof. This core is not yet
+bound into gameplay. No readback wait is skipped and no frame-time improvement
+or stable 30 FPS is claimed; the full native query and coherent view remain open
+under [issue 302](https://github.com/robbe1912/motorstorm-mv-recomp/issues/302).
+
 ## PCM cubic DSP prototype (#288)
 
 The [typed PCM resampler](../src/motorstorm/pcm_cubic.h) accepts signed PCM16,
