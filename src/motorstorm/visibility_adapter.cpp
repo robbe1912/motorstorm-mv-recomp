@@ -241,7 +241,9 @@ extern "C" void motorstorm_visibility_planes(spu_context* ctx) try {
     Prepared prepared;
     if (const char* reason = prepare(ctx, prepared)) { original(ctx, reason); return; }
     if (config.mode == Mode::shadow && !compare(ctx, prepared, prepared.count)) { original(ctx,"shadow snapshot changed");return; }
-    else commit(ctx, prepared);
+    // Shadow comparisons use private copies. Keep the live original entry's
+    // complete incoming state unchanged, including its scratch registers.
+    if (config.mode != Mode::shadow) commit(ctx, prepared);
     const auto completed = ++config.completed;
     if (completed == 1 || completed % 1024 == 0)
         std::fprintf(stderr, "[native-visibility] completed=%llu compared=%llu fallbacks=%llu\n",

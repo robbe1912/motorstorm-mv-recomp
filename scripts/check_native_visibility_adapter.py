@@ -107,6 +107,8 @@ def main():
         return result
 
     exe = build('production', source)
+    result=run(exe,'shadow','shadow_entry_only')
+    print(result.stdout,end='');result.check_returncode()
     for mode in ['0', 'shadow', '1']:
         result = run(exe, mode)
         print(result.stdout, end='')
@@ -122,6 +124,13 @@ def main():
     result = run(exe, 'bad', 'invalid')
     assert result.returncode != 0 and 'NATIVE_VISIBILITY_ERROR MS_NATIVE_VISIBILITY must be' in result.stderr, result.stderr
     text = source.read_text()
+    mutant=out/'shadow-live-write.cpp'
+    before='if (config.mode != Mode::shadow) commit(ctx, prepared);'
+    assert text.count(before)==1
+    mutant.write_text(text.replace(before,'commit(ctx, prepared);'))
+    exe=build('shadow-live-write',mutant)
+    result=run(exe,'shadow','shadow_entry_only')
+    assert result.returncode==1 and 'Shadow original entry receives unchanged live context' in result.stderr,result.stderr
     mutant = out / 'preferred-only.cpp'
     before = 'for (unsigned lane = 0; lane < 4; ++lane) {\n        ctx->gpr[13]'
     assert text.count(before) == 1
