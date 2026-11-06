@@ -1693,3 +1693,35 @@ now abort visibly on a failed target-fence wait. The curated backend has ten
 such callers; its checked void retirement wrapper remains unchanged. CPU
 fixtures cover failure before and after capacity submission and preserve
 recorded ownership when the wait fails, even with an otherwise completed fence.
+
+
+### Sized-symbol internal SPU entries (#304)
+
+Fork modular `c24c44f9` is integrated through canonical combined
+`54d29d2e01d10e4dcb12c40d3d9a1f266d83ab03`. Discovery previously recognized
+internal jump-table targets but then coalesced them into enclosing sized ELF
+symbols, discarding native resume entries. Sized ranges now stop at the next
+validated seed; instruction semantics and runtime admission are unchanged.
+
+The authored sized-table regression fails actual previous discovery and a
+full-symbol-overlap mutant. Actual emitted table handlers and sized immediate
+continuations execute natively with positive counts and independent full GPR,
+LS, return, status, interrupt-control and caller-FP expectations against the
+production interpreter. Existing zero/raw/load-bias/symbol/data-table contracts
+and the 19 production/19 historical/13 baseline call-boundary controls pass
+locally. Focused hosted checks remain pending at this checkpoint; separate
+inherited native-leaf fixture failures are not reported as passes.
+
+Private exact-original image analysis restores entries at LS 0x4080 and 0x7660
+and changes detected partitions from 154 to 910. All 64 captured complete entry
+spans match original bytes. Actual newly emitted prefixes agree with production
+interpretation on captured GPR/LS/status/events and authored caller FP. The
+0x7660 prefix stops at its genuine queued successor; 0x4080 stops visibly at
+its first uncaptured callee, excluding lazy published PC and host bookkeeping
+there. Image/LS pointers and RUNNING host-driver status are reconstructed for
+both paths; this is instruction-prefix evidence, not full runtime-startup,
+callee, IRQ/DMA, job, gameplay or speedup proof.
+
+No proprietary input or generated code is committed. Native integration and
+normal-PLAY admission remain pending; #71's intermittent freeze and #27's stable
+30 FPS/original-graphics acceptance are not resolved by this correction.

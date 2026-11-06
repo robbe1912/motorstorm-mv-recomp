@@ -18,6 +18,13 @@ extern int spu_run_with_halt(void (*)(spu_context*), spu_context*);
 static u128 expected[128];
 static uint8_t original_ls[SPU_LS_SIZE];
 static int native_targets, ends, variant;
+static uint32_t table_address;
+
+static void table_target(spu_context *c) {
+    native_targets++;
+    if (table_address == 0x1020) table_spu_func_00001020(c);
+    else table_spu_func_00001028(c);
+}
 
 static void target(spu_context *c) {
     native_targets++;
@@ -88,5 +95,36 @@ int main(void) {
         check_state();
     }
     puts("PASS 3 actual generated native continuations and pure reference: GPR/LS/PC/status/IRQ/FP oracle");
+    variant = 0;
+    for (unsigned choice = 0; choice < 2; choice++) {
+        table_address = choice ? 0x1028 : 0x1020;
+        spu_begin_image(300 + choice);
+        spu_register_function(table_address, table_target);
+        table_spu_recomp_register();
+        spu_register_function(0x8000, end);
+        for (unsigned reference = 0; reference < 2; reference++) {
+            initialize();
+            ctx.image_id = (reference ? 400 : 300) + choice;
+            for (unsigned lane = 0; lane < 4; lane++) ctx.gpr[2]._u32[lane] = table_address;
+            memcpy(expected, ctx.gpr, sizeof expected);
+            for (unsigned lane = 0; lane < 4; lane++) {
+                expected[3]._u32[lane] = 0x1010;
+                expected[4]._u32[lane] = choice ? 22 : 11;
+            }
+            for (unsigned i = 0; i < sizeof table_program / sizeof table_program[0]; i++)
+                for (unsigned byte = 0; byte < 4; byte++)
+                    ctx.ls[0x1000 + i * 4 + byte] = table_program[i] >> (24 - byte * 8);
+            memcpy(original_ls, ctx.ls, sizeof original_ls);
+            if (!reference) {
+                native_targets = ends = 0;
+                assert(spu_run_with_halt(table_spu_func_00001000, &ctx) == 0);
+            } else {
+                assert(spu_interp_run_until_budget(&ctx, 0x1000, 0x8000, 32) == 0x8000);
+            }
+            assert(native_targets == 1 && ends == 1);
+            check_state();
+        }
+    }
+    puts("PASS 2 actual sized-symbol computed entries and pure reference: GPR/LS/PC/status/IRQ/FP oracle");
     return 0;
 }

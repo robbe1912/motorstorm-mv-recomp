@@ -669,9 +669,13 @@ def detect_functions(buf, base_override=None, verbose=True, raw=False, *, load_b
 
     # ---- end discovery ----
     funcs = []
-    for start in sorted_starts:
+    for index, start in enumerate(sorted_starts):
         if start in sized_by_start:
-            end = sized_by_start[start]
+            # STT_FUNC describes an original function's extent, not its only
+            # valid resume entry. Preserve discovered internal branch/table
+            # seeds instead of merging them back into the containing symbol.
+            next_start = sorted_starts[index + 1] if index + 1 < len(sorted_starts) else code_end
+            end = min(sized_by_start[start], next_start, code_end)
         else:
             end = find_end(start, insns_by_addr, sorted_starts, code_end)
         if end > start:

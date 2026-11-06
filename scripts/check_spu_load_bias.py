@@ -26,6 +26,7 @@ from wrap_spu_elf import wrap
 ap = argparse.ArgumentParser(description=__doc__)
 ap.add_argument('--output', type=Path)
 ap.add_argument('--historical-lifter', type=Path)
+ap.add_argument('--historical-discovery', type=Path)
 args = ap.parse_args()
 out = (args.output or ROOT / 'temp/checks' / ('load-bias-' + str(time.time_ns()))).resolve()
 out.mkdir(parents=True, exist_ok=False)
@@ -92,6 +93,33 @@ found, segment = discover(data, load_bias=0x3030)
 assert {0x4038, 0x403C, 0x4040} <= {s for s, _ in found}
 assert (0x403C, 0x4040) in found and segment[1] == 0x4030
 record('nonzero ELF vaddr plus bias, entry and sized symbol')
+# A valid computed target must survive a containing STT_FUNC size. Symbol
+# metadata describes the original function, not the only native resume entry.
+table_words = [0x42000000 | (0x1010 << 7) | 3, 0x35000100,
+               0x40200000, 0x40200000, 0x1020, 0x1028,
+               0x40200000, 0x40200000, 0x40800584, 0x35000000,
+               0x40800B04, 0x35000000]
+sized_table = wrap(blob(table_words), base=0x1000, entry=0x1000,
+                   symbols=[{'name': 'sized', 'addr': 0x1000, 'size': 48}])
+assert {0x1000, 0x1020, 0x1028} <= starts(sized_table)
+record('computed table targets survive enclosing sized symbol')
+
+def check_erased_entries(source, label):
+    namespace = {'__file__': str(VENDOR / 'tools/find_spu_functions.py'), '__name__': 'sized_entry_control'}
+    exec(compile(source, label, 'exec'), namespace)
+    old, _ = namespace['detect_functions'](sized_table, verbose=False)
+    assert 0x1020 not in {s for s, _ in old} and 0x1028 not in {s for s, _ in old}
+    record(label + ' erases recognized native entries (RED)')
+
+discovery_source = (VENDOR / 'tools/find_spu_functions.py').read_text()
+correct = 'end = min(sized_by_start[start], next_start, code_end)'
+assert discovery_source.count(correct) == 1
+check_erased_entries(discovery_source.replace(correct, 'end = sized_by_start[start]'),
+                     'full-symbol-overlap mutant')
+if args.historical_discovery:
+    old_source = args.historical_discovery.read_text()
+    report['historical_discovery_sha256'] = hashlib.sha256(args.historical_discovery.read_bytes()).hexdigest()
+    check_erased_entries(old_source, 'actual previous discovery')
 special = bytearray(wrap(blob([0x40200000] * 4 + [0x40803D83, 0x35000000]),
                         symbols=[{'name': 'absolute', 'addr': 0x4040, 'size': 4},
                                  {'name': 'undefined', 'addr': 0x14, 'size': 4}]))
@@ -135,7 +163,8 @@ programs = []
 for i, name in enumerate(names):
     words = plain.copy(); words[1] |= [0, 0x80000, 0x40000][i]
     programs.append(words)
-    image = out / (name + '.elf'); image.write_bytes(wrap(blob(words)))
+    image = out / (name + '.elf')
+    image.write_bytes(wrap(blob(words), symbols=[{'name': 'whole', 'addr': 0, 'size': len(words) * 4}]))
     command([sys.executable, VENDOR / 'tools/spu_lifter.py', '--auto-functions', image,
              '--base', '0x4030', '-o', out, '--source-name', name + '.c',
              '--header-name', name + '.h', '--symbol-prefix', name + '_'])
@@ -149,7 +178,12 @@ if args.historical_lifter:
     report['historical_lifter_sha256'] = hashlib.sha256(args.historical_lifter.read_bytes()).hexdigest()
     record('actual old-production RED: successful generation omits native continuation')
 
-header = []
+table_image = out / 'table.elf'; table_image.write_bytes(sized_table)
+command([sys.executable, VENDOR / 'tools/spu_lifter.py', '--auto-functions', table_image,
+         '-o', out, '--source-name', 'table.c', '--header-name', 'table.h', '--symbol-prefix', 'table_'])
+assert {0x1020, 0x1028} <= registered((out / 'table.c').read_text())
+header = ['#include "table.h"']
+header.append('static const uint32_t table_program[] = {' + ','.join(hex(w) for w in table_words) + '};')
 for name in names:
     for suffix in ['spu_func_00004030', 'spu_func_00004040']:
         header.append('void ' + name + '_' + suffix + '(spu_context*);')
@@ -165,7 +199,7 @@ runtime = ['spu_channels.c', 'spu_drain.c', 'spu_lockstep.c', 'spu_coherency.c',
            'spu_workload.c', 'spurs_policy.c', 'spurs_job.c', 'spu_tsp_weak.c',
            'spu_vm_pagemap.c', 'spurs_policy_blob_weak.c', 'spu_interp.c',
            'spu_float_simd.c', 'spu_task_lifecycle.c']
-sources = [ROOT / 'scripts/fixtures/spu_load_bias.c', *[out / (n + '.c') for n in names],
+sources = [ROOT / 'scripts/fixtures/spu_load_bias.c', out / 'table.c', *[out / (n + '.c') for n in names],
            *[spu / n for n in runtime], VENDOR / 'runtime/platform/win32_compat.c',
            VENDOR / 'runtime/memory/guest_read_sync.c',
            VENDOR / 'runtime/diag/loadtime_trace.c', VENDOR / 'runtime/platform/thread_name.c']
@@ -185,6 +219,7 @@ command(argv)
 env = {k: v for k, v in os.environ.items() if not k.startswith(('SPU_', 'SPURS_', 'YDKJ_'))}
 result = command([binary], env=env, cwd=out)
 assert 'PASS 3 actual generated native continuations' in result.stdout
+assert 'PASS 2 actual sized-symbol computed entries' in result.stdout
 record('actual generated continuation execution and independent architectural oracle')
 report['source_sha256'] = {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
                            for p in [Path(__file__), VENDOR / 'tools/find_spu_functions.py',
