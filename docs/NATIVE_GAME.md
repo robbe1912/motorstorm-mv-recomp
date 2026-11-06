@@ -43,6 +43,20 @@ stale notification and repeated fence reuse; the actual previous wait fails the
 target-completion assertion. This proves the fence protocol, not full snapshot
 pixels, native GetDepth admission or a frame-rate improvement.
 
+The next native trial (EXE `bd46a24c...59abdb`) reached original menu/bike/race
+through seven normal inputs and one observed intro skip, then stopped making
+logged presents. The process remained alive until its configured 432.813-second
+guard. Exact-symbol diagnostic stacks place main in Havok's
+`waitForStepWorldFinished`/`hkSemaphore::acquire` condition wait; renderer is
+mostly waiting and no readback-fence wait appears in that sample. The late
+GetDepth probe saw zero entries, not accepted live numeric pairs. This is the
+condition family tracked by issue 71; its current producer, object and release
+are not yet paired. One unmatched trial does not establish a causal regression
+or fix. Last available FPS groups ended well before termination and are not a
+final-minute benchmark. Sustained gameplay and the full native query are still
+unaccepted; graphics defects remain.
+
+
 ## PCM cubic DSP prototype (#288)
 
 The [typed PCM resampler](../src/motorstorm/pcm_cubic.h) accepts signed PCM16,
