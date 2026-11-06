@@ -16,7 +16,7 @@ def function(source,name):
     return match.group()
 
 def main():
-    ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('--adapter',choices=['hardware','warp'],default='hardware');ap.add_argument('--historical-backend',type=Path);args=ap.parse_args()
+    ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('--adapter',choices=['hardware','warp'],default='hardware');ap.add_argument('--historical-backend',type=Path);ap.add_argument('--optimize-renderer',action='store_true',help='Use checked O2 and automatic inlining for actual backend/layout');args=ap.parse_args()
     assert os.name=='nt','This actual D3D12 test requires Windows; no simulated pass is provided'
     tasks=subprocess.check_output(['tasklist','/FI','IMAGENAME eq ms1_recomp.exe','/FO','CSV','/NH'],text=True)
     assert not any(row and row[0].lower()=='ms1_recomp.exe' for row in csv.reader(tasks.splitlines())),'Stop the owned game before this diagnostic'
@@ -28,6 +28,7 @@ def main():
     assert count==4,'Backend entry-point interface changed; review fixture linkage'
     paths=[backend,public_header,VENDOR/'libs/video/rsx_d3d12_texture_residency.h',VENDOR/'libs/video/rsx_texture_fingerprint.h',VENDOR/'libs/video/rsx_texture_layout.c',ROOT/'scripts/fixtures/rsx_d3d12_texture_gpu.c',VENDOR/'libs/video/third_party/xxhash/PROVENANCE.json']
     result={'qualification':'Actual production backend function bodies and real DX12 allocation, queue/fence, upload and readback. Four unrelated entry-point declarations become static only for fixture linkage; an unexercised relocation diagnostic boundary aborts visibly. Authored bytes. Production SRV writer tested by actual 2D/cube shader sampling; no whole-game or throughput/FPS proof. Stale-event case signals only an authored blocking gate; the real queue must complete its own target fence.', 'adapter_requested':args.adapter,'source_sha256':{str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths},'commands':[]}
+    result['renderer_optimization']=args.optimize_renderer
     env=dict(os.environ)
     for k in list(env):
         if k.startswith(('RSX_','TEX_')):env.pop(k)
@@ -39,6 +40,8 @@ def main():
         work=out/tag;work.mkdir();(work/'backend-static.c').write_text(text);(work/'rsx_d3d12_backend.h').write_text(header)
         shutil.copyfile(ROOT/'scripts/fixtures/rsx_d3d12_texture_gpu.c',work/'gpu.c');exe=work/'gpu.exe'
         cmd=[compiler,'/nologo','/TC','/std:c17','/O1','/MDd','/UNDEBUG','/Gy','/Gw','/I'+str(VENDOR/'include'),'/I'+str(ROOT/'runtime'),'/I'+str(VENDOR/'runtime/platform/win32'),'/I'+str(VENDOR/'libs/video'),str(work/'gpu.c'),str(VENDOR/'libs/video/rsx_texture_layout.c'),'/Fo'+str(work)+'/', '/Fe'+str(exe),'/link','/OPT:REF','/INCREMENTAL:NO','dxguid.lib']
+        position=cmd.index(str(work/'gpu.c'))
+        cmd[position:position]=(['/clang:-O2','/Ob2'] if args.optimize_renderer else [])+['/clang:-fno-strict-aliasing','/clang:-ffp-contract=off']
         assert command(cmd,tag+'-compile').returncode==0,f'Compilation failed: {out}/result.json'
         result.setdefault('binary_sha256',{})[tag]=hashlib.sha256(exe.read_bytes()).hexdigest();return exe
     exe=build(source,'production')
