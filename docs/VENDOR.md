@@ -1709,8 +1709,9 @@ continuations execute natively with positive counts and independent full GPR,
 LS, return, status, interrupt-control and caller-FP expectations against the
 production interpreter. Existing zero/raw/load-bias/symbol/data-table contracts
 and the 19 production/19 historical/13 baseline call-boundary controls pass
-locally. Focused hosted checks remain pending at this checkpoint; separate
-inherited native-leaf fixture failures are not reported as passes.
+locally. Focused fork Windows/Linux checks pass; macOS was cancelled before any
+step executed, so no macOS pass is claimed. Separate inherited native-leaf
+fixture failures are not reported as passes.
 
 Private exact-original image analysis restores entries at LS 0x4080 and 0x7660
 and changes detected partitions from 154 to 910. All 64 captured complete entry
@@ -1722,6 +1723,23 @@ there. Image/LS pointers and RUNNING host-driver status are reconstructed for
 both paths; this is instruction-prefix evidence, not full runtime-startup,
 callee, IRQ/DMA, job, gameplay or speedup proof.
 
-No proprietary input or generated code is committed. Native integration and
-normal-PLAY admission remain pending; #71's intermittent freeze and #27's stable
-30 FPS/original-graphics acceptance are not resolved by this correction.
+No proprietary input or generated code is committed. A private build regenerated
+only embedded image2, preserving its original fingerprint/registration and the
+other generated images, and was tested with PR303's separate readback-safety
+baseline. Exact EXE `d15cced9ee749f5f5a2948da70afffedd2390fae6d061d414af996b3e6888c42`
+and matching PDB reached normal PLAY, original menu/bike and actual race in
+`20261106T170141.608555Z` (presenting frames 11/17/30/49; race timer advanced
+00:10.32 to 04:00.28). It ended at its configured 402.297-second post-target
+guard with no resource breach; shadow/ground/shading defects remain.
+
+A bounded exact-symbol read-only probe observed 64 native entries each at
+0x4080/0x7660, image2, no bad-context/errors/truncation/cleanup failure. This
+proves those entries execute natively, not universal fallback elimination or
+whole-job completion. The probe was detached before the unsuspended 60.0791s
+CPU window: async 47.8594 CPU-s, MP3 PPU 43.2969, policy 42.7969, renderer
+26.4688. Thread costs overlap and omit threads absent at window boundaries.
+The last 60 intact diagnostic groups through nominal second401 recorded
+329 successful API Presents over 59.857331 reconstructed seconds (5.4964/s,
+115.040-355.418ms intervals; rounding bound0.0001645s, no missing groups).
+This single trial is not scanout, matched performance evidence or stable30FPS.
+#71's intermittent freeze and #27's full performance/graphics goal remain open.
