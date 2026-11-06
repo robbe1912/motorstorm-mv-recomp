@@ -27,6 +27,22 @@ bound into gameplay. No readback wait is skipped and no frame-time improvement
 or stable 30 FPS is claimed; the full native query and coherent view remain open
 under [issue 302](https://github.com/robbe1912/motorstorm-mv-recomp/issues/302).
 
+Read-only native observation identifies the original PixelBuffer lock/unlock
+callbacks. The first capture rejected all 32 numeric pairs because its extent
+check mistook a callback return value for an allocation bound. It is not live
+arithmetic-replay evidence. Neighbor sampling can cross the logical image edge;
+backing allocation, alias and lifetime proof remain necessary before binding.
+
+The existing CPU-surface readback wait now rechecks its own target fence after
+every event notification, retains the 30-second bound, and rejects device loss,
+the removed-fence sentinel and counter overflow. Older notifications cannot
+authorize mapping unfinished GPU work. `check_rsx_surface_fence.py` exercises
+nine authored wait/error outcomes and rejects three source mutants. Its optional
+`--gpu` test passes on an RTX 3080 with the D3D12 debug layer, a real blocked queue,
+stale notification and repeated fence reuse; the actual previous wait fails the
+target-completion assertion. This proves the fence protocol, not full snapshot
+pixels, native GetDepth admission or a frame-rate improvement.
+
 ## PCM cubic DSP prototype (#288)
 
 The [typed PCM resampler](../src/motorstorm/pcm_cubic.h) accepts signed PCM16,
