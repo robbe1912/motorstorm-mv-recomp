@@ -108,6 +108,14 @@ removes `/Od` and `/Ob0` in directory scope while retaining cached defaults.
 Build identity records `optimized_checked`. A configured or compiled optimized
 binary is not evidence of a speedup, correct graphics or an achieved FPS target.
 
+Renderer evaluation can additionally use `--optimize-renderer` with `--optimize`.
+This defaults off and selects O2 (plus automatic `/Ob2` inlining on clang-cl)
+only for eight native video/FIFO translation units. Guest PPU/SPU compilation,
+assertions, Debug CRT, strict arithmetic and GPU retirement checks retain their
+existing settings. `renderer_optimization` in build identity records the selected
+source list, and the helper hash is retained. This is an experimental build
+comparison under issue #296; compilation alone proves no frame-rate improvement.
+
 `python scripts/check_spurs_guest_fields.py` compiles the complete affected
 SPURS API definitions and the real BE taskset builder against an authored
 guest-header fixture. Dispatch is stubbed; no game or SPU execution occurs.

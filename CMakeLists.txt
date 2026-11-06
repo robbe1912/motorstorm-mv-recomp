@@ -108,6 +108,8 @@ message(STATUS "Lifted sources:  ${RECOMP_SOURCE_COUNT} file(s)")
 # different reason. add_subdirectory hands all of that over with the target.
 add_subdirectory("${PS3RECOMP_DIR}" "${CMAKE_BINARY_DIR}/ps3recomp_sdk"
                  EXCLUDE_FROM_ALL)
+include("${CMAKE_CURRENT_SOURCE_DIR}/src/renderer_optimization.cmake")
+motorstorm_configure_renderer_optimization("${PS3RECOMP_DIR}")
 
 # ---------------------------------------------------------------------------
 # The HLE NID table
