@@ -3,6 +3,7 @@
  */
 
 #include "sys_timer.h"
+#include "../platform/native_short_sleep.h"
 #include "ps3emu/loadtime_trace.h"   /* #11 load-stage timing (observer) */
 #include "sys_event.h"
 #include "../memory/vm.h"
@@ -229,7 +230,9 @@ static int64_t sys_timer_usleep_untraced(ppu_context* ctx)
     ppu_thread_wait_begin(ctx, "timer_usleep", usec, 0);
 #ifdef _WIN32
     /* Use high-resolution sleep via waitable timer for better precision */
-    if (usec >= 1000) {
+    if (usec > 0 && usec < 1000 && ps3_native_short_sleep(usec)) {
+        /* Native wait reached its real deadline; retain common wait-end handling. */
+    } else if (usec >= 1000) {
         HANDLE timer = CreateWaitableTimerW(NULL, TRUE, NULL);
         if (timer) {
             LARGE_INTEGER due;

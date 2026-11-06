@@ -1743,3 +1743,32 @@ The last 60 intact diagnostic groups through nominal second401 recorded
 115.040-355.418ms intervals; rounding bound0.0001645s, no missing groups).
 This single trial is not scanout, matched performance evidence or stable30FPS.
 #71's intermittent freeze and #27's full performance/graphics goal remain open.
+
+
+### Native Windows short waits (#300)
+
+Modular fork `7513148c5da1ffecaa0bf1f2b4a6302deef6c2c6` was merged into
+canonical combined `61b25c1e42b8eeb4115eac45814fc7819deffe17`. The selective
+port preserves the curated YieldProcessor/SwitchToThread cadence, common PPU
+wait-end tracing, zero and millisecond-plus paths. The generic default-reference
+helper uses InitOnce, an FLS-owned auto-reset high-resolution timer, integer-ceiling
+QPC deadlines, early-wake rearming, caller fenv/MXCSR restoration and checked
+thread-exit cleanup. Timer failures report real reference fallback. Microsoft SDK
+CreateWaitableTimerExW/SetWaitableTimerEx/FlsAlloc contracts informed the design;
+there is no title-specific exception or manufactured guest completion.
+
+The actual old caller compiles but fails native admission. Six source mutants
+cover missing linkage, premature completion, refreshed/rounded deadlines, lost
+FP state and leaked handles. Deterministic defaults/bounds/API-failure controls
+passed on three fork CI platforms; Windows also executed real concurrency/timer
+checks. The curated real fixture passes 128 not-before/FP cases and four FLS-exit
+handle closes. Actual launcher AST tests cover 120 mode/build/hash/inheritance
+combinations, nine invalid selectors and three rejected mutants. Build identity
+records capability/helper SHA; explicit launcher mode remains reference by default.
+
+Five alternating curated-operation windows retain complete output/deadline and
+owned-affinity checks, CPU/cycle counts and latency. Blocking used far fewer
+cycles but roughly doubled 500 us polling latency, with a 35.64 ms outlier amid
+uncontrolled host work. These are not game/audio/FPS results. Native normal-PLAY
+admission and sustained validation remain pending. The inherited unrelated SPU
+native-leaf fixture dependency failures remain #284, not passing regressions.

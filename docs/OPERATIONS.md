@@ -344,3 +344,22 @@ button/target screen; independent text matching and owned completed-frame
 checks remain required. Validate real loaded/unloaded/distant/wrong-screen
 cases, preserve reference provenance, and inspect graphics separately: a
 readiness predicate is not graphics acceptance.
+
+
+### Explicit blocking short waits
+
+`--native-short-sleep 0|1` defaults to reference `0`, overrides inherited
+`PS3_NATIVE_SHORT_SLEEP`, and records the value. Mode `1` requires a matching
+exact-EXE build identity with Windows short-wait capability. Positive sub-ms
+requests may use a reused per-thread high-resolution timer. Zero, longer waits,
+the reference loop and common wait tracing remain unchanged. Early notifications
+re-block against the original monotonic deadline. API failures report and use
+reference waits; invalid counters/options and cleanup failures remain fatal.
+No guest completion, process priority or global timer resolution is changed.
+
+Five alternating operation windows retained CPU cycles and latency separately:
+500 us requests had about 1 ms median native latency versus 500 us reference,
+with one native outlier above 35 ms. Native cycle cost was far lower; coarse
+thread CPU counters sometimes rounded to zero, which is not zero CPU use.
+Match modes/settings and measure audio/job/frame behavior before promoting it.
+This isolated result does not establish game or audio improvement.

@@ -25,6 +25,7 @@ def main():
     ap.add_argument('--capture-on-pad',type=lambda value:int(value,0),default=0,help='Arm capture burst in native code when PAD_FILE consumes a matching button mask')
     ap.add_argument('--menu-replay',type=Path,help='Private observed-screen profile; normal PAD_FILE input, not a scene jump')
     ap.add_argument('--native-pcm-cubic',choices=('0','shadow','1'),default='0',help='Explicit verified PCM DSP mode; requires matching native-enabled build')
+    ap.add_argument('--native-short-sleep',choices=('0','1'),default='0',help='Explicit native blocking short waits; requires matching capable build, default reference')
     ap.add_argument('--native-visibility',choices=('0','shadow','1'),default='0',help='Explicit verified visibility mode; requires matching native-enabled build')
     ap.add_argument('--d3d12-debug',choices=('default','0','1'),default='default',help='Explicit API validation selection; default preserves build policy and assertions stay enabled')
     ap.add_argument('--profile-textures',action='store_true',help='Existing aggregate DX12 texture phases and cache outcomes; adds timing overhead')
@@ -57,7 +58,8 @@ def main():
         raise SystemExit('Menu replay target differs from configured ELF; no process launched')
     if not exe.is_file(): raise SystemExit('Build first: python scripts/project.py build')
     for selected,flag,description in ((args.native_pcm_cubic,'native_pcm_cubic','PCM DSP'),
-                                     (args.native_visibility,'native_visibility','Visibility')):
+                                     (args.native_visibility,'native_visibility','Visibility'),
+                                     (args.native_short_sleep,'native_short_sleep','Short wait')):
         if selected != '0':
             identity=json.loads((ROOT/'build/native/build_identity.json').read_text())
             if not identity.get(flag) or identity.get('sha256') != hashlib.sha256(exe.read_bytes()).hexdigest():
@@ -72,6 +74,7 @@ def main():
     env=dict(os.environ)
     env['MS_NATIVE_PCM_CUBIC']=args.native_pcm_cubic
     env['MS_NATIVE_VISIBILITY']=args.native_visibility
+    env['PS3_NATIVE_SHORT_SLEEP']=args.native_short_sleep
     env.pop('D3D12_DBG',None)
     env.pop('PERF',None)
     if args.d3d12_debug != 'default':env['D3D12_DBG']=args.d3d12_debug
@@ -132,7 +135,7 @@ def main():
     record['profile_textures']=args.profile_textures
     record['d3d12_debug']=args.d3d12_debug
     record['replay_observe_seconds']=args.replay_observe_seconds
-    record['environment'].update({k:v for k,v in env.items() if k in ('PERF','D3D12_DBG','RSX_TEXTURE_RETENTION','RSX_TEXTURE_CACHE_MIB','RSX_CPU_SURFACE_PROFILE') or k.startswith('MS_NATIVE_')})
+    record['environment'].update({k:v for k,v in env.items() if k in ('PERF','D3D12_DBG','PS3_NATIVE_SHORT_SLEEP','RSX_TEXTURE_RETENTION','RSX_TEXTURE_CACHE_MIB','RSX_CPU_SURFACE_PROFILE') or k.startswith('MS_NATIVE_')})
     record['environment'].update({k:env[k] for k in ('SPU_TASK_LIFECYCLE_TRACE','SPU_TASK_LIFECYCLE_IMAGE') if k in env})
     (out/'launch.json').write_text(json.dumps(record,indent=2)); print('Owned native PID',p.pid,'output',out,flush=True)
     window_ready=False
