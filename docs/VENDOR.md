@@ -1693,3 +1693,29 @@ now abort visibly on a failed target-fence wait. The curated backend has ten
 such callers; its checked void retirement wrapper remains unchanged. CPU
 fixtures cover failure before and after capacity submission and preserve
 recorded ownership when the wait fails, even with an otherwise completed fence.
+
+
+## CPU-surface target fence prerequisite (#302)
+
+The curated readback wait selectively carries fork modular
+`49ac5d3f802c772e64313e7f5b448720d6d9bbef`, through canonical combined
+`f77c7508b63e98850a9ac2aba3f4e1a31d0eb16b`. Its previous function was checked
+against the preserved fork source before replacement. Other surface-copy,
+request, generation and retirement logic is retained. A stale event wake is
+rechecked against the actual target; failure, device removal, sentinel and
+counter overflow remain visible errors under the existing 30-second bound.
+
+Actual function-body CPU tests cover nine outcomes and reject single-wake,
+omitted-sentinel and refreshed-deadline mutants. The authored headless GPU
+fixture uses real RTX 3080 queue/fence/event objects with validation enabled;
+the corrected wait and repeated reuse pass with zero validation messages, while
+the actual historical body returns before its target and fails the assertion.
+Whole backend checked and NDEBUG compilation also pass. These are protocol
+controls, not a game speedup or a complete CPU-surface pixel/coherence proof.
+
+The combined branch also contains transactional snapshot transport and a held
+FIFO boundary callback, with Windows/Linux/macOS CPU controls. Those APIs are
+not included in this selective game port and no GPU snapshot provider is yet
+installed. The separate inherited native-leaf workflow still fails linking its
+unchanged fixture dependencies; this is tracked by #284 and is not reported as
+a passing regression suite. The full native query remains draft PR303.

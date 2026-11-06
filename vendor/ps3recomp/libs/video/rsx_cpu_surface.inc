@@ -51,13 +51,23 @@ static void cpu_surface_profile_emit(CpuSurfaceRequest *request) {
         (unsigned long long)p->host_bytes,(unsigned long long)p->guest_bytes);
 }
 static void cpu_surface_fence_wait(void) {
+    if(s_cpu_surface_fence_value==UINT64_MAX)cpu_surface_fail("GPU fence counter overflow",E_FAIL);
     u64 value=++s_cpu_surface_fence_value;
     CPU_SURFACE_HR(s_d3d.cmd_queue->lpVtbl->Signal(s_d3d.cmd_queue,s_cpu_surface_fence,value));
-    if(s_cpu_surface_fence->lpVtbl->GetCompletedValue(s_cpu_surface_fence)<value) {
+    u64 deadline=GetTickCount64()+30000;
+    for(;;) {
+        CPU_SURFACE_HR(s_d3d.device->lpVtbl->GetDeviceRemovedReason(s_d3d.device));
+        u64 completed=s_cpu_surface_fence->lpVtbl->GetCompletedValue(s_cpu_surface_fence);
+        if(completed==UINT64_MAX)cpu_surface_fail("GPU fence removed sentinel",E_FAIL);
+        if(completed>=value)break;
         CPU_SURFACE_HR(s_cpu_surface_fence->lpVtbl->SetEventOnCompletion(s_cpu_surface_fence,value,s_cpu_surface_event));
-        if(WaitForSingleObject(s_cpu_surface_event,30000)!=WAIT_OBJECT_0)cpu_surface_fail("GPU fence wait",E_FAIL);
+        u64 now=GetTickCount64();
+        if(now>=deadline)cpu_surface_fail("GPU fence deadline",E_FAIL);
+        if(WaitForSingleObject(s_cpu_surface_event,(DWORD)(deadline-now))!=WAIT_OBJECT_0)
+            cpu_surface_fail("GPU fence wait",E_FAIL);
+        /* An older event registration may wake us. Only the target fence proves
+         * that the copy is complete; keep the original bounded deadline. */
     }
-    CPU_SURFACE_HR(s_d3d.device->lpVtbl->GetDeviceRemovedReason(s_d3d.device));
 }
 static void cpu_surface_copy(OffRT *r) {
     extern uint8_t *vm_base;

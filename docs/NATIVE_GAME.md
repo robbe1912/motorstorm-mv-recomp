@@ -1,5 +1,62 @@
 # Native game operations
 
+## Deformation depth sampling prototype (#302)
+
+The [typed depth sampler](../src/motorstorm/deformation_depth.h) accepts four
+byte-valued depth samples, two fractional coordinates and a point/bilinear mode.
+It uses ordinary sample data rather than guest registers, memory or GPU handles.
+Its arithmetic retains the original single-precision rounding boundaries and
+three double fused multiply-add operations. Inputs outside the admitted finite
+unit interval are rejected before calculation; caller FP rounding, exception
+flags and x86 DAZ/FTZ state are restored.
+
+`python scripts/check_deformation_depth.py` compares 1,317 authored cases across
+16 caller FP settings against an independent exact-rational rounding oracle. It
+rejects four actual-source mutants: omitted single rounding, a wrong corner,
+ignored filtering and lost caller MXCSR. A separate private check extracts the
+actual emitted arithmetic and its real generated helpers: all 1,302 admitted
+cases agree. That fixture uses authored storage and does not exercise the
+texture callbacks, coordinate transformation, borders or GPU synchronization.
+
+Original ELF instruction bytes match all 346 GetDepth, 144 TransformPoint and
+six pixel-size instructions exported from an isolated copy of the saved Ghidra
+project. Original project hashes remain unchanged. GetDepth brackets its four
+sample loads with virtual texture operations; concrete live callback ownership,
+FIFO/GPU visibility and border semantics still need proof. This core is not yet
+bound into gameplay. No readback wait is skipped and no frame-time improvement
+or stable 30 FPS is claimed; the full native query and coherent view remain open
+under [issue 302](https://github.com/robbe1912/motorstorm-mv-recomp/issues/302).
+
+Read-only native observation identifies the original PixelBuffer lock/unlock
+callbacks. The first capture rejected all 32 numeric pairs because its extent
+check mistook a callback return value for an allocation bound. It is not live
+arithmetic-replay evidence. Neighbor sampling can cross the logical image edge;
+backing allocation, alias and lifetime proof remain necessary before binding.
+
+The existing CPU-surface readback wait now rechecks its own target fence after
+every event notification, retains the 30-second bound, and rejects device loss,
+the removed-fence sentinel and counter overflow. Older notifications cannot
+authorize mapping unfinished GPU work. `check_rsx_surface_fence.py` exercises
+nine authored wait/error outcomes and rejects three source mutants. Its optional
+`--gpu` test passes on an RTX 3080 with the D3D12 debug layer, a real blocked queue,
+stale notification and repeated fence reuse; the actual previous wait fails the
+target-completion assertion. This proves the fence protocol, not full snapshot
+pixels, native GetDepth admission or a frame-rate improvement.
+
+The next native trial (EXE `bd46a24c...59abdb`) reached original menu/bike/race
+through seven normal inputs and one observed intro skip, then stopped making
+logged presents. The process remained alive until its configured 432.813-second
+guard. Exact-symbol diagnostic stacks place main in Havok's
+`waitForStepWorldFinished`/`hkSemaphore::acquire` condition wait; renderer is
+mostly waiting and no readback-fence wait appears in that sample. The late
+GetDepth probe saw zero entries, not accepted live numeric pairs. This is the
+condition family tracked by issue 71; its current producer, object and release
+are not yet paired. One unmatched trial does not establish a causal regression
+or fix. Last available FPS groups ended well before termination and are not a
+final-minute benchmark. Sustained gameplay and the full native query are still
+unaccepted; graphics defects remain.
+
+
 ## PCM cubic DSP prototype (#288)
 
 The [typed PCM resampler](../src/motorstorm/pcm_cubic.h) accepts signed PCM16,
