@@ -13,7 +13,16 @@ if os.name=="nt":
 if os.name!='nt':
  import resource
  resource.setrlimit(resource.RLIMIT_CORE,(0,0))
-ap=argparse.ArgumentParser();ap.add_argument('--real',action='store_true');ap.add_argument('--historical-timer');ap.add_argument('--benchmark',action='store_true');args=ap.parse_args()
+def benchmark_usec(value):
+ n=int(value)
+ if not 1<=n<1000:raise argparse.ArgumentTypeError('benchmark request must be 1..999 microseconds')
+ return n
+
+ap=argparse.ArgumentParser();ap.add_argument('--real',action='store_true');ap.add_argument('--historical-timer');ap.add_argument('--benchmark',action='store_true');ap.add_argument('--benchmark-usec',type=benchmark_usec,default=500);args=ap.parse_args()
+if args.benchmark and os.name=='nt':
+ import csv
+ processes=subprocess.run(['tasklist','/FI','IMAGENAME eq ms1_recomp.exe','/FO','CSV','/NH'],text=True,capture_output=True,check=True)
+ assert not any(row and row[0].lower()=='ms1_recomp.exe' for row in csv.reader(processes.stdout.splitlines())),'Refusing operation benchmark while native game is live'
 p=ROOT/'temp/checks'/f'native-short-sleep-{time.time_ns()}';p.mkdir(parents=True)
 report={'qualification':__doc__,'commands':[],'hashes':{}}
 def digest(x):return hashlib.sha256(x.read_bytes()).hexdigest()
@@ -68,9 +77,9 @@ if args.benchmark:
  import statistics
  bench=ROOT/'scripts/fixtures/benchmark_native_short_sleep.c';report['hashes'][str(bench.relative_to(ROOT))]=digest(bench)
  bexe=build(bench.read_text().replace('#include "../native_short_sleep.c"',src.read_text()).replace('/* ACTUAL_WINDOWS_BRANCH */',branch),'benchmark',True)
- report['benchmark']={'qualification':'Five alternating windows/mode, same executable and actual curated wait branch, pinned owned thread, 1000 x 500us requests/window with 32 warmups; scheduled CPU may quantize to zero; thread cycles retained without converting them to CPU seconds. Unrelated host work uncontrolled; no whole-game/audio/FPS inference. Timer latency distribution retained along with CPU cost.','windows':[]}
+ report['benchmark']={'requested_us':args.benchmark_usec,'qualification':'Five alternating windows/mode, same executable and actual curated wait branch, pinned owned thread, 1000 requests/window at the recorded requested_us with 32 warmups; scheduled CPU may quantize to zero; thread cycles retained without converting them to CPU seconds. Unrelated host work uncontrolled; no whole-game/audio/FPS inference. Timer latency distribution retained along with CPU cost.','windows':[]}
  for mode in [0,1]*5:
-  r=run([bexe,1000],fresh(str(mode)));row=json.loads(r.stdout);assert row['operations']==1000 and row['minimum_us']>=500;row['mode']=mode;report['benchmark']['windows'].append(row);save()
+  r=run([bexe,1000,args.benchmark_usec],fresh(str(mode)));row=json.loads(r.stdout);assert row['operations']==1000 and row['minimum_us']>=args.benchmark_usec and row['requested_us']==args.benchmark_usec;row['mode']=mode;report['benchmark']['windows'].append(row);save()
  for mode in [0,1]:
   rows=[r for r in report['benchmark']['windows'] if r['mode']==mode];summary={key:{'median':statistics.median(r[key] for r in rows),'range':[min(r[key] for r in rows),max(r[key] for r in rows)]} for key in ['wall_ms','cpu_ms','thread_cycles','median_us','maximum_us']};report['benchmark'][str(mode)]=summary;print('Mode',mode,summary)
 report['result']='PASS';save();print('PASS production short wait/caller: reference/default/fallbacks, deadline/early wake/overflow/FP, cleanup and six rejected mutants;',p/'result.json')
