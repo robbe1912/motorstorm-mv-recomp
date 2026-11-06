@@ -116,6 +116,16 @@ existing settings. `renderer_optimization` in build identity records the selecte
 source list, and the helper hash is retained. This is an experimental build
 comparison under issue #296; compilation alone proves no frame-rate improvement.
 
+The first native evaluation changed exactly eight object commands, leaving 207
+others unchanged. With matching executable/PDB identity, normal gated PLAY
+reached original menu/bike assets and a race. Its unsuspended diagnostic window
+still ended at about 3.81 successful API Presents/s; no controlled game gain was
+established and the option remains off by default. Assertions, Debug CRT and
+strict arithmetic stayed enabled. The actual O2 backend passed GPU readback,
+descriptor, blocked-fence and historical negative controls on an RTX 3080 with
+zero validation messages. Native graphics defects and the 30 FPS goal remain
+unresolved; matched alternating trials are required before promoting a speedup.
+
 `python scripts/check_spurs_guest_fields.py` compiles the complete affected
 SPURS API definitions and the real BE taskset builder against an authored
 guest-header fixture. Dispatch is stubbed; no game or SPU execution occurs.
