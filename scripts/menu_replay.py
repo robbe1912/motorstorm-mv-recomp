@@ -1,5 +1,6 @@
 """Replay observed native menu states through normal input; never jump guest scenes."""
 import json
+import math
 import time
 from pathlib import Path
 
@@ -11,6 +12,23 @@ def references(state):
     if not isinstance(variants, list) or any(not isinstance(p, str) or not p for p in variants):
         raise ValueError('reference_variants must list observed internal image paths')
     return [state['reference']] + variants
+
+
+def luminance_bounds(state):
+    threshold = state.get('luma_below')
+    low, high = state.get('min_fraction'), state.get('max_fraction')
+    if type(threshold) is not int or not 1 <= threshold <= 254 or \
+            any(type(x) not in (int, float) or not math.isfinite(x) for x in (low, high)) or \
+            not 0 < low <= high < 1:
+        raise ValueError('Secondary luminance gate requires bounded threshold/fractions')
+    return threshold, low, high
+
+
+def luminance_matches(frame, state):
+    threshold, low, high = luminance_bounds(state)
+    pixels = frame_signature(frame, state['roi'], 'contrast')
+    fraction = sum(value < threshold for value in pixels) / len(pixels)
+    return low <= fraction <= high
 
 
 def load_profile(path):
@@ -27,6 +45,8 @@ def load_profile(path):
             raise ValueError('Optional action requires a valid after_step')
     states = p['steps'] + optional + [p['target']]
     for n, step in enumerate(states):
+        if step.get('kind', 'reference') != 'reference':
+            raise ValueError('Secondary luminance gates cannot drive buttons or replace targets')
         if not step.get('reference') or not step.get('label') or not isinstance(step.get('roi'), list) or len(step['roi']) != 4:
             raise ValueError(f'Step {n} requires an internal reference/ROI/label; no blind replay')
         for reference in references(step):
@@ -34,6 +54,14 @@ def load_profile(path):
             if step.get('mode') == 'contrast':
                 similarity(signature, signature, 'contrast')
         for extra in step.get('checks', []):
+            kind = extra.get('kind', 'reference')
+            if kind == 'luminance_occupancy':
+                luminance_bounds(extra)
+                if not all(luminance_matches(ref, extra) for ref in references(extra)):
+                    raise ValueError('Observed reference does not qualify for luminance gate')
+                continue
+            if kind != 'reference':
+                raise ValueError('Unknown secondary screen gate kind')
             for reference in references(extra):
                 signature = frame_signature(reference, extra['roi'], extra.get('mode', 'text'))
                 if extra.get('mode') == 'contrast':
@@ -56,6 +84,8 @@ def matching_reference(frame, state):
 
 
 def matches(frame, state):
+    if state.get('kind') == 'luminance_occupancy':
+        return luminance_matches(frame, state)
     return matching_reference(frame, state) is not None
 
 

@@ -326,3 +326,11 @@ The new cache remains experimental pending native race observation and matched
 measurements. Use the existing normal menu route and resource/ownership guards.
 
 The restored native visibility operation uses explicit `--native-visibility 0|shadow|1` during runs. The default `0` overrides inherited `MS_NATIVE_VISIBILITY`; nonzero choices require a matching `--native-visibility` build and recorded executable identity. Shadow/native preserve the original operation fallback and real completion. Treat shadow results and operation timings separately from gameplay frame-rate acceptance.
+
+A profile may use a `kind: luminance_occupancy` secondary check for an animated
+preview, with explicit `luma_below`, `min_fraction` and `max_fraction` bounds.
+Every observed reference must qualify. The check cannot replace a primary
+button/target screen; independent text matching and owned completed-frame
+checks remain required. Validate real loaded/unloaded/distant/wrong-screen
+cases, preserve reference provenance, and inspect graphics separately: a
+readiness predicate is not graphics acceptance.
