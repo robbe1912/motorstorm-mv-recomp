@@ -34,11 +34,18 @@ ABI require proof. No readback wait is skipped and no frame-time improvement or
 stable 30 FPS is claimed; the full native query and coherent view remain open
 under [issue 302](https://github.com/robbe1912/motorstorm-mv-recomp/issues/302).
 
-Read-only native observation identifies the original PixelBuffer lock/unlock
-callbacks. The first capture rejected all 32 numeric pairs because its extent
-check mistook a callback return value for an allocation bound. It is not live
-arithmetic-replay evidence. Neighbor sampling can cross the logical image edge;
-backing allocation, alias and lifetime proof remain necessary before binding.
+Read-only Ghidra export now identifies the calls as `PixelBuffer::Lock` at
+`0x799db4` and `PixelBuffer::UnlockInternal` at `0x799728`. The former marks
+the buffer locked at object offset `0x38`, records the requested lock mode at
+`0x3c`, selects/retains a backing object from `0x8c` according to `0x70`, then
+writes that backing object's word-4 value to the output pointer and returns a
+masked status. The latter clears only the lock marker at `0x38`. `GetDepth`
+does not test that status before dereferencing the output pointer; a previous
+probe incorrectly treated it as an allocation extent and rejected all 32
+numeric pairs. This is static ownership evidence, not live arithmetic-replay
+evidence: neighbour sampling can cross the logical image edge, and backing
+allocation extent, aliasing, FIFO/GPU visibility and lifetime proof remain
+necessary before binding.
 
 The existing CPU-surface readback wait now rechecks its own target fence after
 every event notification, retains the 30-second bound, and rejects device loss,
