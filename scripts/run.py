@@ -9,6 +9,17 @@ from native_resource_guard import commit_reserve, physical_reserve, limits, firs
 class Memory(ctypes.Structure):
     _fields_=[('length',ctypes.c_ulong),('load',ctypes.c_ulong)]+[(x,ctypes.c_ulonglong) for x in ('total_phys','available_phys','total_commit','available_commit','total_virtual','available_virtual','available_extended')]
 
+def require_worktree_private_replay(profile_path, profile):
+    """Reject replay inputs which would borrow another worktree's captures."""
+    private_root=(ROOT/'temp').resolve()
+    def require_private(path, label):
+        try: Path(path).resolve().relative_to(private_root)
+        except ValueError: raise SystemExit(f'{label} escapes this worktree temp directory; no process launched')
+    require_private(profile_path, 'Menu replay profile')
+    for step in profile['steps']: require_private(step['reference'], 'Menu replay reference')
+    target=profile['target']; require_private(target['reference'], 'Menu replay target reference')
+    for check in target.get('checks',[]): require_private(check['reference'], 'Menu replay target check reference')
+
 def main():
     ap=argparse.ArgumentParser(description=__doc__); ap.add_argument('--seconds',type=int,default=600)
     capture=ap.add_mutually_exclusive_group()
@@ -47,6 +58,7 @@ def main():
     if args.menu_replay:
         from menu_replay import load_profile
         replay_profile=load_profile(args.menu_replay)  # Reject blind routes before process creation.
+        require_worktree_private_replay(args.menu_replay, replay_profile)
     if not 1<=args.seconds<=600: raise SystemExit('Bounded run must be 1..600 seconds')
     if not 1<=args.replay_observe_seconds<=600: raise SystemExit('Replay observation must be 1..600 seconds')
     if args.replay_observe_seconds!=5 and not args.menu_replay: raise SystemExit('Replay observation requires --menu-replay')

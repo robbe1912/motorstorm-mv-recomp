@@ -176,6 +176,24 @@ class RetentionTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'launch boundary reached'):
             self.disk_launch(16 * 1024**3)
 
+    def test_menu_replay_inputs_cannot_escape_worktree(self):
+        private = self.repo / 'temp/replay'
+        private.mkdir(parents=True)
+        profile_path = private / 'profile.json'
+        reference = private / 'reference.bmp'
+        reference.write_bytes(b'authored private reference')
+        profile = dict(steps=[dict(reference=str(reference))],
+                       target=dict(reference=str(reference), checks=[dict(reference=str(reference))]))
+        with patch.object(native_launcher, 'ROOT', self.repo):
+            native_launcher.require_worktree_private_replay(profile_path, profile)
+            with tempfile.TemporaryDirectory() as external:
+                profile['steps'][0]['reference'] = str(Path(external) / 'other-worktree.bmp')
+                with self.assertRaisesRegex(SystemExit, 'Menu replay reference escapes'):
+                    native_launcher.require_worktree_private_replay(profile_path, profile)
+                profile['steps'][0]['reference'] = str(reference)
+                with self.assertRaisesRegex(SystemExit, 'Menu replay profile escapes'):
+                    native_launcher.require_worktree_private_replay(Path(external) / 'profile.json', profile)
+
     def test_junction_or_symlink_escape(self):
         with tempfile.TemporaryDirectory() as outside:
             sentinel = Path(outside) / 'source.txt'
