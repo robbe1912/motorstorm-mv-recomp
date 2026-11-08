@@ -1767,3 +1767,22 @@ not included in this selective game port and no GPU snapshot provider is yet
 installed. The separate inherited native-leaf workflow still fails linking its
 unchanged fixture dependencies; this is tracked by #284 and is not reported as
 a passing regression suite. The full native query remains draft PR303.
+
+### PPU lifted-function lookup prerequisite (#302)
+
+The selective PPU registry lookup carries only the public API from fork modular
+`b69ce0cc`, assembled in canonical combined `e44c7d58`: public
+`ps3emu/ppu_function_registry.h`, the matching registry query, and its type
+alias. It deliberately leaves the generated function table and all existing
+dispatch behavior unchanged. The API obtains the exact registered lifted entry
+before a caller replaces it, returns zero for a missing address or null output,
+and preserves the caller's output on a failed lookup. Installation and lookup
+are explicitly quiescent-only with respect to guest dispatch.
+
+This is a generic prerequisite for a future shadow observer with an exact
+fallback; no observer, title address, GetDepth binding, replacement, view
+provider, synchronization bypass, gameplay run, or performance claim is part
+of this overlay. The fork's POSIX dispatch-depth fixture covers lookup,
+replacement and failure semantics. On the Windows integration host, the real
+vendored PPU loader compiled as x64 clang-cl with a generated smoke header;
+the POSIX/ucontext fixture was not runnable locally.
