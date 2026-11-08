@@ -26,6 +26,7 @@ def main():
     ap.add_argument('--menu-replay',type=Path,help='Private observed-screen profile; normal PAD_FILE input, not a scene jump')
     ap.add_argument('--native-pcm-cubic',choices=('0','shadow','1'),default='0',help='Explicit verified PCM DSP mode; requires matching native-enabled build')
     ap.add_argument('--native-visibility',choices=('0','shadow','1'),default='0',help='Explicit verified visibility mode; requires matching native-enabled build')
+    ap.add_argument('--depth-observer',action='store_true',help='Enable the bounded raw depth observer; requires a matching observer build')
     ap.add_argument('--d3d12-debug',choices=('default','0','1'),default='default',help='Explicit API validation selection; default preserves build policy and assertions stay enabled')
     ap.add_argument('--profile-textures',action='store_true',help='Existing aggregate DX12 texture phases and cache outcomes; adds timing overhead')
     ap.add_argument('--profile-cpu-surfaces',action='store_true',help='Existing per-request CPU surface read queue, match, copy and fence diagnostics; adds timing and logging overhead')
@@ -62,6 +63,10 @@ def main():
             identity=json.loads((ROOT/'build/native/build_identity.json').read_text())
             if not identity.get(flag) or identity.get('sha256') != hashlib.sha256(exe.read_bytes()).hexdigest():
                 raise SystemExit(f'{description} mode requires a matching --{flag.replace("_","-")} build; no process launched')
+    if args.depth_observer:
+        identity=json.loads((ROOT/'build/native/build_identity.json').read_text())
+        if not identity.get('depth_observer') or identity.get('sha256') != hashlib.sha256(exe.read_bytes()).hexdigest():
+            raise SystemExit('Depth observer requires a matching --depth-observer build; no process launched')
     # User-approved storage policy, before any native process or PAD replay.
     # Referenced/failed/evidence runs and the supplied profile are protected.
     from prune_runs import automatic
@@ -72,6 +77,7 @@ def main():
     env=dict(os.environ)
     env['MS_NATIVE_PCM_CUBIC']=args.native_pcm_cubic
     env['MS_NATIVE_VISIBILITY']=args.native_visibility
+    env['MS_DEPTH_OBSERVER']='1' if args.depth_observer else '0'
     env.pop('D3D12_DBG',None)
     env.pop('PERF',None)
     if args.d3d12_debug != 'default':env['D3D12_DBG']=args.d3d12_debug
@@ -132,7 +138,7 @@ def main():
     record['profile_textures']=args.profile_textures
     record['d3d12_debug']=args.d3d12_debug
     record['replay_observe_seconds']=args.replay_observe_seconds
-    record['environment'].update({k:v for k,v in env.items() if k in ('PERF','D3D12_DBG','RSX_TEXTURE_RETENTION','RSX_TEXTURE_CACHE_MIB','RSX_CPU_SURFACE_PROFILE') or k.startswith('MS_NATIVE_')})
+    record['environment'].update({k:v for k,v in env.items() if k in ('PERF','D3D12_DBG','RSX_TEXTURE_RETENTION','RSX_TEXTURE_CACHE_MIB','RSX_CPU_SURFACE_PROFILE','MS_DEPTH_OBSERVER') or k.startswith('MS_NATIVE_')})
     record['environment'].update({k:env[k] for k in ('SPU_TASK_LIFECYCLE_TRACE','SPU_TASK_LIFECYCLE_IMAGE') if k in env})
     (out/'launch.json').write_text(json.dumps(record,indent=2)); print('Owned native PID',p.pid,'output',out,flush=True)
     window_ready=False

@@ -69,6 +69,8 @@ def main():
                    help='Bind verified PCM cubic DSP (default off; explicit runtime reference/shadow/native mode)')
     b.add_argument('--native-particle-thresholds',action=argparse.BooleanOptionalAction,default=False,
                    help='Bind the verified particle scan (default off; runtime reference/shadow/native policy remains explicit)')
+    b.add_argument('--depth-observer',action='store_true',
+                   help='Build the opt-in raw GetDepth/PixelBuffer Lock observer (default off)')
     g=sub.add_parser('generate'); g.add_argument('--stage',choices=['ppu','spu'],required=True); g.add_argument('--jobs',type=int,default=8)
     sub.add_parser('check')
     args=ap.parse_args()
@@ -123,6 +125,7 @@ def main():
                         f'-DPORT_NATIVE_VISIBILITY={"ON" if args.native_visibility else "OFF"}',
                         f'-DPORT_NATIVE_PCM_CUBIC={"ON" if args.native_pcm_cubic else "OFF"}',
                         f'-DPORT_NATIVE_PARTICLE_THRESHOLDS={"ON" if args.native_particle_thresholds else "OFF"}',
+                        f'-DPORT_DEFORMATION_DEPTH_OBSERVER={"ON" if args.depth_observer else "OFF"}',
                         f'-DPORT_TARGET_ELF={c["elf"]}'])
         logs=ROOT/'temp/builds'/datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
         logged_run(command,logs/'configure.log',env=env)
@@ -135,6 +138,7 @@ def main():
         identity['native_visibility']=args.native_visibility
         identity['native_pcm_cubic']=args.native_pcm_cubic
         identity['native_particle_thresholds']=args.native_particle_thresholds
+        identity['depth_observer']=args.depth_observer
         identity['renderer_optimization']=json.loads((binary/'renderer-optimization.json').read_text())
         if identity['renderer_optimization']['enabled'] != args.optimize_renderer:
             raise SystemExit('Renderer build configuration did not match the requested mode')

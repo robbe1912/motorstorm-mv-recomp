@@ -27,12 +27,20 @@ def main():
                  and isinstance(n.value.args[0], ast.Constant)
                  and n.value.args[0].value in flags]
     assert len(arguments) == 2
+    depth_argument = next(n for n in body if isinstance(n, ast.Expr)
+                          and isinstance(n.value, ast.Call) and n.value.args
+                          and isinstance(n.value.args[0], ast.Constant)
+                          and n.value.args[0].value == '--depth-observer')
     guard = next(n for n in body if isinstance(n, ast.For)
                  and ast.unparse(n.target) == '(selected, flag, description)')
     environment = [n for n in body if isinstance(n, ast.Assign)
                    and ast.unparse(n.targets[0]) in
                    ('env', "env['MS_NATIVE_PCM_CUBIC']", "env['MS_NATIVE_VISIBILITY']")]
     assert len(environment) == 3
+    depth_guard = next(n for n in body if isinstance(n, ast.If)
+                       and ast.unparse(n.test) == 'args.depth_observer')
+    depth_environment = next(n for n in body if isinstance(n, ast.Assign)
+                             and ast.unparse(n.targets[0]) == "env['MS_DEPTH_OBSERVER']")
 
     def execute(nodes, namespace):
         tree = ast.fix_missing_locations(ast.Module(body=copy.deepcopy(nodes), type_ignores=[]))
@@ -101,7 +109,41 @@ def main():
                 pass
             else:
                 raise AssertionError('Accepted actual-source mutant: '+label)
-    print(f'PASS actual native-mode parser/build/hash/environment admission; {admitted_cases} combinations, six invalid selectors, two mutants rejected')
+        for selected in (False, True):
+            for built, stale in ((False, False), (True, False), (True, True)):
+                metadata = dict(depth_observer=built, sha256='stale' if stale else digest)
+                (native/'build_identity.json').write_text(json.dumps(metadata))
+                ns = dict(argparse=argparse, __doc__=__doc__, ROOT=sandbox, exe=exe,
+                          hashlib=hashlib, json=json,
+                          os=SimpleNamespace(environ={'MS_DEPTH_OBSERVER':'1'}))
+                execute([init, depth_argument], ns)
+                ns['args'] = ns['ap'].parse_args(['--depth-observer'] if selected else [])
+                ns['env'] = {}
+                try:
+                    execute([depth_guard, depth_environment], ns)
+                    admitted = True
+                except SystemExit as error:
+                    assert 'matching --depth-observer build' in str(error)
+                    admitted = False
+                assert admitted == (not selected or built and not stale), (selected, metadata, admitted)
+                if admitted:
+                    assert ns['env']['MS_DEPTH_OBSERVER'] == ('1' if selected else '0')
+                count += 1
+        mutant = copy.deepcopy(depth_guard)
+        missing_build_guard = next(n for n in ast.walk(mutant) if isinstance(n, ast.If)
+                                   and "identity.get('depth_observer')" in ast.unparse(n.test))
+        missing_build_guard.test = ast.Constant(value=False)
+        try:
+            metadata = dict(depth_observer=False, sha256=digest)
+            (native/'build_identity.json').write_text(json.dumps(metadata))
+            ns = dict(argparse=argparse, __doc__=__doc__, ROOT=sandbox, exe=exe,
+                      hashlib=hashlib, json=json, os=SimpleNamespace(environ={}))
+            execute([init, depth_argument], ns)
+            ns['args'] = ns['ap'].parse_args(['--depth-observer'])
+            execute([mutant], ns)
+        except SystemExit:
+            raise AssertionError('Rejected missing observer build after removing its admission guard')
+    print(f'PASS actual native-mode parser/build/hash/environment admission; {admitted_cases} combinations, six invalid selectors, three mutants rejected')
 
 
 if __name__ == '__main__':
