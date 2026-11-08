@@ -20,11 +20,18 @@ texture callbacks, coordinate transformation, borders or GPU synchronization.
 
 Original ELF instruction bytes match all 346 GetDepth, 144 TransformPoint and
 six pixel-size instructions exported from an isolated copy of the saved Ghidra
-project. Original project hashes remain unchanged. GetDepth brackets its four
-sample loads with virtual texture operations; concrete live callback ownership,
-FIFO/GPU visibility and border semantics still need proof. This core is not yet
-bound into gameplay. No readback wait is skipped and no frame-time improvement
-or stable 30 FPS is claimed; the full native query and coherent view remain open
+project. Original project hashes remain unchanged. The recovered plan maps a
+successful normalized coordinate to `x * width` and `(1 - y) * height`, clamps
+only that top-left coordinate, calculates byte offsets with `NumBytes(format)`,
+then reads right/below neighbours without clamping them. It also caches the
+surface selected from `(arg >> 20) & 0x7ff` at manager offsets `0x44/0x4c`.
+`python scripts/check_deformation_depth_plan.py` independently checks this pure
+plan over 1,038 cases and 16 caller FP modes, rejecting lost V inversion,
+incorrect X clamping, an aliased right neighbour and lost caller MXCSR. It is
+still not a provider or a game binding: concrete
+live callback ownership, FIFO/GPU visibility, border allocation and the query
+ABI require proof. No readback wait is skipped and no frame-time improvement or
+stable 30 FPS is claimed; the full native query and coherent view remain open
 under [issue 302](https://github.com/robbe1912/motorstorm-mv-recomp/issues/302).
 
 Read-only native observation identifies the original PixelBuffer lock/unlock

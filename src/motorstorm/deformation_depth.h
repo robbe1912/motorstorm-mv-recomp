@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 
 namespace motorstorm::game {
@@ -13,6 +14,22 @@ struct DepthPatch {
     float x_fraction;
     float y_fraction;
 };
+
+// A two-by-two plan recovered from the original GetDepth query after its
+// surface coordinate transform has succeeded. Coordinates are normalized and
+// must be finite in [0,1]; dimensions are positive signed-int-sized values.
+// The original clamps only the top-left coordinate. In bilinear mode its
+// right/below loads are not clamped, so the owner must admit a coherent view
+// containing those byte offsets before sampling them.
+struct DeformationDepthPlan {
+    std::array<std::size_t, 4> byte_offsets;
+    float x_fraction;
+    float y_fraction;
+};
+
+DeformationDepthPlan plan_deformation_depth(
+    float normalized_x, float normalized_y, std::uint32_t width,
+    std::uint32_t height, std::uint32_t bytes_per_pixel);
 
 // Fractions must be finite and in [0,1]. The operation follows the original
 // binary32 rounding boundaries and double fused multiply-add, with nearest-even
