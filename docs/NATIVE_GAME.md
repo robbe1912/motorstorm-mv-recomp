@@ -53,6 +53,29 @@ neighbour sampling can cross the logical image edge, and backing allocation
 extent, aliasing, FIFO/GPU visibility and lifetime proof remain necessary
 before binding.
 
+An observation-only next step is available only in an explicitly flagged build
+(`PORT_DEFORMATION_DEPTH_OBSERVER=ON`) and when its separate runtime switch
+`MS_DEPTH_OBSERVER=1` is set. Immediately after generated PPU registration and
+before guest dispatch, it obtains the current lifted entries for original-US
+`GetDepth` (`0x0029c684`) and `PixelBuffer::Lock` (`0x00799db4`), then installs
+shadow wrappers that always invoke those retained entries. The wrappers make no
+guest-memory reads or writes, infer no semantic ABI, and preserve the original
+output/return state. While a `GetDepth` wrapper is active, nested Lock calls
+emit only raw incoming register bits and raw Lock return status; the record's
+`lock-seen` field can therefore falsify the static callback hypothesis without
+treating the status or output-slot address as an allocation extent. It reports
+the first 64 completed calls and explicitly reports the cap, rather than
+silently treating later calls as absent. This is a diagnostic build feature,
+not a query replacement, coherent view provider, synchronization bypass or FPS
+optimization.
+
+`scripts/check_deformation_depth_observer.py` compiles the actual observer
+against a registry fixture. It proves disabled/missing-entry installs do not
+replace dispatch, both wrappers retain exact original fallback outputs, nested
+Lock is observed, and the bounded log reports its cap. This is a deterministic
+observer-contract test only; it is not a live-game capture or graphics/FPS
+evidence.
+
 The existing CPU-surface readback wait now rechecks its own target fence after
 every event notification, retains the 30-second bound, and rejects device loss,
 the removed-fence sentinel and counter overflow. Older notifications cannot

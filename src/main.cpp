@@ -39,6 +39,9 @@
 #include "win32_compat.h"
 #include "thread_name.h"   /* ps3_thread_setname */
 #include "ps3emu/loadtime_trace.h"   /* #11 load-stage timing (observer) */
+#if defined(MOTORSTORM_DEFORMATION_DEPTH_OBSERVER)
+#include "motorstorm/deformation_depth_observer.h"
+#endif
 
 #include <stdint.h>
 #include <stdio.h>
@@ -406,6 +409,11 @@ int main(int argc, char** argv)
     _putenv("PS3_NET_ONLINE=1");
 
     ppu_recomp_register();   /* lifted function table -> address map */
+#if defined(MOTORSTORM_DEFORMATION_DEPTH_OBSERVER)
+    /* The optional observer only shadows exact registered entries and calls
+     * their lifted originals. It is installed while guest dispatch is idle. */
+    deformation_depth_observer_install();
+#endif
     ps3_load_prx_modules();  /* this game's lifted system PRX, if it has any */
     ppu_hle_init();          /* firmware import NID -> HLE handlers */
     ppu_sysprx_register();   /* boot-critical CRT */
