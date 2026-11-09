@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "rsx_cpu_surface_profile.h"
+#include "ps3emu/guest_read_sync.h"
 typedef uint32_t u32;typedef uint64_t u64;typedef long LONG;typedef unsigned long DWORD;
 typedef int SRWLOCK;typedef struct Event {int signaled;} *HANDLE;
 typedef struct LARGE_INTEGER {int64_t QuadPart;} LARGE_INTEGER;
@@ -25,7 +26,7 @@ static HANDLE CreateEventA(void *a,int b,int c,const char *d){(void)a;(void)b;(v
 static int SetEvent(HANDLE h){if(h==&kick_event)clock_value+=3;else h->signaled=1;return 1;}
 static void CloseHandle(HANDLE h){free(h);}
 static void *cellGcm_fifo_kick_event(void){return &kick_event;}
-static void cpu_surface_service(void);
+static void cpu_surface_service(int snapshot_boundary);
 static void cpu_surface_frame_complete(void);
 static DWORD WaitForSingleObject(HANDLE h,DWORD deadline){
     if(deadline!=30000)abort();
@@ -41,6 +42,15 @@ static DWORD WaitForSingleObject(HANDLE h,DWORD deadline){
 static void cpu_surface_fail(const char *operation,int result){fprintf(stderr,"FAIL: %s %d\n",operation,result);exit(2);}
 /* PRODUCTION_DECLARATIONS */
 /* PRODUCTION_HELPERS */
+static int cpu_surface_snapshot(const VmReadSnapshotRange *ranges, u32 count,
+                                void *staging, u32 output_bytes) {
+    (void)ranges;
+    (void)count;
+    (void)staging;
+    (void)output_bytes;
+    cpu_surface_fail("unexpected snapshot in scalar profile fixture", E_FAIL);
+    return VM_READ_SNAPSHOT_FAILED;
+}
 static void cpu_surface_read(u32 address,u32 bytes){
     if(address!=0x20120 || bytes!=2)abort();
     if(!submitted_batches || s_cpu_surface_recording)abort();

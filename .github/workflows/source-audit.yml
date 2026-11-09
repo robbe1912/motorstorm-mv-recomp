@@ -62,6 +62,21 @@ jobs:
           python scripts/check_deformation_depth_observer.py
       - name: CPU surface target-fence ownership
         run: python scripts/check_rsx_surface_fence.py
+      - name: Coherent snapshot transport and renderer admission
+        run: |
+          python scripts/check_guest_read_snapshot.py
+          python scripts/check_fifo_snapshot_boundary.py
+          python scripts/check_rsx_snapshot_ownership.py
+          python scripts/check_rsx_snapshot_preflight.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cpu-snapshot-controls
+          path: |
+            temp/checks/guest-snapshot-*/result.json
+            temp/checks/fifo-boundary-*/result.json
+            temp/checks/cpu-surface-snapshot-*/result.json
+            temp/checks/snapshot-preflight-*/result.json
       - name: Native visibility planes and independent negative controls
         run: python scripts/check_native_visibility_planes.py
       - name: Native PCM DSP and independent rational oracle
@@ -347,6 +362,24 @@ jobs:
           python scripts/check_deformation_depth_observer.py
       - name: CPU surface target-fence ownership
         run: python scripts/check_rsx_surface_fence.py
+      - name: Coherent snapshot transport and renderer admission
+        run: |
+          python scripts/check_guest_read_snapshot.py
+          python scripts/check_fifo_snapshot_boundary.py
+          python scripts/check_rsx_snapshot_ownership.py
+          python scripts/check_rsx_snapshot_preflight.py
+      - name: D3D12 snapshot producer and lifetime with WARP
+        run: python scripts/check_rsx_snapshot_gpu.py --warp
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-snapshot-controls
+          path: |
+            temp/checks/guest-snapshot-*/result.json
+            temp/checks/fifo-boundary-*/result.json
+            temp/checks/cpu-surface-snapshot-*/result.json
+            temp/checks/snapshot-preflight-*/result.json
+            temp/checks/snapshot-gpu-*/result.json
       - name: Native visibility planes and independent negative controls
         run: python scripts/check_native_visibility_planes.py
       - name: Native particle scan and independent scalar oracle

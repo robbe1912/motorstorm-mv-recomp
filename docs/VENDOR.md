@@ -1761,10 +1761,9 @@ the actual historical body returns before its target and fails the assertion.
 Whole backend checked and NDEBUG compilation also pass. These are protocol
 controls, not a game speedup or a complete CPU-surface pixel/coherence proof.
 
-The combined branch also contains transactional snapshot transport and a held
-FIFO boundary callback, with Windows/Linux/macOS CPU controls. Those APIs are
-not included in this selective game port and no GPU snapshot provider is yet
-installed. The separate inherited native-leaf workflow still fails linking its
+Transactional snapshot transport and a held FIFO boundary callback are adopted
+in the curated integration below, following CPU and GPU validation. The separate
+inherited native-leaf workflow still fails linking its
 unchanged fixture dependencies; this is tracked by #284 and is not reported as
 a passing regression suite. The full native query remains draft PR303.
 
@@ -1786,7 +1785,7 @@ pass. Complete fork backend compilation passes checked and NDEBUG modes on
 Windows. Focused modular and combined workflows pass on Windows, Linux and macOS.
 These establish CPU protocol and compilation gates. The GPU checks below extend
 this evidence.
-The game still uses its original query and has no installed snapshot provider.
+The original query remains the reference for the curated integration below.
 
 ### Snapshot GPU producer validation (#302)
 
@@ -1809,6 +1808,30 @@ runs WARP; Linux and macOS retain the CPU protocol controls.
 The fixture schedules known closed boundaries. The actual FIFO protocol has
 separate controls; combined game FIFO/GPU execution, guest-resource identity
 and full-query admission remain required before replacing original readbacks.
+
+### Curated snapshot runtime integration (#302)
+
+The game overlay selects transactional transport from fork `e7a21c4c`, held-FIFO
+publication from `5a74c6df`, provider `711006ab` / combined `958c0804`, and the
+admission corrections above. Its reviewed reference is canonical `b4d031b6`.
+Renderer initialization installs the provider. Snapshot requests enter the
+renderer queue and run under the held FIFO callback after normal draining,
+with open-primitive, queued-draw and alias admission checks. Dirty copies retain
+the checked GPU fence and original layout conversion. Shutdown rejects pending
+requests with intact caller destinations.
+
+Curated checks compile the vendored transport, FIFO function, ownership helper
+and full provider against authored fixtures. Hardware RTX 3080 and WARP pass
+the nonzero producer, concurrency, retirement and error cases above with zero
+validation messages. Existing scalar-read and request-profile controls cover
+normal completed-batch service alongside the new queue protocol. Linux and
+Windows CI run CPU controls, and Windows also runs WARP.
+
+GetDepth continues through its retained original implementation. A game caller
+still needs authenticated allocation/view identity, the actual combined FIFO
+and GPU chronology, original/native parity and normal-PLAY timing before using
+this provider to replace its scalar reads. Stable 30 FPS and graphics acceptance
+remain separate requirements.
 
 ### PPU lifted-function lookup prerequisite (#302)
 
