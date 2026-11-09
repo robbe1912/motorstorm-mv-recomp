@@ -56,9 +56,12 @@ before binding.
 An observation-only next step is available only in an explicitly flagged build
 (`PORT_DEFORMATION_DEPTH_OBSERVER=ON`) and when its separate runtime switch
 `MS_DEPTH_OBSERVER=1` is set. Immediately after generated PPU registration and
-before guest dispatch, it obtains the current lifted entries for original-US
-`GetDepth` (`0x0029c684`) and `PixelBuffer::Lock` (`0x00799db4`), then installs
-shadow wrappers that always invoke those retained entries. The wrappers make no
+before guest dispatch, it enables observation for original-US `GetDepth`
+(`0x0029c684`) and shadows the registered `PixelBuffer::Lock` (`0x00799db4`)
+entry. The verified generated-input binding renames the exact GetDepth body in
+a worktree-local copy and routes both direct and registered callers through the
+observer. Disabled observation invokes that retained original directly. Enabled
+observation also invokes both retained originals. The wrappers make no
 guest-memory reads or writes, infer no semantic ABI, and preserve the original
 output/return state. While a `GetDepth` wrapper is active, nested Lock calls
 emit only raw incoming register bits and raw Lock return status; the record's
@@ -70,9 +73,13 @@ not a query replacement, coherent view provider, synchronization bypass or FPS
 optimization.
 
 `scripts/check_deformation_depth_observer.py` compiles the actual observer
-against a registry fixture. It proves disabled/missing-entry installs do not
-replace dispatch, both wrappers retain exact original fallback outputs, nested
-Lock is observed, and the bounded log reports its cap. This is a deterministic
+against an authored generated-input binding and registry fixture. It proves
+disabled/missing-entry installs preserve fallback output, alternating direct and
+registered callers retain exact original results, nested Lock is observed, and
+the bounded log reports its cap. A bypassed-entry mutant preserves results but
+fails the sample-count oracle. The earlier registry-only observer missed the
+generated direct call to GetDepth; zero samples from that build cannot establish
+that the operation was absent. This is a deterministic
 observer-contract test only; it is not a live-game capture or graphics/FPS
 evidence.
 

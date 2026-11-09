@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import os
+from dataclasses import replace
+import hashlib
 import pathlib
 import shutil
 import subprocess
 import tempfile
+from native_game_binding import DEPTH_OBSERVER, digest, prepare
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "src" / "motorstorm" / "deformation_depth_observer.cpp"
@@ -20,12 +23,26 @@ def main() -> None:
         out = pathlib.Path(raw)
         (out / "ppu_recomp.h").write_text(
             "#pragma once\n#include <stdint.h>\n"
-            "typedef struct ppu_context { uint64_t gpr[32]; double fpr[32]; } ppu_context;\n",
+            "typedef struct ppu_context { uint64_t gpr[32]; double fpr[32]; } ppu_context;\n"
+            "void func_0029C684(ppu_context*);\n",
             encoding="utf-8",
         )
+        header = out / "ppu_recomp.h"
+        generated = out / "input"
+        (generated / "ppu").mkdir(parents=True)
+        (generated / "ppu/ppu_recomp.h").write_bytes(header.read_bytes())
+        body = b"void func_0029C684(ppu_context* ctx) { fixture_depth_body(ctx); }"
+        (generated / "ppu/depth.cpp").write_bytes(
+            b'#include "ppu_recomp.h"\nvoid fixture_depth_body(ppu_context*);\n' + body + b"\n")
+        elf = out / "authored-input"
+        elf.write_bytes(b"Authored depth observer input identity")
+        contract = replace(DEPTH_OBSERVER, elf_sha256=digest(elf),
+                           body_sha256=hashlib.sha256(body).hexdigest())
+        binding = prepare(generated, out / "bound", elf, out / "binding.json", contract)
+        bound = pathlib.Path(binding["copied_tu"])
         executable = out / ("observer.exe" if os.name == "nt" else "observer")
         command = [
-            cxx, "-std=c++17", "-Wall", "-Wextra", "-Werror", str(SOURCE), str(FIXTURE),
+            cxx, "-std=c++17", "-O2", "-Wall", "-Wextra", "-Werror", str(SOURCE), str(FIXTURE), str(bound),
             f"-I{out}", f"-I{ROOT / 'src'}", f"-I{ROOT / 'vendor' / 'ps3recomp' / 'include'}",
             "-o", str(executable),
         ]
@@ -41,7 +58,18 @@ def main() -> None:
         assert "lock-seen=1 lock=aaaa,bbbb,cccc,status=fedcba98" in transcript
         assert transcript.count("capture cap=64 reached") == 1
         assert "PASS actual depth observer fallback and nested Lock capture" in transcript
-    print("PASS actual depth observer fallback, nested Lock capture, and bounded output")
+        # Reproduce the missed-direct-call pattern with an otherwise valid
+        # binding. Original outputs still agree, but observation must fail.
+        text = bound.read_text()
+        forward = "{ motorstorm_observe_deformation_depth(ctx); }"
+        assert text.count(forward) == 1
+        bound.write_text(text.replace(forward, "{ game_original_deformation_depth(ctx); }"))
+        built = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=120)
+        assert built.returncode == 0, built.stderr
+        result = subprocess.run([str(executable)], cwd=ROOT, capture_output=True, text=True, timeout=30)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "[depth-observe] seq=" not in result.stderr, "Unbound callers must fail the observation oracle"
+    print("PASS depth observer: verified direct/table binding, exact fallback, nested Lock, cap, rejected unbound-entry mutant")
 
 
 if __name__ == "__main__":

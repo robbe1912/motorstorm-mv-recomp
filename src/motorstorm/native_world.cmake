@@ -10,7 +10,7 @@ option(PORT_DEFORMATION_DEPTH_OBSERVER "Build opt-in fallback-only depth observe
 set(PORT_TARGET_ELF "" CACHE FILEPATH "Original ELF for verified native game binding")
 
 function(motorstorm_bind_world_transforms)
-    if(NOT PORT_NATIVE_WORLD_TRANSFORMS AND NOT PORT_NATIVE_JOB_WAIT AND NOT PORT_NATIVE_VISIBILITY AND NOT PORT_NATIVE_PCM_CUBIC)
+    if(NOT PORT_NATIVE_WORLD_TRANSFORMS AND NOT PORT_NATIVE_JOB_WAIT AND NOT PORT_NATIVE_VISIBILITY AND NOT PORT_NATIVE_PCM_CUBIC AND NOT PORT_DEFORMATION_DEPTH_OBSERVER)
         return()
     endif()
     if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64|x86_64|X86_64)$")
@@ -31,6 +31,9 @@ function(motorstorm_bind_world_transforms)
     endif()
     if(PORT_NATIVE_PCM_CUBIC)
         list(APPEND binding_options --pcm-cubic)
+    endif()
+    if(PORT_DEFORMATION_DEPTH_OBSERVER)
+        list(APPEND binding_options --depth-observer)
     endif()
     execute_process(COMMAND "${Python3_EXECUTABLE}" "${MOTORSTORM_NATIVE_ROOT}/scripts/native_game_binding.py"
         --generated "${input_root}" --output "${CMAKE_BINARY_DIR}/native-world-input"

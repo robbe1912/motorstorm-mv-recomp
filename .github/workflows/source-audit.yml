@@ -57,7 +57,9 @@ jobs:
       - name: Native world transforms and independent FP oracle
         run: python scripts/check_native_world_transforms.py
       - name: Native deformation depth and exact rational oracle
-        run: python scripts/check_deformation_depth.py
+        run: |
+          python scripts/check_deformation_depth.py
+          python scripts/check_deformation_depth_observer.py
       - name: CPU surface target-fence ownership
         run: python scripts/check_rsx_surface_fence.py
       - name: Native visibility planes and independent negative controls
@@ -340,7 +342,9 @@ jobs:
       - name: Native world transforms and independent FP oracle
         run: python scripts/check_native_world_transforms.py
       - name: Native deformation depth and exact rational oracle
-        run: python scripts/check_deformation_depth.py
+        run: |
+          python scripts/check_deformation_depth.py
+          python scripts/check_deformation_depth_observer.py
       - name: CPU surface target-fence ownership
         run: python scripts/check_rsx_surface_fence.py
       - name: Native visibility planes and independent negative controls

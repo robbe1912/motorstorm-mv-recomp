@@ -30,6 +30,10 @@ PRODUCTION = Contract(
 JOB_WAIT = Contract(PRODUCTION.elf_sha256,
     'ab53a9f3f0d538a07d6333eb2b45d78a2dd40e2a3dcbe317e08109f96fad5fca',
     'func_00C5C424', 'game_original_job_marker_wait', 'motorstorm_job_marker_wait')
+# Direct lifted callers bypass registry-only observation.
+DEPTH_OBSERVER = Contract(PRODUCTION.elf_sha256,
+    'c1569b155b7ff33025877349e330a5a8c8b9c2adc0f62b946d2bcbd5408f6064',
+    'func_0029C684', 'game_original_deformation_depth', 'motorstorm_observe_deformation_depth')
 VISIBILITY = Contract(PRODUCTION.elf_sha256,
     '035be34da5f4b00d47d7c7c0637aeaf93635b53ef209e4033f2ada6f918f7bbf',
     'jobmod_056ac0eea1a6_e12270_spu_func_000083A0',
@@ -143,7 +147,7 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
     if any(elf_sha != c.elf_sha256 for c in selected):
         raise ValueError('Unsupported original ELF identity for native game binding')
     known = tuple(known_contracts) if known_contracts is not None else (
-        (PRODUCTION, JOB_WAIT, VISIBILITY, PCM_CUBIC) if elf_sha == PRODUCTION.elf_sha256 else selected)
+        (PRODUCTION, JOB_WAIT, VISIBILITY, PCM_CUBIC, DEPTH_OBSERVER) if elf_sha == PRODUCTION.elf_sha256 else selected)
     known = tuple(dict.fromkeys((*known, *selected)))
     directories = {Path(entry.directory) for entry in known}
     if any(path.is_absolute() or '..' in path.parts for path in directories):
@@ -227,8 +231,11 @@ def main():
     parser.add_argument('--job-wait', action='store_true')
     parser.add_argument('--visibility', action='store_true')
     parser.add_argument('--pcm-cubic', action='store_true')
+    parser.add_argument('--depth-observer', action='store_true')
     args = parser.parse_args()
     selected = ([] if args.without_world_transforms else [PRODUCTION]) + ([JOB_WAIT] if args.job_wait else []) + ([VISIBILITY] if args.visibility else []) + ([PCM_CUBIC] if args.pcm_cubic else [])
+    if args.depth_observer:
+        selected.append(DEPTH_OBSERVER)
     result = prepare(args.generated, args.output, args.elf, args.manifest, contracts=selected)
     print('Verified native game bindings:', ', '.join(b['symbol'] for b in result['bindings']))
 

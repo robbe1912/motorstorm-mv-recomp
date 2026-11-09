@@ -9,6 +9,8 @@
 #include <cstdlib>
 #include <cstring>
 
+void game_original_deformation_depth(ppu_context*);
+
 namespace {
 /* Original-US lifted PPU entry identities recovered from the pinned ELF.
  * These are observation targets, not special completion paths. */
@@ -100,6 +102,16 @@ void observe_depth(ppu_context* ctx) {
 }
 } // namespace
 
+// The verified generated-input binding retains this entry for both direct and
+// registered callers. Disabled observation still executes the exact original.
+void motorstorm_observe_deformation_depth(ppu_context* ctx) {
+    if (!state().enabled) {
+        game_original_deformation_depth(ctx);
+        return;
+    }
+    observe_depth(ctx);
+}
+
 void deformation_depth_observer_install() {
     const char* enabled = std::getenv("MS_DEPTH_OBSERVER");
     if (!enabled || std::strcmp(enabled, "1") != 0) return;
@@ -111,16 +123,15 @@ void deformation_depth_observer_install() {
     }
     ps3emu_ppu_function get_depth{};
     ps3emu_ppu_function lock{};
-    if (!ppu_get_registered_function(kGetDepth, &get_depth) ||
+    if (!ppu_get_registered_function(kGetDepth, &get_depth) || get_depth != func_0029C684 ||
         !ppu_get_registered_function(kPixelBufferLock, &lock)) {
         std::fputs("[depth-observe] install rejected: original entries unavailable\n", stderr);
         return;
     }
-    value.get_depth = get_depth;
+    value.get_depth = game_original_deformation_depth;
     value.lock = lock;
     /* Registration is immediately after generated registration and before
      * guest execution, satisfying the registry's quiescence contract. */
-    ppu_register_function(kGetDepth, observe_depth);
     ppu_register_function(kPixelBufferLock, observe_lock);
     value.enabled = true;
     std::fputs("[depth-observe] installed raw GetDepth/PixelBuffer::Lock observer\n", stderr);
