@@ -109,6 +109,11 @@ regression in `scripts/check_menu_replay.py` covers transient/permanent sharing,
 revocation during the delay, and a real Windows handle without delete sharing.
 This does not explain the separate historical replay-ownership failure.
 
+Replay binds required and optional sends to the frame whose complete gate set
+passed. A newer completed presenting frame before selection or PAD_FILE replacement
+requires fresh gate validation. The regression changes a secondary condition while
+preserving the caption and checks that neither route writes a command.
+
 Continuation profiles must include screen-gated intro skips in `optional_actions`.
 Each uses the same observed reference/ROI/label/button/polls as a required step,
 plus `after_step` (the number of required steps already acknowledged). An action
