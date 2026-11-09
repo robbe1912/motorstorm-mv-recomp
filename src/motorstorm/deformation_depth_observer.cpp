@@ -30,6 +30,7 @@ struct State {
     ps3emu_ppu_function get_depth{};
     ps3emu_ppu_function lock{};
     std::atomic<std::uint64_t> completed{0};
+    std::atomic<std::uint64_t> completed_by_lock[2]{};
     bool enabled{};
 };
 
@@ -94,11 +95,15 @@ void observe_depth(ppu_context* ctx) {
     sample.return_fpr1 = raw_bits(ctx->fpr[1]);
 
     const std::uint64_t sequence = state().completed.fetch_add(1, std::memory_order_relaxed) + 1;
+    const std::uint64_t class_sequence =
+        state().completed_by_lock[sample.lock_seen].fetch_add(1, std::memory_order_relaxed) + 1;
     /* This explicitly opt-in diagnostic is bounded to keep the log and its
-     * perturbation finite. The cap is announced rather than silently hiding
-     * later calls. Raw registers deliberately avoid inventing a call ABI. */
-    if (sequence <= 64) print_sample(sequence, sample);
-    else if (sequence == 65) std::fputs("[depth-observe] capture cap=64 reached\n", stderr);
+     * perturbation finite. Independent budgets retain nested-Lock evidence
+     * after startup calls without Lock. Raw bits do not invent a call ABI. */
+    if (class_sequence <= 64) print_sample(sequence, sample);
+    else if (class_sequence == 65)
+        std::fprintf(stderr, "[depth-observe] capture cap=64 reached lock-seen=%u\n",
+                     unsigned(sample.lock_seen));
 }
 } // namespace
 

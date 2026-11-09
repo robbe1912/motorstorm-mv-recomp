@@ -78,9 +78,10 @@ guest-memory reads or writes, infer no semantic ABI, and preserve the original
 output/return state. While a `GetDepth` wrapper is active, nested Lock calls
 emit only raw incoming register bits and raw Lock return status; the record's
 `lock-seen` field can therefore falsify the static callback hypothesis without
-treating the status or output-slot address as an allocation extent. It reports
-the first 64 completed calls and explicitly reports the cap, rather than
-silently treating later calls as absent. This is a diagnostic build feature,
+treating the status or output-slot address as an allocation extent. Independent
+64-call budgets cover completions with and without nested Lock, retaining at
+most 128 sample lines and announcing each exhausted class. Startup calls without
+Lock therefore preserve the later nested-Lock budget. This is a diagnostic build feature,
 not a query replacement, coherent view provider, synchronization bypass or FPS
 optimization.
 
@@ -88,12 +89,22 @@ optimization.
 against an authored generated-input binding and registry fixture. It proves
 disabled/missing-entry installs preserve fallback output, alternating direct and
 registered callers retain exact original results, nested Lock is observed, and
-the bounded log reports its cap. A bypassed-entry mutant preserves results but
-fails the sample-count oracle. The earlier registry-only observer missed the
+the bounded log reports both caps after 65 calls without Lock followed by 65
+with Lock. Bypassed-entry and global-cap mutants preserve original results but
+lose required observation coverage. The earlier registry-only observer missed the
 generated direct call to GetDepth; zero samples from that build cannot establish
 that the operation was absent. This is a deterministic
 observer-contract test only; it is not a live-game capture or graphics/FPS
 evidence.
+
+Owned DX12 run `20261109T094927.873395Z`, EXE `56fe9332...e909b`, reached
+race HUD frame 35 through seven acknowledged required inputs and one observed
+intro skip. The inspected HUD reads 00:28.44, LAP 0/2 and POS 12/15. Its original
+global budget retained 64 completed GetDepth entries, all with `lock-seen=0`;
+later Lock presence remains unknown. The post-target guard closed at 439.969 s
+with no resource breach. Service-failure and repeated-DMA diagnostics remain
+retained. Rectangular shading is visible; graphics, stable 30 FPS, successful
+numeric inputs and the coherent native query remain unaccepted.
 
 The existing CPU-surface readback wait now rechecks its own target fence after
 every event notification, retains the 30-second bound, and rejects device loss,

@@ -56,10 +56,14 @@ def main() -> None:
         assert result.returncode == 0, transcript
         assert "install rejected: original entries unavailable" in transcript
         assert "installed raw GetDepth/PixelBuffer::Lock observer" in transcript
-        assert transcript.count("[depth-observe] seq=") == 64
+        samples = [line for line in transcript.splitlines() if line.startswith("[depth-observe] seq=")]
+        assert len(samples) == 128, f"Expected 64 samples per Lock class, got {len(samples)}"
+        assert sum("lock-seen=0 " in line for line in samples) == 64
+        assert sum("lock-seen=1 " in line for line in samples) == 64
         assert "depth-gpr=111,222,333,444" in transcript
         assert "lock-seen=1 lock=aaaa,bbbb,cccc,status=fedcba98" in transcript
-        assert transcript.count("capture cap=64 reached") == 1
+        assert transcript.count("capture cap=64 reached lock-seen=0") == 1
+        assert transcript.count("capture cap=64 reached lock-seen=1") == 1
         assert "PASS actual depth observer fallback and nested Lock capture" in transcript
         # Reproduce the missed-direct-call pattern with an otherwise valid
         # binding. Original outputs still agree, but observation must fail.
@@ -72,7 +76,21 @@ def main() -> None:
         result = subprocess.run([str(executable)], cwd=ROOT, capture_output=True, text=True, timeout=30)
         assert result.returncode == 0, result.stdout + result.stderr
         assert "[depth-observe] seq=" not in result.stderr, "Unbound callers must fail the observation oracle"
-    print("PASS depth observer: verified direct/table binding, exact fallback, nested Lock, cap, rejected unbound-entry mutant")
+        # A global cap preserves results but starves Lock-bearing evidence.
+        bound.write_text(text)
+        source = SOURCE.read_text()
+        assert source.count("if (class_sequence <= 64)") == 1
+        mutant = out / "observer-global-budget.cpp"
+        mutant.write_text(source.replace("if (class_sequence <= 64)", "if (sequence <= 64)"))
+        mutant_command = command.copy()
+        mutant_command[mutant_command.index(str(SOURCE))] = str(mutant)
+        mutant_command.append(f"-I{SOURCE.parent}")
+        built = subprocess.run(mutant_command, cwd=ROOT, capture_output=True, text=True, timeout=120)
+        assert built.returncode == 0, built.stderr
+        result = subprocess.run([str(executable)], cwd=ROOT, capture_output=True, text=True, timeout=30)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "lock-seen=1 lock=" not in result.stderr, "Global-cap mutant must lose later Lock samples"
+    print("PASS depth observer: direct/table binding, exact fallback, independent Lock budgets, two rejected mutants")
 
 
 if __name__ == "__main__":
