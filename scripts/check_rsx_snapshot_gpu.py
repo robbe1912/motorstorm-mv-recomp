@@ -6,10 +6,10 @@ import hashlib
 import json
 import os
 import re
+from pathlib import Path
 import shutil
 import subprocess
 import time
-from pathlib import Path
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument(
@@ -21,7 +21,6 @@ if os.name == "nt":
     from project import build_environment
 
     os.environ.update(build_environment())
-
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME = ROOT / "vendor/ps3recomp"
 OUT = ROOT / "temp/checks" / ("snapshot-gpu-" + str(time.time_ns()))
@@ -33,6 +32,17 @@ assert not any(
     row and row[0].lower() == "ms1_recomp.exe" for row in csv.reader(tasks.splitlines())
 ), "Native host is owned"
 source = RUNTIME / "libs/video/rsx_cpu_surface.inc"
+backend = RUNTIME / "libs/video/rsx_d3d12_backend.c"
+backend_source = backend.read_text()
+submission_functions = []
+for name in ("wait_for_gpu_required", "record_batch_retire", "submit_record_capacity"):
+    match = re.search(
+        r"^static void " + name + r"\([^\n]*\n\{.*?^\}", backend_source, re.M | re.S
+    )
+    if match:
+        submission_functions.append(match.group())
+submission = "\n".join(submission_functions)
+assert "static void submit_record_capacity(" in submission
 transport = RUNTIME / "runtime/memory/guest_read_sync.c"
 fixture = ROOT / "scripts/fixtures/rsx_snapshot_gpu.c"
 report = dict(
@@ -43,6 +53,7 @@ report = dict(
         str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
         for p in [
             source,
+            backend,
             transport,
             fixture,
             Path(__file__),
@@ -78,9 +89,13 @@ compiler = os.environ.get("MV_CLANG") or shutil.which("clang-cl")
 assert compiler, "Prepare the Visual Studio compiler environment"
 
 
-def build(name, body):
+def build(name, body, record_submission=submission):
     compiled = OUT / (name + ".c")
-    compiled.write_text(fixture.read_text().replace("// PRODUCTION_SURFACE", body))
+    compiled.write_text(
+        fixture.read_text()
+        .replace("// PRODUCTION_SURFACE", body)
+        .replace("// PRODUCTION_SUBMIT_RECORDS", record_submission)
+    )
     report.setdefault("compiled_sources", {})[name] = hashlib.sha256(
         compiled.read_bytes()
     ).hexdigest()
@@ -119,10 +134,14 @@ adapter = "warp" if args.warp else "hardware"
 
 
 def verify_trace(stderr):
-    states = re.findall(r"^\[CPUSNAPSHOT_STATE\] seq=(\d+) .*$", stderr, re.MULTILINE)
-    completed = re.findall(
-        r"^\[CPUSNAPSHOT_RESULT\] seq=(\d+) .*$", stderr, re.MULTILINE
-    )
+    for client, renderer in re.findall(
+        r"^\[CPUSNAPSHOT_STATE\].*client=(\d+) renderer=(\d+)", stderr, re.M
+    ):
+        assert int(client) and int(client) != int(renderer), (
+            "Snapshot requester identity missing"
+        )
+    states = re.findall(r"^\[CPUSNAPSHOT_STATE\] seq=(\d+) .*$", stderr, re.M)
+    completed = re.findall(r"^\[CPUSNAPSHOT_RESULT\] seq=(\d+) .*$", stderr, re.M)
     assert len(states) == 64 and sorted(states) == sorted(completed), (
         len(states),
         len(completed),
@@ -131,7 +150,7 @@ def verify_trace(stderr):
     assert stderr.count("[CPUSNAPSHOT_CAP] limit=64") == 1
     assert "state=0 open=0 draws=0" in stderr
     assert "state=1 open=1 draws=0" in stderr
-    assert "state=1 open=0 draws=1" in stderr
+    assert "state=1 open=1 draws=1" in stderr
     assert "[CPUSNAPSHOT_RANGE]" in stderr and "[CPUSNAPSHOT_VIEW]" in stderr
     assert (
         "[CPUSNAPSHOT_RANGE] seq=1 index=0 address=00001000 bytes=2 output=0" in stderr
@@ -144,7 +163,7 @@ def verify_trace(stderr):
         "[CPUSNAPSHOT_VIEW] seq=2 slot=0 address=00001000 pitch=8 height=3 format=9 gpu=1 cpu=1"
         in stderr
     )
-    for sequence in (3, 4, 5, 6):
+    for sequence in (3, 4, 5, 8):
         assert f"[CPUSNAPSHOT_RESULT] seq={sequence} status=0 " in stderr
 
 
@@ -173,6 +192,21 @@ report["wrong_channel_header_sha256"] = hashlib.sha256(
     (OUT / "wrong-channel.h").read_bytes()
 ).hexdigest()
 mutants = {
+    "missing-requester-identity": body.replace(
+        "    request.client_thread=GetCurrentThreadId();",
+        "    request.client_thread=0;",
+        1,
+    ),
+    "missing-record-submission": body.replace(
+        "        submit_record_capacity(NULL, 0);",
+        "        ; /* omitted submission */",
+        1,
+    ),
+    "open-primitive-submission": body.replace(
+        "!s_d3d.current_rsx_state->in_begin_end && s_d3d.draw_count",
+        "s_d3d.draw_count",
+        1,
+    ),
     "missing-trace": body.replace(
         "            cpu_surface_snapshot_trace(request);", "", 1
     ),
@@ -197,7 +231,12 @@ mutants = {
 }
 for name, mutated in mutants.items():
     assert mutated != body, name
-    is_trace = name in ("missing-trace", "wrong-view-pitch", "repeated-cap")
+    is_trace = name in (
+        "missing-trace",
+        "wrong-view-pitch",
+        "repeated-cap",
+        "missing-requester-identity",
+    )
     result = run([build(name, mutated), adapter], profile=is_trace)
     if is_trace:
         assert result.returncode == 0, (name, result.stderr)
@@ -213,10 +252,19 @@ for name, mutated in mutants.items():
             name,
             OUT / "result.json",
         )
-report["rejected_mutants"] = list(mutants)
+presenting = submission.replace(
+    "s_present_this_frame = 0;", "s_present_this_frame = 1;", 1
+)
+assert presenting != submission
+result = run([build("presenting-submission", body, presenting), adapter])
+assert result.returncode != 0 and "CHECK " in result.stderr, (
+    "Presenting submission accepted",
+    OUT / "result.json",
+)
+report["rejected_mutants"] = [*mutants, "presenting-submission"]
 report["passed"] = True
 (OUT / "result.json").write_text(json.dumps(report, indent=2))
 print(
-    "PASS actual D3D12 snapshot producer, visible errors, bounded trace and six source mutants;",
+    "PASS actual D3D12 snapshot producer, nonpresenting record submission, visible errors, bounded trace and ten source mutants;",
     OUT,
 )

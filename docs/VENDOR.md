@@ -1852,6 +1852,25 @@ existing GPU-data mutants. Scalar-profile fixtures declare the new dependency
 explicitly. These diagnostic observations still require actual game evidence
 before selecting an ownership or publication correction.
 
+### Snapshot submission of completed records (#302)
+
+Own-fork modular `42ef095f` plus declaration correction `1d7baade`, assembled
+in canonical combined `8e0eafcf` plus `316f6ec6`, submit completed CPU draw
+records through the existing nonpresenting capacity path at a closed held-FIFO
+boundary. The curated backend retains its checked pre/post-submission GPU
+retirement. An open primitive retains its pending records until closure.
+Snapshot requests also record their actual client thread identity.
+
+The GPU fixture compiles the actual submission and retirement helpers with
+authored render ports that produce real nonzero D3D12 data. It verifies one
+completed batch, restored presentation state, open-primitive admission, and
+snapshot queue preservation during completed-batch scalar service. Hardware
+and WARP retain zero validation messages and reject ten source mutants,
+including omitted submission, submission during an open primitive, accidental
+presentation and missing requester identity. Combined in-game resource/view
+identity, coherent lifetime and native-query performance remain acceptance
+requirements.
+
 ### PPU lifted-function lookup prerequisite (#302)
 
 The selective PPU registry lookup carries only the public API from fork modular
