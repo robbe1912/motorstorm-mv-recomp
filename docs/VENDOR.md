@@ -1768,6 +1768,26 @@ installed. The separate inherited native-leaf workflow still fails linking its
 unchanged fixture dependencies; this is tracked by #284 and is not reported as
 a passing regression suite. The full native query remains draft PR303.
 
+### Snapshot ownership and pending-work admission (#302)
+
+Own-fork modular `codex/rsx-snapshot-admission` commit `e05383b0` and canonical
+combined `d9ff5563` tighten the existing snapshot provider before game adoption.
+The ownership helper rejects every intersecting second surface, including one
+that overlaps only part of a requested range. Adjacent nonoverlapping surfaces
+remain admissible. The provider returns unavailable while renderer state is
+missing, a primitive is open or CPU draw records await normal submission.
+Existing recorded-write failures remain visible.
+
+Both historical production bodies fail their new authored controls. Ownership
+checks reject five source mutants. The actual provider-body preflight checks
+reject three more while preserving destination bytes and copy counts on
+unavailable results. Transport, held-FIFO and target-fence CPU controls also
+pass. Complete fork backend compilation passes checked and NDEBUG modes on
+Windows. Focused modular and combined workflows pass on Windows, Linux and macOS.
+These are CPU protocol and compilation results. Real GPU producer, alias/resize,
+retirement and concurrent snapshot lifetime remain validation requirements.
+The game still uses its original query and has no installed snapshot provider.
+
 ### PPU lifted-function lookup prerequisite (#302)
 
 The selective PPU registry lookup carries only the public API from fork modular
