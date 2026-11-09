@@ -2,6 +2,7 @@
 
 #include "ppu_recomp.h"
 #include "ps3emu/ppu_function_registry.h"
+#include "ps3emu/guest_read_sync.h"
 
 #include <atomic>
 #include <cstdint>
@@ -30,6 +31,9 @@ struct RawSample {
     std::uint64_t byte_addresses[5]{};
     std::uint8_t byte_values[5]{};
     unsigned byte_count{};
+    bool snapshot_attempted{};
+    int snapshot_status{VM_READ_SNAPSHOT_UNAVAILABLE};
+    std::uint8_t snapshot_values[4]{};
 };
 
 struct State {
@@ -94,6 +98,31 @@ void print_sample(std::uint64_t sequence, const RawSample& value) {
         static_cast<unsigned long long>(value.byte_addresses[2]), unsigned(value.byte_values[2]),
         static_cast<unsigned long long>(value.byte_addresses[3]), unsigned(value.byte_values[3]),
         static_cast<unsigned long long>(value.byte_addresses[4]), unsigned(value.byte_values[4]));
+    if (value.snapshot_attempted) {
+        std::fprintf(stderr,
+            "[depth-snapshot] seq=%llu status=%d valid=%u bytes=%x,%x,%x,%x\n",
+            static_cast<unsigned long long>(sequence), value.snapshot_status,
+            unsigned(value.snapshot_status == VM_READ_SNAPSHOT_OK),
+            unsigned(value.snapshot_values[0]), unsigned(value.snapshot_values[1]),
+            unsigned(value.snapshot_values[2]), unsigned(value.snapshot_values[3]));
+    }
+}
+
+void probe_snapshot(RawSample& sample) {
+    if (!sample.memory_captured || sample.byte_count != 5) return;
+    sample.snapshot_attempted = true;
+    VmReadSnapshotRange ranges[4]{};
+    for (unsigned index = 0; index != 4; ++index) {
+        const auto address = sample.byte_addresses[index + 1];
+        if (address > UINT32_MAX) {
+            sample.snapshot_status = VM_READ_SNAPSHOT_INVALID;
+            return;
+        }
+        ranges[index] = {static_cast<std::uint32_t>(address), 1u, index};
+    }
+    // Probe the four actual corner addresses after the original has returned.
+    // This observes a later renderer boundary and never supplies query results.
+    sample.snapshot_status = vm_read_snapshot(ranges, 4, sample.snapshot_values, 4);
 }
 
 void capture_resource(std::uint32_t address, std::uint32_t (&words)[7]) {
@@ -144,6 +173,7 @@ void observe_depth(ppu_context* ctx) {
     active_sample = previous;
     sample.return_gpr3 = ctx->gpr[3];
     sample.return_fpr1 = raw_bits(ctx->fpr[1]);
+    probe_snapshot(sample);
 
     const std::uint64_t sequence = state().completed.fetch_add(1, std::memory_order_relaxed) + 1;
     const std::uint64_t class_sequence =

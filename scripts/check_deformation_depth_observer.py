@@ -33,11 +33,12 @@ def main() -> None:
         (generated / "ppu/ppu_recomp.h").write_bytes(header.read_bytes())
         with header.open("a") as output:
             output.write("uint32_t vm_read32(uint64_t);\nuint8_t fixture_original_read8(uint64_t);\n"
+                         "uint64_t fixture_byte_address(unsigned);\nunsigned fixture_byte_count();\n"
                          "#define vm_read8 fixture_original_read8\n")
         (generated / "ppu/ppu_recomp.h").write_bytes(header.read_bytes())
         body = (b"void func_0029C684(ppu_context* ctx) { fixture_depth_body(ctx); "
-                b"ctx->gpr[9] = 0; if (ctx->gpr[8]) { for (unsigned i=0;i<5;++i) "
-                b"ctx->gpr[9] += vm_read8(0x7000u+i); } }")
+                b"ctx->gpr[9] = 0; if (ctx->gpr[8]) { for (unsigned i=0;i<fixture_byte_count();++i) "
+                b"ctx->gpr[9] += vm_read8(fixture_byte_address(i)); } }")
         (generated / "ppu/depth.cpp").write_bytes(
             b'#include "ppu_recomp.h"\nvoid fixture_depth_body(ppu_context*);\n' + body +
             b"\nauto fixture_outside_reader = &vm_read8;\n")
@@ -75,6 +76,7 @@ def main() -> None:
         assert transcript.count("capture cap=64 reached lock-seen=1") == 1
         assert "PASS actual depth observer fallback and nested Lock capture" in transcript
         assert "metadata reads=1344" in transcript, "Metadata reads must stop after 64 attempts"
+        assert "snapshot calls=64" in transcript, "Every complete bounded query must probe admission"
         views = [line for line in transcript.splitlines() if line.startswith("[depth-view]")]
         reads = [line for line in transcript.splitlines() if line.startswith("[depth-bytes]")]
         assert len(views) == len(reads) == 64, "Expected bounded authentic query metadata and original read results"
@@ -83,6 +85,25 @@ def main() -> None:
         resources = [line for line in transcript.splitlines() if line.startswith("[depth-resource]")]
         assert len(resources) == 64
         assert all("ea=5000 words=1,0,7000,8000,7000,2000,6000 parent=2,0,7000,8000,7000,2000,0" in line for line in resources)
+        snapshots = [line for line in transcript.splitlines() if line.startswith("[depth-snapshot]")]
+        assert len(snapshots) == 64
+        assert all("status=1 valid=1 bytes=a0,a1,a2,a3" in line for line in snapshots)
+        for status in (0, -1, -2):
+            result = subprocess.run([str(executable), str(status)], capture_output=True, text=True, timeout=30)
+            assert result.returncode == 0, result.stdout + result.stderr
+            snapshots = [line for line in result.stderr.splitlines() if line.startswith("[depth-snapshot]")]
+            assert len(snapshots) == 64 and all(
+                f"status={status} valid=0 bytes=0,0,0,0" in line for line in snapshots)
+            assert "snapshot calls=64" in result.stdout
+        for mode in ("wide", "short"):
+            result = subprocess.run([str(executable), "1", mode], capture_output=True, text=True, timeout=30)
+            assert result.returncode == 0, result.stdout + result.stderr
+            assert "snapshot calls=0" in result.stdout
+            snapshots = [line for line in result.stderr.splitlines() if line.startswith("[depth-snapshot]")]
+            if mode == "wide":
+                assert len(snapshots) == 64 and all("status=-1 valid=0" in line for line in snapshots)
+            else:
+                assert not snapshots, "Incomplete original queries cannot authorize a snapshot"
         # Reproduce the missed-direct-call pattern with an otherwise valid
         # binding. Original outputs still agree, but observation must fail.
         text = bound.read_text()
@@ -122,7 +143,16 @@ def main() -> None:
             result = subprocess.run([str(executable)], cwd=ROOT, capture_output=True, text=True, timeout=30)
             assert result.returncode == 0, result.stdout + result.stderr
             assert oracle not in result.stdout + result.stderr, "Corrupted capture must fail its independent oracle"
-    print("PASS depth observer: direct/table and legacy binding, exact reads/results, bounded metadata, five rejected mutants")
+        # Truncating guest addresses would turn an invalid probe into a different valid read.
+        before = "if (address > UINT32_MAX)"
+        assert source.count(before) == 1
+        mutant.write_text(source.replace(before, "if (address == UINT64_MAX)"))
+        built = subprocess.run(mutant_command, cwd=ROOT, capture_output=True, text=True, timeout=120)
+        assert built.returncode == 0, built.stderr
+        result = subprocess.run([str(executable), "1", "wide"], capture_output=True, text=True, timeout=30)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "snapshot calls=64" in result.stdout and "status=-1 valid=0" not in result.stderr
+    print("PASS depth observer: exact fallback/reads, bounded snapshot admission and statuses, six rejected mutants")
 
 
 if __name__ == "__main__":

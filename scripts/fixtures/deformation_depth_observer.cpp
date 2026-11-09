@@ -1,10 +1,12 @@
 #include "ppu_recomp.h"
 #include "ps3emu/ppu_function_registry.h"
+#include "ps3emu/guest_read_sync.h"
 #include "motorstorm/deformation_depth_observer.h"
 
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace {
 constexpr std::uint32_t kGetDepth = 0x0029c684u;
@@ -15,6 +17,10 @@ unsigned depth_calls{};
 unsigned lock_calls{};
 unsigned byte_reads{};
 unsigned metadata_reads{};
+unsigned snapshot_calls{};
+int snapshot_status{VM_READ_SNAPSHOT_OK};
+std::uint64_t read_base{0x7000};
+unsigned read_count{5};
 bool call_lock{true};
 
 void original_lock(ppu_context* ctx) {
@@ -50,11 +56,13 @@ bool check(bool condition, const char* label) {
 
 // Called by the authored generated entry, including its renamed fallback.
 void fixture_depth_body(ppu_context* ctx) { original_depth(ctx); }
+std::uint64_t fixture_byte_address(unsigned index) { return read_base + index; }
+unsigned fixture_byte_count() { return read_count; }
 
 std::uint8_t fixture_original_read8(std::uint64_t address) {
     ++byte_reads;
-    if (!check(address >= 0x7000 && address < 0x7005, "original byte address")) std::abort();
-    return static_cast<std::uint8_t>(20 + address - 0x7000);
+    if (!check(address >= read_base && address < read_base + read_count, "original byte address")) std::abort();
+    return static_cast<std::uint8_t>(20 + address - read_base);
 }
 
 std::uint32_t vm_read32(std::uint64_t address) {
@@ -78,6 +86,22 @@ std::uint32_t vm_read32(std::uint64_t address) {
     std::abort();
 }
 
+extern "C" int vm_read_snapshot(const VmReadSnapshotRange* ranges, std::uint32_t count,
+                                void* destination, std::uint32_t bytes) {
+    ++snapshot_calls;
+    if (!check(count == 4 && bytes == 4, "four original corner ranges") ||
+        !check(byte_reads == read_count * (1 + snapshot_calls), "snapshot follows original reads")) std::abort();
+    for (unsigned index = 0; index != 4; ++index) {
+        if (!check(ranges[index].address == 0x7001 + index && ranges[index].bytes == 1 &&
+                   ranges[index].output_offset == index, "exact snapshot range order")) std::abort();
+    }
+    if (snapshot_status == VM_READ_SNAPSHOT_OK) {
+        auto* output = static_cast<std::uint8_t*>(destination);
+        for (unsigned index = 0; index != 4; ++index) output[index] = static_cast<std::uint8_t>(0xa0 + index);
+    }
+    return snapshot_status;
+}
+
 extern "C" void ppu_register_function(std::uint64_t address, ps3emu_ppu_function function) {
     const int index = index_for(static_cast<std::uint32_t>(address));
     if (index >= 0) {
@@ -93,7 +117,10 @@ extern "C" int ppu_get_registered_function(std::uint32_t address, ps3emu_ppu_fun
     return 1;
 }
 
-int main() {
+int main(int argc, char** argv) {
+    if (argc > 1) snapshot_status = std::atoi(argv[1]);
+    if (argc > 2 && std::strcmp(argv[2], "wide") == 0) read_base += UINT64_C(0x100000000);
+    if (argc > 2 && std::strcmp(argv[2], "short") == 0) read_count = 4;
     /* Disabled mode must leave dispatch untouched. */
     deformation_depth_observer_install();
     if (!check(registrations == 0, "disabled install")) return 1;
@@ -104,7 +131,8 @@ int main() {
     func_0029C684(&disabled);
     if (!check(depth_calls == 1 && lock_calls == 1 && disabled.gpr[3] == 0x12345678u &&
                disabled.fpr[1] == 3.5, "disabled direct fallback")) return 1;
-    if (!check(metadata_reads == 0 && byte_reads == 5, "disabled memory reads")) return 1;
+    if (!check(metadata_reads == 0 && byte_reads == read_count && snapshot_calls == 0,
+               "disabled memory reads")) return 1;
     depth_calls = lock_calls = 0;
     entries[1] = nullptr;
 
@@ -143,12 +171,14 @@ int main() {
             if (call % 2 == 0) func_0029C684(&context);
             else entries[0](&context);
             if (!check(context.gpr[3] == 0x12345678u && context.fpr[1] == 3.5, "original output preserved")) return 1;
-            if (!check(context.gpr[9] == (call_lock ? 110u : 0u), "exact original byte results")) return 1;
+            const unsigned sum = read_count * (39u + read_count) / 2u;
+            if (!check(context.gpr[9] == (call_lock ? sum : 0u), "exact original byte results")) return 1;
         }
     }
     if (!check(depth_calls == 130 && lock_calls == 65, "exact original fallback")) return 1;
-    if (!check(byte_reads == 330, "no additional or skipped original byte reads")) return 1;
+    if (!check(byte_reads == read_count * 66, "no additional or skipped original byte reads")) return 1;
     std::printf("metadata reads=%u\n", metadata_reads);
+    std::printf("snapshot calls=%u\n", snapshot_calls);
     std::puts("PASS actual depth observer fallback and nested Lock capture");
     return 0;
 }
