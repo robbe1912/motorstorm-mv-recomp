@@ -1784,9 +1784,31 @@ reject three more while preserving destination bytes and copy counts on
 unavailable results. Transport, held-FIFO and target-fence CPU controls also
 pass. Complete fork backend compilation passes checked and NDEBUG modes on
 Windows. Focused modular and combined workflows pass on Windows, Linux and macOS.
-These are CPU protocol and compilation results. Real GPU producer, alias/resize,
-retirement and concurrent snapshot lifetime remain validation requirements.
+These establish CPU protocol and compilation gates. The GPU checks below extend
+this evidence.
 The game still uses its original query and has no installed snapshot provider.
+
+### Snapshot GPU producer validation (#302)
+
+Own-fork modular `a7397e95` on `codex/rsx-snapshot-gpu-validation` and canonical
+combined `b4d031b6` add `tools/test_rsx_snapshot_gpu.py`. The headless fixture
+compiles the complete production CPU-surface service, snapshot transport and
+packing code against an authored D3D12 producer and renderer-owner thread.
+Nonzero GPU writes exercise dirty copy/clean reuse, a blocked queue with a stale
+event, pitch padding, partial aliases, renderer admission, target resize and
+retirement. Four readers issue 128 concurrent requests. Four further requests
+queued before dirty-target retirement return unavailable with intact outputs;
+previously returned snapshot bytes remain intact after retirement.
+
+Hardware RTX 3080 and D3D12 WARP runs pass with zero validation messages.
+Recorded-write errors, forced device removal and unsupported formats remain
+visible failures. Three real-source mutants lose dirty copy, clean-generation
+tracking or the correct byte channel and fail the result oracle. Windows CI
+runs WARP; Linux and macOS retain the CPU protocol controls.
+
+The fixture schedules known closed boundaries. The actual FIFO protocol has
+separate controls; combined game FIFO/GPU execution, guest-resource identity
+and full-query admission remain required before replacing original readbacks.
 
 ### PPU lifted-function lookup prerequisite (#302)
 
