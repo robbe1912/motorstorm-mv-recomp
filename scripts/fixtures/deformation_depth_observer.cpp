@@ -13,6 +13,8 @@ ps3emu_ppu_function entries[2]{};
 unsigned registrations{};
 unsigned depth_calls{};
 unsigned lock_calls{};
+unsigned byte_reads{};
+unsigned metadata_reads{};
 bool call_lock{true};
 
 void original_lock(ppu_context* ctx) {
@@ -30,6 +32,7 @@ void original_depth(ppu_context* ctx) {
     }
     ctx->gpr[3] = 0x12345678u;
     ctx->fpr[1] = 3.5;
+    ctx->gpr[8] = call_lock;
 }
 
 int index_for(std::uint32_t address) {
@@ -47,6 +50,33 @@ bool check(bool condition, const char* label) {
 
 // Called by the authored generated entry, including its renamed fallback.
 void fixture_depth_body(ppu_context* ctx) { original_depth(ctx); }
+
+std::uint8_t fixture_original_read8(std::uint64_t address) {
+    ++byte_reads;
+    if (!check(address >= 0x7000 && address < 0x7005, "original byte address")) std::abort();
+    return static_cast<std::uint8_t>(20 + address - 0x7000);
+}
+
+std::uint32_t vm_read32(std::uint64_t address) {
+    ++metadata_reads;
+    if (address == 0xaaaa + 0x54) return 0x25;
+    if (address == 0xaaaa + 0x60) return 256;
+    if (address == 0xaaaa + 0x64) return 128;
+    if (address == 0xaaaa + 0x8c) return 0x5000;
+    if (address == 0xbbbb) return 0x7000;
+    if (address == 0xbbbb + 4) return 0x3e800000;
+    if (address == 0xbbbb + 8) return 0x3f400000;
+    if (address >= 0x5000 && address < 0x501c && (address & 3) == 0) {
+        const std::uint32_t resource[] = {1, 0, 0x7000, 0x8000, 0x7000, 0x2000, 0x6000};
+        return resource[(address - 0x5000) / 4];
+    }
+    if (address >= 0x6000 && address < 0x601c && (address & 3) == 0) {
+        const std::uint32_t parent[] = {2, 0, 0x7000, 0x8000, 0x7000, 0x2000, 0};
+        return parent[(address - 0x6000) / 4];
+    }
+    std::fprintf(stderr, "Unexpected metadata address %llx\n", static_cast<unsigned long long>(address));
+    std::abort();
+}
 
 extern "C" void ppu_register_function(std::uint64_t address, ps3emu_ppu_function function) {
     const int index = index_for(static_cast<std::uint32_t>(address));
@@ -74,6 +104,7 @@ int main() {
     func_0029C684(&disabled);
     if (!check(depth_calls == 1 && lock_calls == 1 && disabled.gpr[3] == 0x12345678u &&
                disabled.fpr[1] == 3.5, "disabled direct fallback")) return 1;
+    if (!check(metadata_reads == 0 && byte_reads == 5, "disabled memory reads")) return 1;
     depth_calls = lock_calls = 0;
     entries[1] = nullptr;
 
@@ -112,9 +143,12 @@ int main() {
             if (call % 2 == 0) func_0029C684(&context);
             else entries[0](&context);
             if (!check(context.gpr[3] == 0x12345678u && context.fpr[1] == 3.5, "original output preserved")) return 1;
+            if (!check(context.gpr[9] == (call_lock ? 110u : 0u), "exact original byte results")) return 1;
         }
     }
     if (!check(depth_calls == 130 && lock_calls == 65, "exact original fallback")) return 1;
+    if (!check(byte_reads == 330, "no additional or skipped original byte reads")) return 1;
+    std::printf("metadata reads=%u\n", metadata_reads);
     std::puts("PASS actual depth observer fallback and nested Lock capture");
     return 0;
 }

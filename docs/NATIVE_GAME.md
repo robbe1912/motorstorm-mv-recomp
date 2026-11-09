@@ -73,29 +73,35 @@ before guest dispatch, it enables observation for original-US `GetDepth`
 entry. The verified generated-input binding renames the exact GetDepth body in
 a worktree-local copy and routes both direct and registered callers through the
 observer. Disabled observation invokes that retained original directly. Enabled
-observation also invokes both retained originals. The wrappers make no
-guest-memory reads or writes, infer no semantic ABI, and preserve the original
-output/return state. While a `GetDepth` wrapper is active, nested Lock calls
-emit only raw incoming register bits and raw Lock return status; the record's
-`lock-seen` field can therefore falsify the static callback hypothesis without
-treating the status or output-slot address as an allocation extent. Independent
-64-call budgets cover completions with and without nested Lock, retaining at
-most 128 sample lines and announcing each exhausted class. Startup calls without
-Lock therefore preserve the later nested-Lock budget. This is a diagnostic build feature,
-not a query replacement, coherent view provider, synchronization bypass or FPS
-optimization.
+observation also invokes both retained originals and preserves their returned
+register state. The copied GetDepth body temporarily redirects its byte reads
+through a wrapper that calls the TU's original fast/slow reader exactly once,
+retaining synchronization, errors and returned bytes. The original memory macro
+is restored outside that verified function. Exact older prepared copies can
+upgrade to this recipe without changing the shared generated tree.
+
+Independent 64-call budgets cover completions with and without nested Lock,
+retaining at most 128 raw sample lines and announcing each exhausted class.
+The first 64 nested Lock attempts additionally retain format, dimensions, the
+written output pointer, transformed coordinate bits and root/parent resource
+headers through the normal VM metadata API. Pinned instructions bind Lock's
+output to SP+0x70 and coordinates to SP+0x74/+0x78. Five original byte reads
+retain their actual addresses/results, including the interpolation-mode byte.
+Each metadata line carries its completing query sequence. Additional metadata
+reads and logging perturb timing. Resource headers are sequential observations;
+allocation suffix bounds, aliases and FIFO/GPU lifetime still require admission.
+The retained Lock status remains distinct from an allocation extent.
 
 `scripts/check_deformation_depth_observer.py` compiles the actual observer
-against an authored generated-input binding and registry fixture. It proves
-disabled/missing-entry installs preserve fallback output, alternating direct and
-registered callers retain exact original results, nested Lock is observed, and
-the bounded log reports both caps after 65 calls without Lock followed by 65
-with Lock. Bypassed-entry and global-cap mutants preserve original results but
-lose required observation coverage. The earlier registry-only observer missed the
-generated direct call to GetDepth; zero samples from that build cannot establish
-that the operation was absent. This is a deterministic
-observer-contract test only; it is not a live-game capture or graphics/FPS
-evidence.
+against an authored generated-input binding and registry fixture. It checks
+disabled/missing-entry installation, direct/table fallback results, exact original
+byte-read counts and order, metadata/parent fields, legacy-copy upgrade, memory
+macro restoration and independent budgets. Sixty-five calls without Lock precede
+65 with Lock. Five mutants exercise bypassed entry, global-budget starvation,
+corrupted captured bytes, wrong coordinate offset and excess metadata reads.
+The earlier registry-only observer missed direct GetDepth calls; zero samples
+from that build leave operation presence unproven. Live numeric pairing,
+coherent-view admission and performance acceptance remain separate gates.
 
 Owned DX12 run `20261109T094927.873395Z`, EXE `56fe9332...e909b`, reached
 race HUD frame 35 through seven acknowledged required inputs and one observed

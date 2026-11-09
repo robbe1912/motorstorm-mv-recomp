@@ -24,6 +24,12 @@ struct RawSample {
     std::uint64_t return_fpr1{};
     std::uint64_t lock_object{}, lock_out_slot{}, lock_mode{}, lock_status{};
     bool lock_seen{};
+    bool memory_captured{};
+    std::uint32_t format{}, width{}, height{}, output{}, x_bits{}, y_bits{};
+    std::uint32_t resource{}, resource_words[7]{}, parent_words[7]{};
+    std::uint64_t byte_addresses[5]{};
+    std::uint8_t byte_values[5]{};
+    unsigned byte_count{};
 };
 
 struct State {
@@ -31,6 +37,7 @@ struct State {
     ps3emu_ppu_function lock{};
     std::atomic<std::uint64_t> completed{0};
     std::atomic<std::uint64_t> completed_by_lock[2]{};
+    std::atomic<std::uint64_t> memory_attempts{0};
     bool enabled{};
 };
 
@@ -65,6 +72,32 @@ void print_sample(std::uint64_t sequence, const RawSample& value) {
         static_cast<unsigned long long>(value.lock_status),
         static_cast<unsigned long long>(value.return_gpr3),
         static_cast<unsigned long long>(value.return_fpr1));
+    if (!value.memory_captured) return;
+    std::fprintf(stderr,
+        "[depth-view] seq=%llu format=%x dims=%u,%u output=%x xy=%x,%x resource=%x\n",
+        static_cast<unsigned long long>(sequence), value.format, value.width, value.height,
+        value.output, value.x_bits, value.y_bits, value.resource);
+    // Each independently emitted line carries its query identity, including
+    // when different guest threads complete concurrently.
+    std::fprintf(stderr,
+        "[depth-resource] seq=%llu ea=%x words=%x,%x,%x,%x,%x,%x,%x parent=%x,%x,%x,%x,%x,%x,%x\n",
+        static_cast<unsigned long long>(sequence), value.resource,
+        value.resource_words[0], value.resource_words[1], value.resource_words[2],
+        value.resource_words[3], value.resource_words[4], value.resource_words[5], value.resource_words[6],
+        value.parent_words[0], value.parent_words[1], value.parent_words[2],
+        value.parent_words[3], value.parent_words[4], value.parent_words[5], value.parent_words[6]);
+    std::fprintf(stderr,
+        "[depth-bytes] seq=%llu count=%u b0=%llx:%x b1=%llx:%x b2=%llx:%x b3=%llx:%x b4=%llx:%x\n",
+        static_cast<unsigned long long>(sequence), value.byte_count,
+        static_cast<unsigned long long>(value.byte_addresses[0]), unsigned(value.byte_values[0]),
+        static_cast<unsigned long long>(value.byte_addresses[1]), unsigned(value.byte_values[1]),
+        static_cast<unsigned long long>(value.byte_addresses[2]), unsigned(value.byte_values[2]),
+        static_cast<unsigned long long>(value.byte_addresses[3]), unsigned(value.byte_values[3]),
+        static_cast<unsigned long long>(value.byte_addresses[4]), unsigned(value.byte_values[4]));
+}
+
+void capture_resource(std::uint32_t address, std::uint32_t (&words)[7]) {
+    for (unsigned index = 0; index != 7; ++index) words[index] = vm_read32(address + index * 4u);
 }
 
 void observe_lock(ppu_context* ctx) {
@@ -79,6 +112,24 @@ void observe_lock(ppu_context* ctx) {
     sample->lock_out_slot = out_slot;
     sample->lock_mode = mode;
     sample->lock_status = ctx->gpr[3];
+    const auto attempt = state().memory_attempts.fetch_add(1, std::memory_order_relaxed);
+    if (attempt == 64) std::fputs("[depth-observe] metadata cap=64 reached\n", stderr);
+    if (attempt >= 64) return;
+    sample->memory_captured = true;
+    // Pinned GetDepth uses SP+0x70 as Lock's output slot and SP+0x74/+0x78
+    // for TransformPoint output. Metadata reads use the normal VM API. They
+    // are sequential observations, not an atomic or GPU-coherent snapshot.
+    sample->output = vm_read32(out_slot);
+    sample->x_bits = vm_read32(out_slot + 4u);
+    sample->y_bits = vm_read32(out_slot + 8u);
+    sample->format = vm_read32(object + 0x54u);
+    sample->width = vm_read32(object + 0x60u);
+    sample->height = vm_read32(object + 0x64u);
+    sample->resource = vm_read32(object + 0x8cu);
+    if (sample->resource) {
+        capture_resource(sample->resource, sample->resource_words);
+        if (sample->resource_words[6]) capture_resource(sample->resource_words[6], sample->parent_words);
+    }
 }
 
 void observe_depth(ppu_context* ctx) {
@@ -106,6 +157,20 @@ void observe_depth(ppu_context* ctx) {
                      unsigned(sample.lock_seen));
 }
 } // namespace
+
+std::uint8_t motorstorm_observe_depth_byte(
+    std::uint64_t address, std::uint8_t (*original_read)(std::uint64_t)) {
+    RawSample* const sample = active_sample;
+    const std::uint8_t value = original_read(address);
+    if (sample && sample->memory_captured) {
+        const unsigned index = sample->byte_count++;
+        if (index < 5) {
+            sample->byte_addresses[index] = address;
+            sample->byte_values[index] = value;
+        }
+    }
+    return value;
+}
 
 // The verified generated-input binding retains this entry for both direct and
 // registered callers. Disabled observation still executes the exact original.

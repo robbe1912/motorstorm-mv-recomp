@@ -31,13 +31,22 @@ def main() -> None:
         generated = out / "input"
         (generated / "ppu").mkdir(parents=True)
         (generated / "ppu/ppu_recomp.h").write_bytes(header.read_bytes())
-        body = b"void func_0029C684(ppu_context* ctx) { fixture_depth_body(ctx); }"
+        with header.open("a") as output:
+            output.write("uint32_t vm_read32(uint64_t);\nuint8_t fixture_original_read8(uint64_t);\n"
+                         "#define vm_read8 fixture_original_read8\n")
+        (generated / "ppu/ppu_recomp.h").write_bytes(header.read_bytes())
+        body = (b"void func_0029C684(ppu_context* ctx) { fixture_depth_body(ctx); "
+                b"ctx->gpr[9] = 0; if (ctx->gpr[8]) { for (unsigned i=0;i<5;++i) "
+                b"ctx->gpr[9] += vm_read8(0x7000u+i); } }")
         (generated / "ppu/depth.cpp").write_bytes(
-            b'#include "ppu_recomp.h"\nvoid fixture_depth_body(ppu_context*);\n' + body + b"\n")
+            b'#include "ppu_recomp.h"\nvoid fixture_depth_body(ppu_context*);\n' + body +
+            b"\nauto fixture_outside_reader = &vm_read8;\n")
         elf = out / "authored-input"
         elf.write_bytes(b"Authored depth observer input identity")
         contract = replace(DEPTH_OBSERVER, elf_sha256=digest(elf),
                            body_sha256=hashlib.sha256(body).hexdigest())
+        # Exercise an upgrade from the exact older, registry/direct-only copy.
+        prepare(generated, out / "bound", elf, out / "binding.json", replace(contract, byte_observer=''))
         binding = prepare(generated, out / "bound", elf, out / "binding.json", contract)
         bound = pathlib.Path(binding["copied_tu"])
         executable = out / ("observer.exe" if os.name == "nt" else "observer")
@@ -65,6 +74,15 @@ def main() -> None:
         assert transcript.count("capture cap=64 reached lock-seen=0") == 1
         assert transcript.count("capture cap=64 reached lock-seen=1") == 1
         assert "PASS actual depth observer fallback and nested Lock capture" in transcript
+        assert "metadata reads=1344" in transcript, "Metadata reads must stop after 64 attempts"
+        views = [line for line in transcript.splitlines() if line.startswith("[depth-view]")]
+        reads = [line for line in transcript.splitlines() if line.startswith("[depth-bytes]")]
+        assert len(views) == len(reads) == 64, "Expected bounded authentic query metadata and original read results"
+        assert all("format=25 dims=256,128 output=7000 xy=3e800000,3f400000" in line for line in views)
+        assert all("count=5 b0=7000:14 b1=7001:15 b2=7002:16 b3=7003:17 b4=7004:18" in line for line in reads)
+        resources = [line for line in transcript.splitlines() if line.startswith("[depth-resource]")]
+        assert len(resources) == 64
+        assert all("ea=5000 words=1,0,7000,8000,7000,2000,6000 parent=2,0,7000,8000,7000,2000,0" in line for line in resources)
         # Reproduce the missed-direct-call pattern with an otherwise valid
         # binding. Original outputs still agree, but observation must fail.
         text = bound.read_text()
@@ -90,7 +108,21 @@ def main() -> None:
         result = subprocess.run([str(executable)], cwd=ROOT, capture_output=True, text=True, timeout=30)
         assert result.returncode == 0, result.stdout + result.stderr
         assert "lock-seen=1 lock=" not in result.stderr, "Global-cap mutant must lose later Lock samples"
-    print("PASS depth observer: direct/table binding, exact fallback, independent Lock budgets, two rejected mutants")
+        for before, after, oracle in (
+            ("sample->byte_values[index] = value;", "sample->byte_values[index] = value ^ 1;",
+             "b0=7000:14 b1=7001:15 b2=7002:16 b3=7003:17 b4=7004:18"),
+            ("sample->x_bits = vm_read32(out_slot + 4u);", "sample->x_bits = vm_read32(out_slot + 8u);",
+             "xy=3e800000,3f400000"),
+            ("if (attempt >= 64) return;", "if (attempt >= 65) return;", "metadata reads=1344"),
+        ):
+            assert source.count(before) == 1
+            mutant.write_text(source.replace(before, after))
+            built = subprocess.run(mutant_command, cwd=ROOT, capture_output=True, text=True, timeout=120)
+            assert built.returncode == 0, built.stderr
+            result = subprocess.run([str(executable)], cwd=ROOT, capture_output=True, text=True, timeout=30)
+            assert result.returncode == 0, result.stdout + result.stderr
+            assert oracle not in result.stdout + result.stderr, "Corrupted capture must fail its independent oracle"
+    print("PASS depth observer: direct/table and legacy binding, exact reads/results, bounded metadata, five rejected mutants")
 
 
 if __name__ == "__main__":
