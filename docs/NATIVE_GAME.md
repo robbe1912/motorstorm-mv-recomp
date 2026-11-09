@@ -53,6 +53,18 @@ neighbour sampling can cross the logical image edge, and backing allocation
 extent, aliasing, FIFO/GPU visibility and lifetime proof remain necessary
 before binding.
 
+Eight complete original DWARF declarations agree on the 28-byte `GcResource`
+layout. Its allocation pointer, size, CPU address, RSX offset and parent handle
+occupy offsets `0x08/0x0c/0x10/0x14/0x18`. The byte-verified 27-instruction
+`SetEverythingFromParent` at `0xc81100` retains the parent and copies its size
+unchanged while adding the selected view offset to its CPU address and RSX
+offset. Complete byte-verified `SetUserSize` (`0xc80e64`), `SetUserAddress`
+(`0xc80ea8`) and `AllocateLinear` (`0xc816b4`) establish separate size assignment,
+address mapping and allocation paths. In particular, `SetUserSize` assigns the
+size word directly. An inherited size therefore needs its actual allocation
+and view-offset provenance before it can bound neighbour samples. Live alias,
+FIFO/GPU visibility and usable view lifetime remain required for admission.
+
 An observation-only next step is available only in an explicitly flagged build
 (`PORT_DEFORMATION_DEPTH_OBSERVER=ON`) and when its separate runtime switch
 `MS_DEPTH_OBSERVER=1` is set. Immediately after generated PPU registration and
