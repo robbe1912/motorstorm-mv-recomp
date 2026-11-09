@@ -84,7 +84,10 @@ Independent 64-call budgets cover completions with and without nested Lock,
 retaining at most 128 raw sample lines and announcing each exhausted class.
 The first 64 nested Lock attempts additionally retain format, dimensions, the
 written output pointer, transformed coordinate bits and root/parent resource
-headers through the normal VM metadata API. Pinned instructions bind Lock's
+headers through the normal VM metadata API. The root's remaining 13 words
+retain its complete 80-byte `GcTexture` layout, including type, hardware
+descriptor and face size. Original DWARF establishes this extent; the generic
+parent remains limited to its 28-byte resource header. Pinned instructions bind Lock's
 output to SP+0x70 and coordinates to SP+0x74/+0x78. Five original byte reads
 retain their actual addresses/results, including the interpolation-mode byte.
 Each metadata line carries its completing query sequence. Additional metadata
@@ -110,9 +113,10 @@ byte-read counts and order, metadata/parent fields, legacy-copy upgrade, memory
 macro restoration and independent budgets. Sixty-five calls without Lock precede
 65 with Lock. Snapshot controls cover exact corner order, disabled/incomplete
 queries, 64-bit address rejection, successful differing bytes and unchanged
-fallback results for unavailable, invalid and failed requests. Six mutants
+fallback results for unavailable, invalid and failed requests. Seven mutants
 exercise bypassed entry, global-budget starvation, corrupted captured bytes,
-wrong coordinate offset, excess metadata reads and truncated probe addresses.
+wrong coordinate offset, excess metadata reads, corrupted texture words and
+truncated probe addresses.
 The earlier registry-only observer missed direct GetDepth calls; zero samples
 from that build leave operation presence unproven. Live numeric pairing,
 coherent-view admission and performance acceptance remain separate gates.

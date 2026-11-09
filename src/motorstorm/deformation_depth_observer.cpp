@@ -28,6 +28,7 @@ struct RawSample {
     bool memory_captured{};
     std::uint32_t format{}, width{}, height{}, output{}, x_bits{}, y_bits{};
     std::uint32_t resource{}, resource_words[7]{}, parent_words[7]{};
+    std::uint32_t texture_words[13]{};
     std::uint64_t byte_addresses[5]{};
     std::uint8_t byte_values[5]{};
     unsigned byte_count{};
@@ -90,6 +91,13 @@ void print_sample(std::uint64_t sequence, const RawSample& value) {
         value.resource_words[3], value.resource_words[4], value.resource_words[5], value.resource_words[6],
         value.parent_words[0], value.parent_words[1], value.parent_words[2],
         value.parent_words[3], value.parent_words[4], value.parent_words[5], value.parent_words[6]);
+    std::fprintf(stderr,
+        "[depth-texture] seq=%llu ea=%x words=%x,%x,%x,%x,%x,%x,%x,%x,%x,%x,%x,%x,%x\n",
+        static_cast<unsigned long long>(sequence), value.resource,
+        value.texture_words[0], value.texture_words[1], value.texture_words[2],
+        value.texture_words[3], value.texture_words[4], value.texture_words[5],
+        value.texture_words[6], value.texture_words[7], value.texture_words[8],
+        value.texture_words[9], value.texture_words[10], value.texture_words[11], value.texture_words[12]);
     std::fprintf(stderr,
         "[depth-bytes] seq=%llu count=%u b0=%llx:%x b1=%llx:%x b2=%llx:%x b3=%llx:%x b4=%llx:%x\n",
         static_cast<unsigned long long>(sequence), value.byte_count,
@@ -157,6 +165,11 @@ void observe_lock(ppu_context* ctx) {
     sample->resource = vm_read32(object + 0x8cu);
     if (sample->resource) {
         capture_resource(sample->resource, sample->resource_words);
+        // The pinned SDK's complete GcTexture layout is 80 bytes. Retain its
+        // type, hardware descriptor and face size after the 28-byte resource.
+        for (unsigned index = 0; index != 13; ++index) {
+            sample->texture_words[index] = vm_read32(sample->resource + 0x1cu + index * 4u);
+        }
         if (sample->resource_words[6]) capture_resource(sample->resource_words[6], sample->parent_words);
     }
 }

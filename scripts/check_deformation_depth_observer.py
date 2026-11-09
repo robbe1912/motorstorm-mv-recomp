@@ -75,7 +75,7 @@ def main() -> None:
         assert transcript.count("capture cap=64 reached lock-seen=0") == 1
         assert transcript.count("capture cap=64 reached lock-seen=1") == 1
         assert "PASS actual depth observer fallback and nested Lock capture" in transcript
-        assert "metadata reads=1344" in transcript, "Metadata reads must stop after 64 attempts"
+        assert "metadata reads=2176" in transcript, "Metadata reads must stop after 64 attempts"
         assert "snapshot calls=64" in transcript, "Every complete bounded query must probe admission"
         views = [line for line in transcript.splitlines() if line.startswith("[depth-view]")]
         reads = [line for line in transcript.splitlines() if line.startswith("[depth-bytes]")]
@@ -85,6 +85,10 @@ def main() -> None:
         resources = [line for line in transcript.splitlines() if line.startswith("[depth-resource]")]
         assert len(resources) == 64
         assert all("ea=5000 words=1,0,7000,8000,7000,2000,6000 parent=2,0,7000,8000,7000,2000,0" in line for line in resources)
+        textures = [line for line in transcript.splitlines() if line.startswith("[depth-texture]")]
+        assert len(textures) == 64, "Each bounded query must retain its complete texture descriptor"
+        texture_oracle = "ea=5000 words=0,2000,90022,60030303,80078000,0,2052000,1000080,0,100100,2dc4,0,7f80"
+        assert all(texture_oracle in line for line in textures)
         snapshots = [line for line in transcript.splitlines() if line.startswith("[depth-snapshot]")]
         assert len(snapshots) == 64
         assert all("status=1 valid=1 bytes=a0,a1,a2,a3" in line for line in snapshots)
@@ -134,7 +138,10 @@ def main() -> None:
              "b0=7000:14 b1=7001:15 b2=7002:16 b3=7003:17 b4=7004:18"),
             ("sample->x_bits = vm_read32(out_slot + 4u);", "sample->x_bits = vm_read32(out_slot + 8u);",
              "xy=3e800000,3f400000"),
-            ("if (attempt >= 64) return;", "if (attempt >= 65) return;", "metadata reads=1344"),
+            ("if (attempt >= 64) return;", "if (attempt >= 65) return;", "metadata reads=2176"),
+            ("sample->texture_words[index] = vm_read32(sample->resource + 0x1cu + index * 4u);",
+             "sample->texture_words[index] = vm_read32(sample->resource + 0x1cu + index * 4u) ^ 1u;",
+             texture_oracle),
         ):
             assert source.count(before) == 1
             mutant.write_text(source.replace(before, after))
@@ -152,7 +159,7 @@ def main() -> None:
         result = subprocess.run([str(executable), "1", "wide"], capture_output=True, text=True, timeout=30)
         assert result.returncode == 0, result.stdout + result.stderr
         assert "snapshot calls=64" in result.stdout and "status=-1 valid=0" not in result.stderr
-    print("PASS depth observer: exact fallback/reads, bounded snapshot admission and statuses, six rejected mutants")
+    print("PASS depth observer: exact fallback/reads, complete texture descriptor, bounded snapshots, seven rejected mutants")
 
 
 if __name__ == "__main__":

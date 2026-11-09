@@ -78,6 +78,13 @@ std::uint32_t vm_read32(std::uint64_t address) {
         const std::uint32_t resource[] = {1, 0, 0x7000, 0x8000, 0x7000, 0x2000, 0x6000};
         return resource[(address - 0x5000) / 4];
     }
+    if (address >= 0x501c && address < 0x5050 && (address & 3) == 0) {
+        const std::uint32_t texture[] = {
+            0, 0x2000, 0x90022, 0x60030303, 0x80078000, 0, 0x2052000,
+            0x1000080, 0, 0x100100, 0x2dc4, 0, 0x7f80,
+        };
+        return texture[(address - 0x501c) / 4];
+    }
     if (address >= 0x6000 && address < 0x601c && (address & 3) == 0) {
         const std::uint32_t parent[] = {2, 0, 0x7000, 0x8000, 0x7000, 0x2000, 0};
         return parent[(address - 0x6000) / 4];
