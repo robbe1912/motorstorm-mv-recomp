@@ -112,6 +112,24 @@ with no resource breach. Service-failure and repeated-DMA diagnostics remain
 retained. Rectangular shading is visible; graphics, stable 30 FPS, successful
 numeric inputs and the coherent native query remain unaccepted.
 
+Owned run `20261109T102813.736399Z`, EXE `c3cacc3a...6af7`, reached the race
+through seven required inputs and one observed intro skip. Its post-target guard
+closed at 402.406 seconds without a resource breach. Fifty-nine complete queries
+join metadata, original byte addresses/results and original return values. The
+native plan matched all four sample addresses; plan and arithmetic controls
+retained exact results across 16 caller FP environments. This capture contains
+one distinct input: coordinates (0, 0), four zero bytes and zero return. Broader
+live numeric coverage remains required.
+
+Observed dimensions were 4096 by 4096 with one-byte samples. The unclamped
+neighbour row crosses the logical image edge while remaining inside the root's
+declared allocation span. Allocation/view provenance, aliases, target generation
+and renderer-managed FIFO/GPU visibility/lifetime remain admission gates.
+Metadata reads and captures perturb timing. The retained stderr includes 1,248
+service-failure and 229 repeated-DMA halt diagnostics. Race captures still show
+rectangular shading defects. Full native-query and stable-30 acceptance remain
+open.
+
 The existing CPU-surface readback wait now rechecks its own target fence after
 every event notification, retains the 30-second bound, and rejects device loss,
 the removed-fence sentinel and counter overflow. Older notifications cannot
