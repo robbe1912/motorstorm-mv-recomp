@@ -1833,6 +1833,25 @@ and GPU chronology, original/native parity and normal-PLAY timing before using
 this provider to replace its scalar reads. Stable 30 FPS and graphics acceptance
 remain separate requirements.
 
+### Snapshot admission observations (#302)
+
+Own-fork modular `677a5ee8` plus fixture correction `0682b7d8`, assembled in
+canonical combined `8f40d59f` plus `2c06f067`, add bounded observations under
+the existing default-off `RSX_CPU_SURFACE_PROFILE` selection. The renderer
+owner records primitive/draw state, actual requested ranges and candidate
+pitch-backed extents/generations immediately before admission. Sequence IDs
+join at most 64 observations to returned statuses, with an explicit cap.
+Admission, copies, synchronization, errors and caller destinations retain
+their existing behavior.
+
+The actual provider fixture verifies default-off silence, exact metadata,
+paired statuses, missing/open/pending-draw states and the cap. Three further
+source mutants lose the trace, corrupt pitch or repeat the cap while retaining
+original output correctness. Hardware and WARP controls retain the three
+existing GPU-data mutants. Scalar-profile fixtures declare the new dependency
+explicitly. These diagnostic observations still require actual game evidence
+before selecting an ownership or publication correction.
+
 ### PPU lifted-function lookup prerequisite (#302)
 
 The selective PPU registry lookup carries only the public API from fork modular

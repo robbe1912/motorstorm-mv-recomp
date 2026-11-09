@@ -89,6 +89,10 @@ Use matches and copies to distinguish stale page dispatches from required GPU
 synchronization before changing ownership or waits. Per-request timing and log
 I/O perturb execution; keep these captures separate from performance comparisons.
 The option changes no readback, completion, error or deadline behavior.
+It also records up to 64 snapshot admission observations from the renderer
+owner, including current primitive/draw state, requested ranges and candidate
+surface extents/generations. Sequence IDs join these records to returned
+statuses. A cap is explicit. These observations perturb diagnostic timing.
 
 ## Input and proof
 

@@ -42,6 +42,10 @@ static DWORD WaitForSingleObject(HANDLE h,DWORD deadline){
 static void cpu_surface_fail(const char *operation,int result){fprintf(stderr,"FAIL: %s %d\n",operation,result);exit(2);}
 /* PRODUCTION_DECLARATIONS */
 /* PRODUCTION_HELPERS */
+static void cpu_surface_snapshot_trace(CpuSurfaceRequest *request) {
+    (void)request;
+    cpu_surface_fail("unexpected snapshot trace in scalar profile fixture", E_FAIL);
+}
 static int cpu_surface_snapshot(const VmReadSnapshotRange *ranges, u32 count,
                                 void *staging, u32 output_bytes) {
     (void)ranges;

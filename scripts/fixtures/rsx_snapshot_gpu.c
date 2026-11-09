@@ -388,18 +388,6 @@ int main(int argc, char **argv) {
   invoke(probe);
   CHECK(observed.fence == clean_fence);
   invoke(direct_rejection);
-  HANDLE readers[4];
-  for (int i = 0; i < 4; ++i) {
-    readers[i] = CreateThread(NULL, 0, reader, NULL, 0, NULL);
-    CHECK(readers[i]);
-  }
-  CHECK(WaitForMultipleObjects(4, readers, TRUE, 10000) == WAIT_OBJECT_0);
-  for (int i = 0; i < 4; ++i) {
-    CHECK(GetExitCodeThread(readers[i], &exit_code) && !exit_code);
-    CloseHandle(readers[i]);
-  }
-  invoke(probe);
-  CHECK(observed.fence == clean_fence);
   pattern = 2;
   invoke(produce);
   const VmReadSnapshotRange range = {0x1000, 2, 0};
@@ -431,6 +419,19 @@ int main(int argc, char **argv) {
   uint8_t retained[2];
   CHECK(vm_read_snapshot(&range, 1, retained, 2) == VM_READ_SNAPSHOT_OK);
   uint8_t retained_first = blue(0, 0), retained_second = blue(1, 0);
+  u64 concurrent_fence = observed.fence;
+  HANDLE readers[4];
+  for (int i = 0; i < 4; ++i) {
+    readers[i] = CreateThread(NULL, 0, reader, NULL, 0, NULL);
+    CHECK(readers[i]);
+  }
+  CHECK(WaitForMultipleObjects(4, readers, TRUE, 10000) == WAIT_OBJECT_0);
+  for (int i = 0; i < 4; ++i) {
+    CHECK(GetExitCodeThread(readers[i], &exit_code) && !exit_code);
+    CloseHandle(readers[i]);
+  }
+  invoke(probe);
+  CHECK(observed.fence == concurrent_fence);
   invoke(release_upload);
   pattern = 4;
   invoke(produce);
