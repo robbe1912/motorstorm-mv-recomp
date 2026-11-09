@@ -46,6 +46,9 @@ def main() -> None:
             f"-I{out}", f"-I{ROOT / 'src'}", f"-I{ROOT / 'vendor' / 'ps3recomp' / 'include'}",
             "-o", str(executable),
         ]
+        if os.name == "nt":
+            # Match the native target's CRT policy for standard getenv.
+            command.append("-D_CRT_SECURE_NO_WARNINGS")
         built = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=120)
         assert built.returncode == 0, built.stderr
         result = subprocess.run([str(executable)], cwd=ROOT, capture_output=True, text=True, timeout=30)
