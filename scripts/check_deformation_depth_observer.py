@@ -33,12 +33,12 @@ def main() -> None:
         (generated / "ppu/ppu_recomp.h").write_bytes(header.read_bytes())
         with header.open("a") as output:
             output.write("uint32_t vm_read32(uint64_t);\nuint8_t fixture_original_read8(uint64_t);\n"
-                         "uint64_t fixture_byte_address(unsigned);\nunsigned fixture_byte_count();\n"
+                         "uint64_t fixture_byte_address(unsigned);\nunsigned fixture_byte_count();\nvoid fixture_unlock();\n"
                          "#define vm_read8 fixture_original_read8\n")
         (generated / "ppu/ppu_recomp.h").write_bytes(header.read_bytes())
         body = (b"void func_0029C684(ppu_context* ctx) { fixture_depth_body(ctx); "
                 b"ctx->gpr[9] = 0; if (ctx->gpr[8]) { for (unsigned i=0;i<fixture_byte_count();++i) "
-                b"ctx->gpr[9] += vm_read8(fixture_byte_address(i)); } }")
+                b"ctx->gpr[9] += vm_read8(fixture_byte_address(i)); fixture_unlock(); } }")
         (generated / "ppu/depth.cpp").write_bytes(
             b'#include "ppu_recomp.h"\nvoid fixture_depth_body(ppu_context*);\n' + body +
             b"\nauto fixture_outside_reader = &vm_read8;\n")
@@ -52,7 +52,8 @@ def main() -> None:
         bound = pathlib.Path(binding["copied_tu"])
         executable = out / ("observer.exe" if os.name == "nt" else "observer")
         command = [
-            cxx, "-std=c++17", "-O2", "-Wall", "-Wextra", "-Werror", str(SOURCE), str(FIXTURE), str(bound),
+            cxx, "-std=c++20", "-O2", "-Wall", "-Wextra", "-Werror", str(SOURCE), str(ROOT / "src/motorstorm/deformation_depth.cpp"), str(FIXTURE), str(bound),
+            "-ffp-contract=off", "-frounding-math",
             f"-I{out}", f"-I{ROOT / 'src'}", f"-I{ROOT / 'vendor' / 'ps3recomp' / 'include'}",
             "-o", str(executable),
         ]
@@ -80,8 +81,8 @@ def main() -> None:
         views = [line for line in transcript.splitlines() if line.startswith("[depth-view]")]
         reads = [line for line in transcript.splitlines() if line.startswith("[depth-bytes]")]
         assert len(views) == len(reads) == 64, "Expected bounded authentic query metadata and original read results"
-        assert all("format=25 dims=256,128 output=7000 xy=3e800000,3f400000" in line for line in views)
-        assert all("count=5 b0=7000:14 b1=7001:15 b2=7002:16 b3=7003:17 b4=7004:18" in line for line in reads)
+        assert all("format=25 dims=256,128 output=7000 xy=3e808000,3f3f8000" in line for line in views)
+        assert all("count=5 b0=7000:14 b1=9040:15 b2=9041:16 b3=9141:17 b4=9140:18" in line for line in reads)
         resources = [line for line in transcript.splitlines() if line.startswith("[depth-resource]")]
         assert len(resources) == 64
         assert all("ea=5000 words=1,0,7000,8000,7000,2000,6000 parent=2,0,7000,8000,7000,2000,0" in line for line in resources)
@@ -92,6 +93,15 @@ def main() -> None:
         snapshots = [line for line in transcript.splitlines() if line.startswith("[depth-snapshot]")]
         assert len(snapshots) == 64
         assert all("status=1 valid=1 bytes=a0,a1,a2,a3" in line for line in snapshots)
+        native = [line for line in transcript.splitlines() if line.startswith("[depth-native]")]
+        assert len(native) == 64 and all("plan=1 bytes-match=0 sampled=1" in line and
+                                         "result-match=0" in line for line in native)
+        for mode, expected in (("coherent", "3fb5f5f600000000"), ("point", "3fb5151520000000")):
+            result = subprocess.run([str(executable), "1", mode], capture_output=True, text=True, timeout=30)
+            assert result.returncode == 0, result.stdout + result.stderr
+            native = [line for line in result.stderr.splitlines() if line.startswith("[depth-native]")]
+            assert len(native) == 64 and all("plan=1 bytes-match=1 sampled=1" in line and
+                                             f"value={expected} result-match=1" in line for line in native)
         for status in (0, -1, -2):
             result = subprocess.run([str(executable), str(status)], capture_output=True, text=True, timeout=30)
             assert result.returncode == 0, result.stdout + result.stderr
@@ -135,9 +145,9 @@ def main() -> None:
         assert "lock-seen=1 lock=" not in result.stderr, "Global-cap mutant must lose later Lock samples"
         for before, after, oracle in (
             ("sample->byte_values[index] = value;", "sample->byte_values[index] = value ^ 1;",
-             "b0=7000:14 b1=7001:15 b2=7002:16 b3=7003:17 b4=7004:18"),
+             "b0=7000:14 b1=9040:15 b2=9041:16 b3=9141:17 b4=9140:18"),
             ("sample->x_bits = vm_read32(out_slot + 4u);", "sample->x_bits = vm_read32(out_slot + 8u);",
-             "xy=3e800000,3f400000"),
+             "xy=3e808000,3f3f8000"),
             ("if (attempt >= 64) return;", "if (attempt >= 65) return;", "metadata reads=2176"),
             ("sample->texture_words[index] = vm_read32(sample->resource + 0x1cu + index * 4u);",
              "sample->texture_words[index] = vm_read32(sample->resource + 0x1cu + index * 4u) ^ 1u;",
@@ -157,9 +167,25 @@ def main() -> None:
         built = subprocess.run(mutant_command, cwd=ROOT, capture_output=True, text=True, timeout=120)
         assert built.returncode == 0, built.stderr
         result = subprocess.run([str(executable), "1", "wide"], capture_output=True, text=True, timeout=30)
-        assert result.returncode == 0, result.stdout + result.stderr
-        assert "snapshot calls=64" in result.stdout and "status=-1 valid=0" not in result.stderr
-    print("PASS depth observer: exact fallback/reads, complete texture descriptor, bounded snapshots, seven rejected mutants")
+        assert result.returncode != 0 and "exact snapshot range order" in result.stderr
+        for name, before, after in (
+            ("late-acquisition", "if (sample->byte_count == 5) probe_snapshot(*sample);", ""),
+            ("native-value", "sample.native_sampled = true;", "sample.native_sampled = true; sample.native_value ^= 1;"),
+            ("native-corner-order", "sample.snapshot_values[3], sample.snapshot_values[2]", "sample.snapshot_values[2], sample.snapshot_values[3]"),
+        ):
+            assert source.count(before) == 1
+            bad_source = source.replace(before, after)
+            if name == "late-acquisition":
+                bad_source = bad_source.replace("sample.return_gpr3 = ctx->gpr[3];",
+                                                "probe_snapshot(sample); sample.return_gpr3 = ctx->gpr[3];")
+            mutant.write_text(bad_source)
+            built = subprocess.run(mutant_command, cwd=ROOT, capture_output=True, text=True, timeout=120)
+            assert built.returncode == 0, built.stderr
+            result = subprocess.run([str(executable), "1", "coherent"], capture_output=True, text=True, timeout=30)
+            matching = [line for line in result.stderr.splitlines() if line.startswith("[depth-native]") and
+                        "plan=1 bytes-match=1 sampled=1 value=3fb5f5f600000000 result-match=1" in line]
+            assert result.returncode != 0 or len(matching) != 64, f"Escaped mutant: {name}"
+    print("PASS depth observer: exact fallback/reads, complete texture descriptor, locked acquisition/native comparison, ten rejected mutants")
 
 
 if __name__ == "__main__":

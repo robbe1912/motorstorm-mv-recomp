@@ -3,10 +3,14 @@
 #include "ps3emu/guest_read_sync.h"
 #include "motorstorm/deformation_depth_observer.h"
 
+#include <cfenv>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#if defined(_M_X64) || defined(__x86_64__)
+#include <immintrin.h>
+#endif
 
 namespace {
 constexpr std::uint32_t kGetDepth = 0x0029c684u;
@@ -22,9 +26,20 @@ int snapshot_status{VM_READ_SNAPSHOT_OK};
 std::uint64_t read_base{0x7000};
 unsigned read_count{5};
 bool call_lock{true};
+bool lock_live{};
+bool coherent{};
+bool point_mode{};
+
+double expected_depth() {
+    const std::uint32_t bits = point_mode ? 0x3da8a8a9u : 0x3dafafb0u;
+    float value{};
+    std::memcpy(&value, &bits, sizeof(value));
+    return value;
+}
 
 void original_lock(ppu_context* ctx) {
     ++lock_calls;
+    lock_live = true;
     ctx->gpr[3] = 0xfedcba98u;
 }
 
@@ -37,7 +52,7 @@ void original_depth(ppu_context* ctx) {
         entries[1](ctx);
     }
     ctx->gpr[3] = 0x12345678u;
-    ctx->fpr[1] = 3.5;
+    ctx->fpr[1] = expected_depth();
     ctx->gpr[8] = call_lock;
 }
 
@@ -56,13 +71,20 @@ bool check(bool condition, const char* label) {
 
 // Called by the authored generated entry, including its renamed fallback.
 void fixture_depth_body(ppu_context* ctx) { original_depth(ctx); }
-std::uint64_t fixture_byte_address(unsigned index) { return read_base + index; }
+std::uint64_t fixture_byte_address(unsigned index) {
+    const unsigned offsets[] = {0, 0x2040, 0x2041, 0x2141, 0x2140};
+    return read_base + offsets[index];
+}
+void fixture_unlock() { lock_live = false; }
 unsigned fixture_byte_count() { return read_count; }
 
 std::uint8_t fixture_original_read8(std::uint64_t address) {
     ++byte_reads;
-    if (!check(address >= read_base && address < read_base + read_count, "original byte address")) std::abort();
-    return static_cast<std::uint8_t>(20 + address - read_base);
+    for (unsigned index = 0; index < read_count; ++index) {
+        if (address == fixture_byte_address(index))
+            return static_cast<std::uint8_t>(point_mode && index == 0 ? 0 : 20 + index);
+    }
+    std::abort();
 }
 
 std::uint32_t vm_read32(std::uint64_t address) {
@@ -72,8 +94,8 @@ std::uint32_t vm_read32(std::uint64_t address) {
     if (address == 0xaaaa + 0x64) return 128;
     if (address == 0xaaaa + 0x8c) return 0x5000;
     if (address == 0xbbbb) return 0x7000;
-    if (address == 0xbbbb + 4) return 0x3e800000;
-    if (address == 0xbbbb + 8) return 0x3f400000;
+    if (address == 0xbbbb + 4) return 0x3e808000;
+    if (address == 0xbbbb + 8) return 0x3f3f8000;
     if (address >= 0x5000 && address < 0x501c && (address & 3) == 0) {
         const std::uint32_t resource[] = {1, 0, 0x7000, 0x8000, 0x7000, 0x2000, 0x6000};
         return resource[(address - 0x5000) / 4];
@@ -95,16 +117,17 @@ std::uint32_t vm_read32(std::uint64_t address) {
 
 extern "C" int vm_read_snapshot(const VmReadSnapshotRange* ranges, std::uint32_t count,
                                 void* destination, std::uint32_t bytes) {
+    if (!check(lock_live, "snapshot occurs before original Unlock")) std::exit(2);
     ++snapshot_calls;
     if (!check(count == 4 && bytes == 4, "four original corner ranges") ||
         !check(byte_reads == read_count * (1 + snapshot_calls), "snapshot follows original reads")) std::abort();
     for (unsigned index = 0; index != 4; ++index) {
-        if (!check(ranges[index].address == 0x7001 + index && ranges[index].bytes == 1 &&
+        if (!check(ranges[index].address == fixture_byte_address(index + 1) && ranges[index].bytes == 1 &&
                    ranges[index].output_offset == index, "exact snapshot range order")) std::abort();
     }
     if (snapshot_status == VM_READ_SNAPSHOT_OK) {
         auto* output = static_cast<std::uint8_t*>(destination);
-        for (unsigned index = 0; index != 4; ++index) output[index] = static_cast<std::uint8_t>(0xa0 + index);
+        for (unsigned index = 0; index != 4; ++index) output[index] = static_cast<std::uint8_t>(coherent ? 21 + index : 0xa0 + index);
     }
     return snapshot_status;
 }
@@ -128,6 +151,8 @@ int main(int argc, char** argv) {
     if (argc > 1) snapshot_status = std::atoi(argv[1]);
     if (argc > 2 && std::strcmp(argv[2], "wide") == 0) read_base += UINT64_C(0x100000000);
     if (argc > 2 && std::strcmp(argv[2], "short") == 0) read_count = 4;
+    if (argc > 2 && std::strcmp(argv[2], "coherent") == 0) coherent = true;
+    if (argc > 2 && std::strcmp(argv[2], "point") == 0) point_mode = coherent = true;
     /* Disabled mode must leave dispatch untouched. */
     deformation_depth_observer_install();
     if (!check(registrations == 0, "disabled install")) return 1;
@@ -137,7 +162,7 @@ int main(int argc, char** argv) {
     ppu_context disabled{};
     func_0029C684(&disabled);
     if (!check(depth_calls == 1 && lock_calls == 1 && disabled.gpr[3] == 0x12345678u &&
-               disabled.fpr[1] == 3.5, "disabled direct fallback")) return 1;
+               disabled.fpr[1] == expected_depth(), "disabled direct fallback")) return 1;
     if (!check(metadata_reads == 0 && byte_reads == read_count && snapshot_calls == 0,
                "disabled memory reads")) return 1;
     depth_calls = lock_calls = 0;
@@ -175,10 +200,24 @@ int main(int argc, char** argv) {
             context.fpr[2] = 2.0;
             context.fpr[3] = 3.0;
             context.fpr[4] = 4.0;
+            const int rounding[] = {FE_TONEAREST, FE_DOWNWARD, FE_UPWARD, FE_TOWARDZERO};
+            if (std::fesetround(rounding[call & 3]) || std::feclearexcept(FE_ALL_EXCEPT) ||
+                std::feraiseexcept(FE_INVALID | FE_INEXACT)) return 1;
+            const int old_round = std::fegetround(), old_flags = std::fetestexcept(FE_ALL_EXCEPT);
+#if defined(_M_X64) || defined(__x86_64__)
+            _mm_setcsr((_mm_getcsr() & ~0x8040u) | 0x1f80u |
+                       ((call & 4) ? 0x40u : 0u) | ((call & 8) ? 0x8000u : 0u));
+            const auto old_csr = _mm_getcsr();
+#endif
             if (call % 2 == 0) func_0029C684(&context);
             else entries[0](&context);
-            if (!check(context.gpr[3] == 0x12345678u && context.fpr[1] == 3.5, "original output preserved")) return 1;
-            const unsigned sum = read_count * (39u + read_count) / 2u;
+            if (!check(std::fegetround() == old_round && std::fetestexcept(FE_ALL_EXCEPT) == old_flags,
+                       "original FP environment preserved")) return 1;
+#if defined(_M_X64) || defined(__x86_64__)
+            if (!check(_mm_getcsr() == old_csr, "original MXCSR preserved")) return 1;
+#endif
+            if (!check(context.gpr[3] == 0x12345678u && context.fpr[1] == expected_depth(), "original output preserved")) return 1;
+            const unsigned sum = read_count * (39u + read_count) / 2u - (point_mode ? 20u : 0u);
             if (!check(context.gpr[9] == (call_lock ? sum : 0u), "exact original byte results")) return 1;
         }
     }

@@ -95,16 +95,19 @@ reads and logging perturb timing. Resource headers are sequential observations;
 allocation suffix bounds, aliases and FIFO/GPU lifetime still require admission.
 The retained Lock status remains distinct from an allocation extent.
 
-After a complete captured query returns, the observer submits its four actual
-corner addresses to the transactional renderer snapshot API. The same 64-query
-metadata budget bounds these probes. A query sequence joins the recorded status
-and successful snapshot bytes to the original reads. Incomplete captures issue
-no request; addresses outside the 32-bit guest range are reported invalid
-without truncation. Every original read and returned result remains intact.
-This probe observes a later renderer boundary. Its bytes cannot establish
-same-query parity, original view identity or allocation lifetime, even when they
-match the earlier original reads. Rejection remains visible and leaves native
-query admission open.
+Immediately after the fifth original byte read, while the original PixelBuffer
+Lock remains active, the observer submits the four corner addresses to the
+transactional renderer snapshot API. The same 64-query metadata budget bounds
+acquisition. A query sequence joins status and acquired bytes to original reads.
+Successful acquisition executes the typed native plan, checks all four addresses,
+and evaluates the native point or bilinear sampler. Completion logs compare
+acquired bytes and native result bits with the original query. The original
+Unlock completes normally. Incomplete captures skip acquisition, and wide
+addresses report invalid without truncation.
+
+The snapshot observes a subsequent renderer boundary within the original Lock
+interval. Input diversity, view identity, allocation ownership and producer
+ordering still require live validation before full native query admission.
 
 `scripts/check_deformation_depth_observer.py` compiles the actual observer
 against an authored generated-input binding and registry fixture. It checks
@@ -113,10 +116,13 @@ byte-read counts and order, metadata/parent fields, legacy-copy upgrade, memory
 macro restoration and independent budgets. Sixty-five calls without Lock precede
 65 with Lock. Snapshot controls cover exact corner order, disabled/incomplete
 queries, 64-bit address rejection, successful differing bytes and unchanged
-fallback results for unavailable, invalid and failed requests. Seven mutants
+fallback results for unavailable, invalid and failed requests. Nonzero point and
+bilinear controls check native results and sixteen caller FP environments.
+Ten mutants
 exercise bypassed entry, global-budget starvation, corrupted captured bytes,
 wrong coordinate offset, excess metadata reads, corrupted texture words and
-truncated probe addresses.
+truncated probe addresses, acquisition after Unlock, corrupted native results
+and swapped interpolation corners.
 The earlier registry-only observer missed direct GetDepth calls; zero samples
 from that build leave operation presence unproven. Live numeric pairing,
 coherent-view admission and performance acceptance remain separate gates.

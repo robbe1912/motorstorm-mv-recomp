@@ -1,4 +1,5 @@
 #include "deformation_depth_observer.h"
+#include "deformation_depth.h"
 
 #include "ppu_recomp.h"
 #include "ps3emu/ppu_function_registry.h"
@@ -9,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <stdexcept>
 
 void game_original_deformation_depth(ppu_context*);
 
@@ -35,6 +37,9 @@ struct RawSample {
     bool snapshot_attempted{};
     int snapshot_status{VM_READ_SNAPSHOT_UNAVAILABLE};
     std::uint8_t snapshot_values[4]{};
+    bool native_plan_matches{};
+    bool native_sampled{};
+    std::uint64_t native_value{};
 };
 
 struct State {
@@ -113,6 +118,13 @@ void print_sample(std::uint64_t sequence, const RawSample& value) {
             unsigned(value.snapshot_status == VM_READ_SNAPSHOT_OK),
             unsigned(value.snapshot_values[0]), unsigned(value.snapshot_values[1]),
             unsigned(value.snapshot_values[2]), unsigned(value.snapshot_values[3]));
+        std::fprintf(stderr,
+            "[depth-native] seq=%llu plan=%u bytes-match=%u sampled=%u value=%llx result-match=%u\n",
+            static_cast<unsigned long long>(sequence), unsigned(value.native_plan_matches),
+            unsigned(value.snapshot_status == VM_READ_SNAPSHOT_OK &&
+                     std::memcmp(value.snapshot_values, value.byte_values + 1, 4) == 0),
+            unsigned(value.native_sampled), static_cast<unsigned long long>(value.native_value),
+            unsigned(value.native_sampled && value.native_value == value.return_fpr1));
     }
 }
 
@@ -128,9 +140,40 @@ void probe_snapshot(RawSample& sample) {
         }
         ranges[index] = {static_cast<std::uint32_t>(address), 1u, index};
     }
-    // Probe the four actual corner addresses after the original has returned.
-    // This observes a later renderer boundary and never supplies query results.
+    // The verified original performs all five reads before its virtual Unlock.
+    // Acquire while that borrowed view is held, retaining each original read.
     sample.snapshot_status = vm_read_snapshot(ranges, 4, sample.snapshot_values, 4);
+    if (sample.snapshot_status != VM_READ_SNAPSHOT_OK) return;
+
+    const auto left = sample.byte_addresses[1];
+    const auto right = sample.byte_addresses[2];
+    if (right <= left || right - left > UINT32_MAX) return;
+    const auto bytes_per_pixel = static_cast<std::uint32_t>(right - left);
+    float x{}, y{};
+    std::memcpy(&x, &sample.x_bits, sizeof(x));
+    std::memcpy(&y, &sample.y_bits, sizeof(y));
+    motorstorm::game::DeformationDepthPlan plan{};
+    try {
+        plan = motorstorm::game::plan_deformation_depth(
+            x, y, sample.width, sample.height, bytes_per_pixel);
+    } catch (const std::invalid_argument&) {
+        return;
+    }
+    constexpr unsigned original_order[] = {1, 2, 4, 3};
+    for (unsigned index = 0; index != 4; ++index) {
+        if (plan.byte_offsets[index] > UINT32_MAX - sample.output ||
+            sample.output + plan.byte_offsets[index] != sample.byte_addresses[original_order[index]])
+            return;
+    }
+    sample.native_plan_matches = true;
+    const motorstorm::game::DepthPatch patch{
+        {sample.snapshot_values[0], sample.snapshot_values[1],
+         sample.snapshot_values[3], sample.snapshot_values[2]},
+        plan.x_fraction, plan.y_fraction};
+    const auto mode = sample.byte_values[0] != 0 ? motorstorm::game::DepthSampleMode::bilinear
+                                               : motorstorm::game::DepthSampleMode::point;
+    sample.native_value = raw_bits(motorstorm::game::sample_deformation_depth(patch, mode));
+    sample.native_sampled = true;
 }
 
 void capture_resource(std::uint32_t address, std::uint32_t (&words)[7]) {
@@ -186,7 +229,6 @@ void observe_depth(ppu_context* ctx) {
     active_sample = previous;
     sample.return_gpr3 = ctx->gpr[3];
     sample.return_fpr1 = raw_bits(ctx->fpr[1]);
-    probe_snapshot(sample);
 
     const std::uint64_t sequence = state().completed.fetch_add(1, std::memory_order_relaxed) + 1;
     const std::uint64_t class_sequence =
@@ -211,6 +253,7 @@ std::uint8_t motorstorm_observe_depth_byte(
             sample->byte_addresses[index] = address;
             sample->byte_values[index] = value;
         }
+        if (sample->byte_count == 5) probe_snapshot(*sample);
     }
     return value;
 }
