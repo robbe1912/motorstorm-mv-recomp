@@ -11,6 +11,7 @@
 
 // TransformPoint remains a retained dependency of this native query adapter.
 void func_0029BE08(ppu_context *);
+extern "C" void ps3_indirect_call(ppu_context *);
 extern "C" thread_local void (*g_trampoline_fn)(void *);
 
 namespace {

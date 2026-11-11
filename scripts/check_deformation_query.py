@@ -26,7 +26,6 @@ std::uint32_t vm_read32(std::uint64_t);
 std::uint64_t vm_read64(std::uint64_t);
 void vm_write32(std::uint64_t, std::uint32_t);
 void vm_write64(std::uint64_t, std::uint64_t);
-extern "C" void ps3_indirect_call(ppu_context*);
 """)
     compiler = (
         os.environ.get("MV_CLANG")
