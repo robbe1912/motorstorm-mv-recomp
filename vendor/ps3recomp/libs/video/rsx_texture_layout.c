@@ -25,6 +25,17 @@ u32 rsx_swizzle_offset(u32 x, u32 y, u32 log2w, u32 log2h)
     return off;
 }
 
+u32 rsx_swizzle_offset_3d(u32 x, u32 y, u32 z, u32 log2w, u32 log2h, u32 log2d)
+{
+    u32 off = 0, shift = 0;
+    while (log2w || log2h || log2d) {
+        if (log2w) { off |= (x & 1u) << shift++; x >>= 1; log2w--; }
+        if (log2h) { off |= (y & 1u) << shift++; y >>= 1; log2h--; }
+        if (log2d) { off |= (z & 1u) << shift++; z >>= 1; log2d--; }
+    }
+    return off;
+}
+
 void rsx_texture_layout(u32 rsx_fmt, u32 w, u32 h, rsx_tex_layout* out)
 {
     rsx_texture_layout_pitched(rsx_fmt, w, h, 0, out);
@@ -301,6 +312,32 @@ void rsx_texture_decode(void* dst, u32 dst_pitch,
             decode_texel(tl, s, drow + (size_t)x * dbpp, argb_as_rgba);
         }
     }
+}
+
+int rsx_texture_decode_volume(void* dst, u32 dst_pitch, u32 dst_slice_pitch,
+                              const u8* src, u32 w, u32 h, u32 d,
+                              const rsx_tex_layout* tl, int argb_as_rgba)
+{
+    if (!dst || !src || !tl || !w || !h || !d || tl->compressed) return -1;
+    /* A Morton volume interleaves whole power-of-two axes; an NPOT depth would
+     * leave gaps that read past the w*h*d source span. */
+    if (tl->swizzled && (d & (d - 1u))) return -1;
+    const u32 l2w = rsx_log2_ceil(w), l2h = rsx_log2_ceil(h), l2d = rsx_log2_ceil(d);
+    const u32 sbpp = tl->bytes_per_texel, dbpp = tl->dst_bytes_per_texel;
+    const size_t slice = (size_t)h * tl->row_bytes;
+    for (u32 z = 0; z < d; z++) {
+        u8* dslice = (u8*)dst + (size_t)z * dst_slice_pitch;
+        for (u32 y = 0; y < h; y++) {
+            u8* drow = dslice + (size_t)y * dst_pitch;
+            for (u32 x = 0; x < w; x++) {
+                const u8* s = tl->swizzled
+                    ? src + (size_t)rsx_swizzle_offset_3d(x, y, z, l2w, l2h, l2d) * sbpp
+                    : src + (size_t)z * slice + (size_t)y * tl->row_bytes + (size_t)x * sbpp;
+                decode_texel(tl, s, drow + (size_t)x * dbpp, argb_as_rgba);
+            }
+        }
+    }
+    return 0;
 }
 
 void rsx_texture_component_remap(u32 control1, u32 rsx_fmt, u8 out[4])

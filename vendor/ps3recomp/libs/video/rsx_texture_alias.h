@@ -53,7 +53,7 @@ static int rsx_texture_alias_apply(char* hlsl, size_t capacity, unsigned mask,
     const unsigned remap[16], unsigned cube_mask, unsigned point_clamp_mask)
 {
     if (!mask) return 0;
-    if (!hlsl || !remap || (mask & cube_mask)) return -1;
+    if (!hlsl || !remap || (mask & (cube_mask | (cube_mask >> 16)))) return -1;   /* cube or 3D unit */
     char* helpers = (char*)calloc(1, 65536);
     if (!helpers) return -1;
     size_t used = 0;
@@ -74,9 +74,11 @@ static int rsx_texture_alias_apply(char* hlsl, size_t capacity, unsigned mask,
         if (strstr(hlsl, "rsx_tex[16]")) snprintf(tex, sizeof tex, "rsx_tex[%u]", u);
         else snprintf(tex, sizeof tex, "rsx_tex%u", u);
         const char* methods[] = {"Sample", "SampleLevel", "SampleBias"};
-        for (unsigned m = 0; m < 3; ++m) {
-            snprintf(before, sizeof before, "%s.%s(rsx_samp[%u],", tex, methods[m], u);
-            snprintf(after, sizeof after, "rsx_alias_%u%s(", u, m ? "_lod" : "");
+        for (unsigned m = 0; m < 6; ++m) {
+            /* m >= 3: individual sampler names (programs with native depth units). */
+            snprintf(before, sizeof before, m < 3 ? "%s.%s(rsx_samp[%u]," : "%s.%s(rsx_samp%u,",
+                     tex, methods[m % 3], u);
+            snprintf(after, sizeof after, "rsx_alias_%u%s(", u, m % 3 ? "_lod" : "");
             int n = rsx_alias_replace(hlsl, capacity, before, after);
             if (n < 0) { free(helpers); return -1; }
             count += n;

@@ -24,17 +24,18 @@ def fixture(source):
 #include <string.h>
 #include "rsx_texture_profile.h"
 typedef uint32_t u32; typedef uint64_t u64; typedef uint8_t u8;
-typedef struct {void*res;u32 off,key,w,h,fmt,mips;u64 csum;int cube,used;u64 last_use;} VPTexSlot;
+typedef struct {void*res;u32 off,key,w,h,fmt,mips,depth;u64 csum;int cube,used;u64 last_use;} VPTexSlot;
 static struct {VPTexSlot vp_tex[3];unsigned vp_tex_capacity;u64 vp_tex_use_serial;} s_d3d;
 static u8 bytes[1024],*vm_base=bytes;
 #define TEX_CSUM(base,size) ((u32)*(base))
 """+helper+r"""
-static int pick(u32 key_off,int cube,u32 mips) {
+static int pick_depth(u32 key_off,int cube,u32 mips,u32 depth) {
     u32 w=8,h=8,fmt=0x85,bpp=4,blkrow=0,blkrows=0;int dxt=0;
     rsx_texture_profile_call*profile=NULL;
 """+source[a:b]+r"""
     return slot>=0?slot:freeslot;
 }
+static int pick(u32 key_off,int cube,u32 mips) { return pick_depth(key_off,cube,mips,1u); }
 static void reset(void) {
     memset(&s_d3d,0,sizeof s_d3d);memset(bytes,23,sizeof bytes);
     s_d3d.vp_tex_capacity=3;s_d3d.vp_tex_use_serial=20;
@@ -66,6 +67,8 @@ int main(int argc,char**argv) {
     s_d3d.vp_tex[2].last_use=UINT64_MAX;CHECK(pick(900,0,1)==0);
     reset();s_d3d.vp_tex[0].cube=1;s_d3d.vp_tex[0].used=1;
     CHECK(pick(256,1,2)==2); /* changed cube stride gets distinct storage */
+    reset();CHECK(pick_depth(256,0,1,1)==0); /* legacy depth 0/1 slot still hits a 2D lookup */
+    reset();s_d3d.vp_tex[0].used=1;CHECK(pick_depth(256,0,1,16)==2); /* a volume never reuses 2D storage */
     puts("PASS native empty/LRU/recency/wrap/pin/metadata/source controls");return 0;
 }
 """
@@ -98,6 +101,7 @@ def main():
       'pinned-eviction':source.replace('if (retention && !c->used)', 'if (retention)'),
       'no-hit-recency':source.replace('if (retention) c->last_use = serial;', ''),
       'cube-stride-ignored':source.replace(' && (!retention || c->mips == mips)', ''),
+      'volume-depth-ignored':source.replace(' && (c->depth ? c->depth : 1u) == depth', ''),
     }
     for name,text in mutants.items():
         assert text!=source;mutant=build(text,name)
@@ -107,6 +111,6 @@ def main():
         assert command([str(historical),'native'],'historical-red',dict(env,RSX_TEXTURE_RETENTION='1')).returncode==3,'Historical lookup unexpectedly satisfies new contract'
         result['historical_sha256']=hashlib.sha256(args.historical_backend.read_bytes()).hexdigest()
     result['passed']=True;(output/'result.json').write_text(json.dumps(result,indent=2))
-    print('PASS: production reference/native metadata trace; four mutants rejected; historical RED' if args.historical_backend else 'PASS: production reference/native metadata trace; four mutants rejected')
+    print('PASS: production reference/native metadata trace; five mutants rejected; historical RED' if args.historical_backend else 'PASS: production reference/native metadata trace; five mutants rejected')
     print(output/'result.json')
 if __name__=='__main__':main()

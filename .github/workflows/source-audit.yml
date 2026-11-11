@@ -38,6 +38,8 @@ jobs:
           python scripts/check_rsx_texture_retention.py
           python scripts/check_rsx_texture_budget.py
           python scripts/check_rsx_texture_fingerprint.py
+      - name: Actual 3D volume texture decode and FP declarations
+        run: python scripts/check_rsx_texture_volume.py
       - name: Full render-batch accounting and submission errors
         run: python scripts/check_rsx_perf_accounting.py
       - name: Exact SPU fingerprint cache and worker cleanup
@@ -104,10 +106,18 @@ jobs:
           python scripts/check_rsx_triangle_capacity.py
       - name: Actual indexed strip restart regression
         run: python scripts/check_rsx_restart.py
+      - name: Lifter jump tables with spilled bases and lwax
+        run: python scripts/check_ppu_spilled_jumptables.py
       - name: Recorded PSO ownership and checked teardown
         run: python scripts/check_rsx_pso_retention.py
       - name: Bounded texture and pipeline working sets
         run: python scripts/check_rsx_working_sets.py
+      - name: Guest sampler tables, checked retirement and compiled-PS mask
+        run: python scripts/check_rsx_sampler_tables.py
+      - name: Native depth textures, packed depth reads and B8 remap
+        run: python scripts/check_rsx_native_depth.py
+      - name: Depth alias clear ownership
+        run: python scripts/check_graphics_review.py
       - name: Actual indexed vertex reuse regression
         run: python scripts/check_rsx_indexed_strip.py
       - name: Named SPU extraction identities and rejections
@@ -269,6 +279,12 @@ jobs:
         run: python scripts/check_rsx_pso_retention.py
       - name: Bounded texture and pipeline working sets
         run: python scripts/check_rsx_working_sets.py
+      - name: Guest sampler tables, checked retirement and compiled-PS mask
+        run: python scripts/check_rsx_sampler_tables.py
+      - name: Native depth textures, packed depth reads and B8 remap
+        run: python scripts/check_rsx_native_depth.py
+      - name: Depth alias clear ownership
+        run: python scripts/check_graphics_review.py
       - name: Evicted recorded pipelines execute (WARP)
         run: python scripts/check_rsx_pso_gpu.py --warp-only
       - name: Fragment source sign bits and invalid-DXBC control (WARP)
@@ -313,6 +329,8 @@ jobs:
           python scripts/check_rsx_triangle_capacity.py
       - name: Actual indexed strip restart regression
         run: python scripts/check_rsx_restart.py
+      - name: Lifter jump tables with spilled bases and lwax
+        run: python scripts/check_ppu_spilled_jumptables.py
       - name: Actual indexed vertex reuse regression
         run: python scripts/check_rsx_indexed_strip.py
       - name: Named SPU extraction identities and rejections
@@ -342,6 +360,8 @@ jobs:
           python scripts/check_rsx_texture_retention.py
           python scripts/check_rsx_texture_budget.py
           python scripts/check_rsx_texture_fingerprint.py
+      - name: Actual 3D volume texture decode and FP declarations
+        run: python scripts/check_rsx_texture_volume.py
       - name: Full render-batch accounting and submission errors
         run: python scripts/check_rsx_perf_accounting.py
       - name: Exact SPU fingerprint cache and worker cleanup
