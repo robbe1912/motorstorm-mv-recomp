@@ -483,7 +483,7 @@ typedef struct spu_context {
      * through the caller's code until the next lifted entry -- GH3's job
      * manager then ran its buffer loop a second time on the job's registers
      * and died in its own assert (the song-freeze). */
-    uint32_t drain_ret_pc;
+    uint32_t drain_ret_pc; /* 0: none; SPU_LS_SIZE: a live return to LS 0 */
 } spu_context;
 
 /* Reserved LS addresses (inside the kernel area, below the 0xA00 policy-module

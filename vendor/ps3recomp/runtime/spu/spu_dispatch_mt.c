@@ -13,6 +13,7 @@
  * (policy-module service addresses, the taskset PM syscall at LS 0xA70, the
  * image-23 cri hack, lookup miss diagnostics) falls back to the full resolver.
  */
+#include "spu_native_owned.h"
 #include "spu_context.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -55,6 +56,14 @@ void spu_indirect_branch_mt(spu_context* ctx)
                     pc == SPURS_PM_SELECT_WORKLOAD_LS))
                   || pc == SPURS_TASKSET_PM_SYSCALL_LS
                   || ctx->image_id == SPU_RESOLVER_ONLY_IMAGE_ID;
+    if (spu_native_owned_policy(ctx)) {
+        if (!special && spu_native_owned_can_run(ctx,pc)) {
+            extern spu_dispatch_fn spu_lifted_lookup(const spu_context*,uint32_t);
+            spu_dispatch_fn owned=spu_lifted_lookup(ctx,pc);
+            if (owned) { ctx->pc=pc; __attribute__((musttail)) return owned(ctx); }
+        }
+        __attribute__((musttail)) return spu_indirect_branch(ctx);
+    }
     if (!special) {
         /* Resident overlay first (mirrors the full resolver): streamed plugin
          * code owns its LS range; base-image entries at the same address are

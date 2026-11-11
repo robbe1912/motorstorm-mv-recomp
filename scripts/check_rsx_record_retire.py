@@ -31,12 +31,13 @@ def compile_c(source, exe, include, cwd):
 def main():
     source=(VIDEO/'rsx_d3d12_backend.c').read_text(encoding='utf-8')
     bodies='\n'.join(function(source, 'static void '+name+'(') for name in ('record_batch_retire','submit_record_capacity','ensure_draw_record_capacity'))
+    bodies=function(source,'static void wait_for_gpu_required(')+'\n'+bodies
     with tempfile.TemporaryDirectory(prefix='record-retire-') as directory:
         out=Path(directory); unit=out/'test.c'; exe=out/('test.exe' if os.name=='nt' else 'test')
         unit.write_text((FIX/'rsx_record_retire.c.in').read_text().replace('@FUNCTIONS@', bodies))
         compile_c(unit, exe, VIDEO, out)
         for frame in ([],['frame1']):
-            for mode in range(9):
+            for mode in range(11):
                 r=subprocess.run([str(exe),str(mode),*frame],capture_output=True,text=True,timeout=10)
                 if (mode==0 and (r.returncode!=0 or 'PASS:' not in r.stdout)) or (mode!=0 and (r.returncode==0 or 'GPU retirement failed' not in r.stderr)):
                     raise RuntimeError(f'frame={frame} mode={mode}: {r.returncode} {r.stdout} {r.stderr}')

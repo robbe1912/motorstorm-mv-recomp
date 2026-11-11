@@ -1,0 +1,11 @@
+/* Actual emitted brackets from combined b7c1ff3f, tools/spu_lifter.py. */
+#define EMIT_DIRECT ctx->gpr[6] = spu_link(0x204); { int32_t _si = (int32_t)ctx->image_id; ctx->host_depth++; spu_func_00004000(ctx); spu_drain_call(ctx, 0x204); ctx->host_depth--; spu_img_restore(ctx, _si); }
+#define EMIT_RELATIVE ctx->gpr[6] = spu_link(0x204); { int32_t _si = (int32_t)ctx->image_id; ctx->host_depth++; spu_func_00004000(ctx); spu_drain_call(ctx, 0x204); ctx->host_depth--; spu_img_restore(ctx, _si); }
+#define EMIT_INDIRECT { uint32_t _tg = ctx->gpr[2]._u32[0]; ctx->gpr[6] = spu_link(0x204); int32_t _si = (int32_t)ctx->image_id; ctx->pc = _tg; ctx->host_depth++; spu_indirect_branch(ctx); spu_drain_call(ctx, 0x204); ctx->host_depth--; spu_img_restore(ctx, _si); }
+#define EMIT_ALIAS { uint32_t _tg = ctx->gpr[6]._u32[0]; ctx->gpr[6] = spu_link(0x204); int32_t _si = (int32_t)ctx->image_id; ctx->pc = _tg; ctx->host_depth++; spu_indirect_branch(ctx); spu_drain_call(ctx, 0x204); ctx->host_depth--; spu_img_restore(ctx, _si); }
+#define EMIT_DIRECT_ZERO ctx->gpr[6] = spu_link(0x0); { int32_t _si = (int32_t)ctx->image_id; ctx->host_depth++; spu_func_00004000(ctx); spu_drain_call(ctx, 0x40000); ctx->host_depth--; spu_img_restore(ctx, _si); }
+#define EMIT_RELATIVE_ZERO ctx->gpr[6] = spu_link(0x0); { int32_t _si = (int32_t)ctx->image_id; ctx->host_depth++; spu_func_00004000(ctx); spu_drain_call(ctx, 0x40000); ctx->host_depth--; spu_img_restore(ctx, _si); }
+#define EMIT_INDIRECT_ZERO { uint32_t _tg = ctx->gpr[2]._u32[0]; ctx->gpr[6] = spu_link(0x0); int32_t _si = (int32_t)ctx->image_id; ctx->pc = _tg; ctx->host_depth++; spu_indirect_branch(ctx); spu_drain_call(ctx, 0x40000); ctx->host_depth--; spu_img_restore(ctx, _si); }
+#define EMIT_ALIAS_ZERO { uint32_t _tg = ctx->gpr[6]._u32[0]; ctx->gpr[6] = spu_link(0x0); int32_t _si = (int32_t)ctx->image_id; ctx->pc = _tg; ctx->host_depth++; spu_indirect_branch(ctx); spu_drain_call(ctx, 0x40000); ctx->host_depth--; spu_img_restore(ctx, _si); }
+#define EMIT_IRQ_CALL ctx->gpr[6] = spu_link(0x604); { int32_t _si = (int32_t)ctx->image_id; ctx->host_depth++; spu_func_00000800(ctx); spu_drain_call(ctx, 0x604); ctx->host_depth--; spu_img_restore(ctx, _si); }
+#define EMIT_IRQ_RETURN ctx->int_enable = 1; ctx->pc = ctx->srr0; g_spu_trampoline_fn = spu_indirect_branch; return;

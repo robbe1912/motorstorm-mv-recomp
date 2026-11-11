@@ -17,12 +17,13 @@ static uint64_t completed;
 static unsigned waits, mode;
 static int32_t device_reason(Device* d) { (void)d; return removed; }
 static uint64_t fence_completed(Fence* f) { (void)f; return completed; }
-static void wait_for_gpu(void)
+static int wait_for_gpu(void)
 {
     ++waits;
     uint64_t wanted=++s_d3d.fence_values[s_d3d.frame_index];
-    completed=mode==0?wanted:mode==1?wanted-1:UINT64_MAX;
+    completed=(mode==0||mode==5)?wanted:mode==1?wanted-1:UINT64_MAX;
     removed=mode==2?-1:mode==3?1:0;
+    return mode!=5;
 }
 @RETIRE_FUNCTION@
 int main(void)
@@ -30,7 +31,7 @@ int main(void)
     struct DeviceOps dv={device_reason}; Device d={&dv};
     struct FenceOps fv={fence_completed}; Fence f={&fv};
     s_d3d.device=&d; s_d3d.fence=&f;
-    for(unsigned frame=0;frame<2;++frame) for(mode=0;mode<5;++mode) {
+    for(unsigned frame=0;frame<2;++frame) for(mode=0;mode<6;++mode) {
         s_d3d.frame_index=frame; s_d3d.fence_values[0]=7; s_d3d.fence_values[1]=29;
         unsigned before=waits;
         if(vp_upload_retire(NULL)!=(mode==0) || waits!=before+1) {

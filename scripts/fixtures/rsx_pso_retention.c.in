@@ -29,7 +29,7 @@ static unsigned waits, draws, failures;
 static ID3D12PipelineState *bound;
 static int failure_mode;
 static void check(int ok, const char *name) { if (!ok) { fprintf(stderr, "FAIL %s\n", name); ++failures; } }
-static void wait_for_gpu(void) { ++waits; }
+static int wait_for_gpu(void) { ++waits; return failure_mode != 2; }
 @FUNCTIONS@
 static void add(ID3D12PipelineState *p) { ++p->refs; }
 static void release(ID3D12PipelineState *p) { check(p->refs != 0, "balanced references"); --p->refs; }
@@ -63,6 +63,7 @@ int main(int argc, char **argv) {
         if (!strcmp(argv[1], "device")) device.status = -1;
         else if (!strcmp(argv[1], "incomplete")) fence.value = 16;
         else if (!strcmp(argv[1], "removed-sentinel")) fence.value = UINT64_MAX;
+        else if (!strcmp(argv[1], "wait-failed")) failure_mode=2;
         else return 2;
         gpu_pso_retire();
         fprintf(stderr, "FAIL failed retirement released recorded PSO\n"); return 1;

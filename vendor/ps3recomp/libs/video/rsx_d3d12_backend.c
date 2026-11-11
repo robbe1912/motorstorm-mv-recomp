@@ -217,13 +217,15 @@ typedef struct {
     ID3D12Resource* up;
     u32 off, w, h, fmt; /* current contents (resource reused when dims match) */
     u32 dxgi;           /* decoded-image DXGI format (from the layout table) */
-    u32 csum;           /* sparse checksum of the source bytes last uploaded */
+    u64 csum;           /* source fingerprint (sparse reference or full XXH3) */
     int cube;           /* resource is a 6-face cube, sampled as TextureCube */
     u32 key;            /* the ORIGINAL bound offset -- the cache lookup key.
                          * off is the RESOLVED source after TEX_OFF_BIAS/TEX_REMAP
                          * shift it, so keying on off never matches the raw offset
                          * a later draw arrives with, and every draw re-uploads. */
     int used;           /* referenced this frame */
+    u32 mips;           /* cube source stride depends on the mip chain */
+    u64 last_use, allocation_bytes;
 } VPTexSlot;
 /* Distinct textures uploadable per frame. Four was enough for a UI/atlas-style
  * frame but not for a scene: this title binds ~20 distinct textures per frame,
@@ -397,6 +399,9 @@ typedef struct {
     u32                   vp_gen;               /* bumped per VP recompile       */
     int                   vp_uses_c03;          /* VS references vp_c[0..3]      */
     VPTexSlot*            vp_tex;
+    u64                   vp_tex_use_serial;
+    u64                   vp_tex_bytes, vp_tex_peak_bytes, vp_tex_peak_over_budget;
+    u64                   vp_tex_allocations, vp_tex_evictions, vp_tex_resource_failures;
     unsigned              vp_tex_capacity; /* per-frame VP texture slots    */
     VPVSEntry             vp_vs[VP_VS_CACHE];   /* per-draw decompiled VS cache  */
     int                   vp_vs_n;
@@ -445,6 +450,11 @@ typedef struct {
 } D3D12State;
 
 static D3D12State s_d3d;
+static int texture_retention_on(void);
+static u64 texture_retention_budget(void);
+static u64 texture_pinned_bytes(void);
+static void texture_slot_release(VPTexSlot* t);
+static void texture_retention_begin_batch(void);
 char g_rsx_title_base[128] = "ps3recomp";
 static u32 s_dbg_last_draws = 0;
 static u64 s_req_verts = 0, s_req_draws = 0, s_drop_draws = 0;
@@ -778,16 +788,21 @@ static int init_d3d12(u32 width, u32 height)
 {
     HRESULT hr;
 
-    /* Enable debug layer in debug builds */
-    /* Debug layer: on in debug builds, or in any build when D3D12_DBG is set
-     * (so a Release run can capture exact PSO/validation errors). */
-    if (
+    /* Keep assertion policy independent of optional API validation. An explicit
+     * D3D12_DBG=0 disables the layer in either build; unset retains the build
+     * default. Device/queue/resource errors remain checked normally. */
+    int debug_layer;
+    {
+        const char* e = getenv("D3D12_DBG");
 #ifdef NDEBUG
-        getenv("D3D12_DBG")
+        debug_layer = e && strcmp(e, "0") != 0;
 #else
-        1
+        debug_layer = !(e && strcmp(e, "0") == 0);
 #endif
-    ) {
+    }
+    printf("[D3D12] Debug layer %s (D3D12_DBG=%s)\n",
+           debug_layer ? "requested" : "off", getenv("D3D12_DBG") ? getenv("D3D12_DBG") : "unset");
+    if (debug_layer) {
         ID3D12Debug* debug_controller = NULL;
         hr = D3D12GetDebugInterface(&IID_ID3D12Debug, (void**)&debug_controller);
         if (SUCCEEDED(hr) && debug_controller) {
@@ -1462,37 +1477,35 @@ static int init_d3d12(u32 width, u32 height)
  * Frame sync helpers
  * -----------------------------------------------------------------------*/
 
-static void wait_for_gpu(void)
+static int wait_for_gpu(void)
 {
-    u32 fi = s_d3d.frame_index;
-    s_d3d.fence_values[fi]++;
-    s_d3d.cmd_queue->lpVtbl->Signal(s_d3d.cmd_queue, s_d3d.fence, s_d3d.fence_values[fi]);
-
-    if (s_d3d.fence->lpVtbl->GetCompletedValue(s_d3d.fence) < s_d3d.fence_values[fi]) {
-        s_d3d.fence->lpVtbl->SetEventOnCompletion(
-            s_d3d.fence, s_d3d.fence_values[fi], s_d3d.fence_event);
-        /* NEVER wait unbounded here: this runs on the vblank ticker, which also
-         * drives the guest's vblank handlers, the FIFO drain, and the fence
-         * publication. A device removal (TDR) leaves the D3D12 fence unsignaled
-         * forever and an INFINITE wait silently froze the ENTIRE emulation --
-         * observed on LBP as a boot that died the moment the 2048x2048
-         * offscreen RT was created (last log line), every guest thread parked.
-         * Degrade loudly instead: bounded waits + the removal reason, then
-         * carry on (subsequent D3D calls fail visibly but the game keeps
-         * running headless). */
-        for (int tries = 0; tries < 3; tries++) {
-            if (WaitForSingleObject(s_d3d.fence_event, 2000) != WAIT_TIMEOUT)
-                return;
-            HRESULT rr = s_d3d.device->lpVtbl->GetDeviceRemovedReason(s_d3d.device);
-            printf("[D3D12] wait_for_gpu STUCK %ds: want %llu got %llu removed=0x%08lX\n",
-                   2 * (tries + 1),
-                   (unsigned long long)s_d3d.fence_values[fi],
-                   (unsigned long long)s_d3d.fence->lpVtbl->GetCompletedValue(s_d3d.fence),
-                   (long)rr);
-            fflush(stdout);
-            if (rr != 0 /* S_OK: device still alive, keep waiting a bit */)
-                break;
+    const u32 fi = s_d3d.frame_index;
+    const u64 target = ++s_d3d.fence_values[fi];
+    HRESULT hr = s_d3d.cmd_queue->lpVtbl->Signal(s_d3d.cmd_queue,s_d3d.fence,target);
+    if (FAILED(hr)) { fprintf(stderr,"[D3D12] Fence Signal failed: 0x%08lX\n",(unsigned long)hr);return 0; }
+    u64 completed = s_d3d.fence->lpVtbl->GetCompletedValue(s_d3d.fence);
+    if (completed != ~(u64)0 && completed >= target) return 1;
+    hr = s_d3d.fence->lpVtbl->SetEventOnCompletion(s_d3d.fence,target,s_d3d.fence_event);
+    if (FAILED(hr)) { fprintf(stderr,"[D3D12] Fence event registration failed: 0x%08lX\n",(unsigned long)hr);return 0; }
+    const ULONGLONG start = GetTickCount64();
+    for (;;) {
+        completed = s_d3d.fence->lpVtbl->GetCompletedValue(s_d3d.fence);
+        HRESULT removed = s_d3d.device->lpVtbl->GetDeviceRemovedReason(s_d3d.device);
+        if (completed == ~(u64)0 || FAILED(removed)) {
+            fprintf(stderr,"[D3D12] Fence retirement device failure: 0x%08lX\n",(unsigned long)removed);return 0;
         }
+        if (completed >= target) return 1;
+        const ULONGLONG elapsed = GetTickCount64()-start;
+        if (elapsed >= 6000) return 0;
+        const DWORD remaining = (DWORD)(6000-elapsed);
+        DWORD status = WaitForSingleObject(s_d3d.fence_event,remaining < 2000 ? remaining : 2000);
+        if (status == WAIT_FAILED) { fprintf(stderr,"[D3D12] Fence wait failed: %lu\n",GetLastError());return 0; }
+        if (status == WAIT_TIMEOUT) {
+            fprintf(stderr,"[D3D12] Fence wait pending: target=%llu completed=%llu elapsed=%llums\n",
+                    (unsigned long long)target,(unsigned long long)completed,GetTickCount64()-start);
+        }
+        /* An old registration can wake this event. Only the real fence value
+         * admits retirement; a notification never resets the bounded deadline. */
     }
 }
 
@@ -1522,11 +1535,19 @@ static int vp_upload_allocate(void* context, uint64_t bytes, rsx_upload_buffer* 
     }
     b->resource = resource; b->memory = mapped; return 1;
 }
+static void wait_for_gpu_required(void)
+{
+    if (!wait_for_gpu()) {
+        fprintf(stderr, "[D3D12] Required GPU retirement failed; no resource reuse or readback\n");
+        abort();
+    }
+}
+
 static int vp_upload_retire(void* context)
 {
     (void)context;
     u32 fi = s_d3d.frame_index;
-    wait_for_gpu();
+    if (!wait_for_gpu()) return 0;
     HRESULT removed = s_d3d.device->lpVtbl->GetDeviceRemovedReason(s_d3d.device);
     u64 completed = s_d3d.fence->lpVtbl->GetCompletedValue(s_d3d.fence);
     return removed == S_OK && completed != UINT64_MAX &&
@@ -1599,6 +1620,7 @@ static void vp_upload_reserve(u64 vertices)
 static void gpu_working_sets_release(void)
 {
     gpu_pso_retire();
+    texture_retention_begin_batch();
     for (unsigned i = 0; i < s_d3d.vp_fp_store.count; ++i)
         if (s_d3d.vp_fp[i].pso) s_d3d.vp_fp[i].pso->lpVtbl->Release(s_d3d.vp_fp[i].pso);
     free(s_d3d.vp_fp_store.data);
@@ -1606,8 +1628,7 @@ static void gpu_working_sets_release(void)
     s_d3d.vp_fp = NULL;
     for(unsigned i=0;i<s_d3d.vp_tex_capacity;i++) {
         VPTexSlot* t=&s_d3d.vp_tex[i];
-        if(t->res)t->res->lpVtbl->Release(t->res);
-        if(t->up)t->up->lpVtbl->Release(t->up);
+        texture_slot_release(t);
     }
     free(s_d3d.vp_tex);s_d3d.vp_tex=NULL;s_d3d.vp_tex_capacity=0;
 }
@@ -1775,7 +1796,7 @@ static void cap_readback_write(ID3D12Resource* res, u32 w, u32 h, u32 dxgi,
             &IID_ID3D12Resource, (void**)&rb)) || !rb)
         return;
 
-    wait_for_gpu();
+    wait_for_gpu_required();
     s_d3d.cmd_allocators[fi]->lpVtbl->Reset(s_d3d.cmd_allocators[fi]);
     s_d3d.cmd_list->lpVtbl->Reset(s_d3d.cmd_list, s_d3d.cmd_allocators[fi], NULL);
 
@@ -1819,7 +1840,7 @@ static void cap_readback_write(ID3D12Resource* res, u32 w, u32 h, u32 dxgi,
     s_d3d.cmd_list->lpVtbl->Close(s_d3d.cmd_list);
     ID3D12CommandList* cl[] = { (ID3D12CommandList*)s_d3d.cmd_list };
     s_d3d.cmd_queue->lpVtbl->ExecuteCommandLists(s_d3d.cmd_queue, 1, cl);
-    wait_for_gpu();
+    wait_for_gpu_required();
 
     void* mp = NULL; D3D12_RANGE rr = {0, (SIZE_T)pitch * h};
     if (SUCCEEDED(rb->lpVtbl->Map(rb, 0, &rr, &mp)) && mp) {
@@ -3264,8 +3285,51 @@ static void texture_profile_log(void)
             (unsigned long long)p->sampled_words, p->setup*1000.0, p->lookup*1000.0,
             p->checksum*1000.0, p->remainder*1000.0, p->total*1000.0,
             (unsigned long long)p->clock_errors, s_d3d.vp_tex_capacity);
+    fprintf(stderr, "[TEXRESIDENCY] retention=%d budget_bytes=%llu live_allocation_bytes=%llu peak_allocation_bytes=%llu pinned_bytes=%llu peak_pinned_over_budget_bytes=%llu allocations_total=%llu evictions_total=%llu resource_failures_total=%llu\n",
+        texture_retention_on(), (unsigned long long)texture_retention_budget(),
+        (unsigned long long)s_d3d.vp_tex_bytes, (unsigned long long)s_d3d.vp_tex_peak_bytes,
+        (unsigned long long)texture_pinned_bytes(), (unsigned long long)s_d3d.vp_tex_peak_over_budget,
+        (unsigned long long)s_d3d.vp_tex_allocations, (unsigned long long)s_d3d.vp_tex_evictions,
+        (unsigned long long)s_d3d.vp_tex_resource_failures);
     memset(&s_texture_profile, 0, sizeof(s_texture_profile));
 }
+
+/* Reference remains available while residency/lifetime validation is pending. */
+static int texture_retention_on(void)
+{
+    static int value = -1;
+    if (value < 0) {
+        const char* e = getenv("RSX_TEXTURE_RETENTION");
+        if (!e || !strcmp(e, "0")) value = 0;
+        else if (!strcmp(e, "1")) value = 1;
+        else { fprintf(stderr, "[RSXTEXTURE] invalid RSX_TEXTURE_RETENTION; use 0 or 1\n"); abort(); }
+    }
+    return value;
+}
+
+#include "rsx_d3d12_texture_residency.h"
+#include "rsx_texture_fingerprint.h"
+
+static u64 texture_source_csum(rsx_texture_profile_call* profile, const u8* source,
+        u32 reference_bytes, u32 w, u32 h, u32 format, int cube, u32 mips)
+{
+    extern u8* vm_base;
+    if (!texture_retention_on()) return texture_profile_csum(profile,source,reference_bytes);
+    const u64 offset = (u64)(source - vm_base);
+    rsx_texture_source_view view;
+    if (offset >= (UINT64_C(1)<<32) || !rsx_texture_source_view_init(w,h,format,cube,mips,
+                (UINT64_C(1)<<32)-offset,&view)) {
+        fprintf(stderr,"[RSXTEXTURE] invalid source span off=%llu w=%u h=%u fmt=%u cube=%d mips=%u\n",
+                (unsigned long long)offset,w,h,format,cube,mips);
+        abort();
+    }
+    rsx_texture_profile_checksum_begin(profile,0);
+    u64 value = rsx_texture_source_fingerprint(source,&view);
+    if (profile && profile->clock) profile->sampled_words += (view.hashed_bytes+3)/4;
+    rsx_texture_profile_checksum_end(profile);
+    return value;
+}
+
 
 static int vp_upload_tex_slot_impl(u32 off, u32 w, u32 h, u32 fmt, int cube, u32 mips, rsx_texture_profile_call* profile)
 {
@@ -3321,14 +3385,18 @@ static int vp_upload_tex_slot_impl(u32 off, u32 w, u32 h, u32 fmt, int cube, u32
      * animated surface changing, cheap enough to run on every bind. */
     /* (portable helper tex_csum() -- see above; a statement-expression macro
      * here was a GCC/Clang extension MSVC rejects.) */
-    #define TEX_CSUM(base, nbytes) texture_profile_csum(profile, (base), (nbytes))
+    #define TEX_CSUM(base, nbytes) texture_source_csum(profile, (base), (nbytes), w, h, fmt, cube, mips)
     int slot = -1, freeslot = -1;
+    const int retention = texture_retention_on();
+    const u64 serial = retention ? ++s_d3d.vp_tex_use_serial : 0;
+    int empty = -1, oldest = -1;
+    u64 oldest_age = 0;
     rsx_texture_profile_lookup_begin(profile);
     for (unsigned i = 0; i < s_d3d.vp_tex_capacity; i++) {
         VPTexSlot* c = &s_d3d.vp_tex[i];
         if (c->res && c->key == key_off && c->w == w && c->h == h && c->fmt == fmt
-            && c->cube == cube) {
-            if (c->used) { rsx_texture_profile_lookup_end(profile, i + 1, RSX_TEX_FRAME_HIT); return i; }                /* already bound this frame */
+            && c->cube == cube && (!retention || c->mips == mips)) {
+            if (c->used) { if (retention) c->last_use = serial; rsx_texture_profile_lookup_end(profile, i + 1, RSX_TEX_FRAME_HIT); return i; }                /* already bound this frame */
             { static int nocache = -1;            /* TEX_NOCACHE=1: always re-upload */
               if (nocache < 0) { const char* e = getenv("TEX_NOCACHE");
                                  nocache = e ? atoi(e) : 0; }
@@ -3338,14 +3406,22 @@ static int vp_upload_tex_slot_impl(u32 off, u32 w, u32 h, u32 fmt, int cube, u32
              * every one of them every frame was ~70% of the frame's CPU time. */
             u32 nb = dxt ? (blkrow * blkrows) : (w * h * bpp);
             rsx_texture_profile_lookup_end(profile, i + 1, RSX_TEX_VALIDATED_HIT);
-            u32 cs = TEX_CSUM(vm_base + c->off, nb);
-            if (cs == c->csum) { c->used = 1; return i; }
+            u64 cs = TEX_CSUM(vm_base + c->off, nb);
+            if (cs == c->csum) { c->used = 1; if (retention) c->last_use = serial; return i; }
             if (profile) profile->outcome = RSX_TEX_STALE;
             slot = i; break;                      /* stale: fall through and redo */
         }
         if (!c->used && freeslot < 0) freeslot = i;
+        if (retention && !c->used) {
+            if (!c->res && empty < 0) empty = (int)i;
+            if (c->res) {
+                const u64 age = serial - c->last_use;
+                if (oldest < 0 || age > oldest_age) { oldest = (int)i; oldest_age = age; }
+            }
+        }
     }
     rsx_texture_profile_lookup_end(profile, s_d3d.vp_tex_capacity, RSX_TEX_MISS);
+    if (retention) freeslot = empty >= 0 ? empty : oldest;
     /* TEX_OFF_BIAS=1: sample the image one whole level-0 BELOW the bound offset.
      * Measured on the Rubber Ducky demo: at the bind offset every texture reads
      * as all-zero, while [off - w*h*bpp, off) holds the image (3800-4160 of 4298
@@ -3399,18 +3475,23 @@ static int vp_upload_tex_slot_impl(u32 off, u32 w, u32 h, u32 fmt, int cube, u32
     /* A stale cache entry (slot >= 0) re-uses its own slot; otherwise take a
      * free one. Without this the stale path fell through to freeslot and either
      * duplicated the texture into a second slot or bailed when none was free. */
-    if (slot < 0 && freeslot < 0) {
+    const unsigned units=(unsigned)(sizeof(s_d3d.draws[0].tex)/sizeof(s_d3d.draws[0].tex[0]));
+    /* An unpinned entry is reusable, not empty. Retain its cached content while
+     * the byte budget and bounded metadata pool can accommodate a new entry. */
+    const int retain_candidate = retention && freeslot >= 0 &&
+        s_d3d.vp_tex[freeslot].res && s_d3d.vp_tex_bytes < texture_retention_budget() &&
+        s_d3d.vp_tex_capacity < MAX_DRAWS*units;
+    if (slot < 0 && (freeslot < 0 || retain_candidate)) {
         unsigned before=s_d3d.vp_tex_capacity,after=before;
-        unsigned units=(unsigned)(sizeof(s_d3d.draws[0].tex)/sizeof(s_d3d.draws[0].tex[0]));
         void* grown=rsx_slot_pool_grow(s_d3d.vp_tex,before,before+1,
             INITIAL_VP_TEX_SLOTS,MAX_DRAWS*units,sizeof(VPTexSlot),&after);
         if(!grown) {
-            fprintf(stderr,"[RSXTEXTURE] pinned pool cannot grow count=%u limit=%u off=%08X %ux%u fmt=%02X\n",before,MAX_DRAWS*units,off,w,h,fmt);
+            fprintf(stderr,"[RSXTEXTURE] texture pool cannot grow count=%u limit=%u off=%08X %ux%u fmt=%02X\n",before,MAX_DRAWS*units,off,w,h,fmt);
             abort();
         }
         s_d3d.vp_tex=(VPTexSlot*)grown;s_d3d.vp_tex_capacity=after;
         freeslot=(int)before;
-        fprintf(stderr,"[RSXTEXTURE] pinned pool grew %u->%u off=%08X\n",before,after,off);
+        fprintf(stderr,"[RSXTEXTURE] texture pool grew %u->%u off=%08X\n",before,after,off);
     }
     /* TEX_SRCDBG=<N>: is the guest memory this slot uploads FROM actually
      * populated? An empty source and a broken sampler both render flat. */
@@ -3469,8 +3550,7 @@ static int vp_upload_tex_slot_impl(u32 off, u32 w, u32 h, u32 fmt, int cube, u32
      * cube path copies 6 subresources and writes a 6x upload buffer -- which
      * crashes. */
     if (t->res && (t->w != w || t->h != h || t->fmt != fmt || t->cube != cube)) {
-        t->res->lpVtbl->Release(t->res); t->res = NULL;
-        if (t->up) { t->up->lpVtbl->Release(t->up); t->up = NULL; }
+        texture_slot_release(t);
     }
     if (!t->res) {
         D3D12_HEAP_PROPERTIES hp = {0}; hp.Type = D3D12_HEAP_TYPE_DEFAULT;
@@ -3481,28 +3561,39 @@ static int vp_upload_tex_slot_impl(u32 off, u32 w, u32 h, u32 fmt, int cube, u32
         td.MipLevels = 1;
         td.Format = dxfmt; td.SampleDesc.Count = 1;
         td.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-        if (FAILED(s_d3d.device->lpVtbl->CreateCommittedResource(
+        HRESULT hr = s_d3d.device->lpVtbl->CreateCommittedResource(
                 s_d3d.device, &hp, D3D12_HEAP_FLAG_NONE, &td,
                 D3D12_RESOURCE_STATE_COPY_DEST, NULL,
-                &IID_ID3D12Resource, (void**)&t->res)))
-            return -1;
+                &IID_ID3D12Resource, (void**)&t->res);
+        if (FAILED(hr) || !t->res) texture_resource_fail(t, "default allocation", hr);
         D3D12_HEAP_PROPERTIES hu = {0}; hu.Type = D3D12_HEAP_TYPE_UPLOAD;
         D3D12_RESOURCE_DESC bd = {0};
         bd.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
         bd.Width = (u64)pitch * (dxt ? blkrows : h) * (cube ? 6 : 1);
         bd.Height = 1; bd.DepthOrArraySize = 1;
         bd.MipLevels = 1; bd.SampleDesc.Count = 1; bd.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-        if (FAILED(s_d3d.device->lpVtbl->CreateCommittedResource(
+        hr = s_d3d.device->lpVtbl->CreateCommittedResource(
                 s_d3d.device, &hu, D3D12_HEAP_FLAG_NONE, &bd,
                 D3D12_RESOURCE_STATE_GENERIC_READ, NULL,
-                &IID_ID3D12Resource, (void**)&t->up))) {
-            t->res->lpVtbl->Release(t->res); t->res = NULL; return -1;
-        }
+                &IID_ID3D12Resource, (void**)&t->up);
+        if (FAILED(hr) || !t->up) texture_resource_fail(t, "upload allocation", hr);
+        D3D12_RESOURCE_ALLOCATION_INFO gpu, upload;
+        s_d3d.device->lpVtbl->GetResourceAllocationInfo(s_d3d.device, &gpu, 0, 1, &td);
+        s_d3d.device->lpVtbl->GetResourceAllocationInfo(s_d3d.device, &upload, 0, 1, &bd);
+        if (!gpu.SizeInBytes || !upload.SizeInBytes || gpu.SizeInBytes == ~(u64)0 ||
+            upload.SizeInBytes == ~(u64)0 || gpu.SizeInBytes > ~(u64)0 - upload.SizeInBytes ||
+            s_d3d.vp_tex_bytes > ~(u64)0 - gpu.SizeInBytes - upload.SizeInBytes)
+            texture_resource_fail(t, "allocation footprint", E_FAIL);
+        t->allocation_bytes = gpu.SizeInBytes + upload.SizeInBytes;
+        s_d3d.vp_tex_bytes += t->allocation_bytes;
+        if (s_d3d.vp_tex_bytes > s_d3d.vp_tex_peak_bytes) s_d3d.vp_tex_peak_bytes = s_d3d.vp_tex_bytes;
+        ++s_d3d.vp_tex_allocations;
         fresh = 1;
     }
 
     void* mapped = NULL; D3D12_RANGE nr = {0,0};
-    if (FAILED(t->up->lpVtbl->Map(t->up, 0, &nr, &mapped)) || !mapped) return -1;
+    HRESULT map_hr = t->up->lpVtbl->Map(t->up, 0, &nr, &mapped);
+    if (FAILED(map_hr) || !mapped) texture_resource_fail(t, "upload map", map_hr);
     { static int _tp=0; if (getenv("RTT_DUMP") && _tp++ < 6) {
         const u8* sp = vm_base + off;
         fprintf(stderr, "[TEXUP] off=0x%X fmt=0x%X row0:", off, fmt);
@@ -3527,17 +3618,12 @@ static int vp_upload_tex_slot_impl(u32 off, u32 w, u32 h, u32 fmt, int cube, u32
      * aligned) in. Assuming mip-0-sized strides made face 1 land inside face 0's
      * mip chain -- which is exactly what the dumps showed, every face after the
      * first a progressively smaller copy of the first. */
-    u32 _face_bytes = dxt ? (blkrow * blkrows) : (w * h * bpp);
-    if (cube) {
-        u32 total = 0;
-        for (u32 lw = w, lh = h, l = 0; l < (mips ? mips : 1u); l++) {
-            total += dxt ? (((lw + 3) / 4) * (bpp == 8 ? 16u : 8u) * ((lh + 3) / 4))
-                         : (lw * lh * bpp);
-            if (lw > 1) lw >>= 1;
-            if (lh > 1) lh >>= 1;
-        }
-        _face_bytes = (total + 127u) & ~127u;
+    rsx_texture_source_view upload_view;
+    if (!rsx_texture_source_view_init(w,h,fmt,cube,mips,
+                (UINT64_C(1)<<32)-off,&upload_view)) {
+        fprintf(stderr,"[RSXTEXTURE] invalid upload source span\n");abort();
     }
+    const u32 _face_bytes = (u32)upload_view.face_stride;
     const u32 _nfaces     = cube ? 6u : 1u;
     const u32 _off0 = off; u8* const _map0 = (u8*)mapped;
     for (u32 _f = 0; _f < _nfaces; _f++) {
@@ -3855,7 +3941,8 @@ static int vp_upload_tex_slot_impl(u32 off, u32 w, u32 h, u32 fmt, int cube, u32
 
     t->off = off; t->key = key_off; t->w = w; t->h = h; t->fmt = fmt;
     t->dxgi = (u32)dxfmt;   /* the decoded image's format, from the layout */
-    t->cube = cube; t->used = 1;
+    t->cube = cube; t->used = 1; t->mips = mips; t->last_use = serial;
+    if (retention) texture_retention_trim();
     { u32 nb = dxt ? (blkrow * blkrows) : (w * h * bpp);
       t->csum = TEX_CSUM(vm_base + off, nb); }
     #undef TEX_CSUM
@@ -4204,7 +4291,7 @@ static int off_rt_grow(void)
                 s_d3d.device, pool[i].res, NULL, rh);
         rh.ptr += inc;
     }
-    wait_for_gpu();
+    wait_for_gpu_required();
     if (s_d3d.rt_rtv_heap) s_d3d.rt_rtv_heap->lpVtbl->Release(s_d3d.rt_rtv_heap);
     s_d3d.rt_rtv_heap = heap;
     s_d3d.off_rt_cap = cap;
@@ -4235,7 +4322,7 @@ static int off_rt_get(u32 off, u32 w, u32 h, u32 rsx_fmt)
          * and every draw recorded against it silently lands nowhere while the
          * replacement reads back empty. Let the GPU finish first. Recreations are
          * rare (a surface changing size), so the stall costs nothing. */
-        wait_for_gpu();
+        wait_for_gpu_required();
         cpu_surface_retire(r);
         r->res->lpVtbl->Release(r->res); r->res = NULL;   /* dims/format changed */
         if (r->up) { r->up->lpVtbl->Release(r->up); r->up = NULL; }
@@ -4253,7 +4340,7 @@ static int off_rt_get(u32 off, u32 w, u32 h, u32 rsx_fmt)
                     return -1;
                 }
             } else {
-                wait_for_gpu();
+                wait_for_gpu_required();
                 cpu_surface_retire(&s_d3d.off_rt[slot]);
                 s_d3d.off_rt[slot].res->lpVtbl->Release(s_d3d.off_rt[slot].res);
                 s_d3d.off_rt[slot].res = NULL;
@@ -4735,7 +4822,7 @@ static void composite_present(u32 fi)
          * frame's copy feed the next: one frame of latency, irrelevant for a
          * menu/attract composite. First frame past the gate just arms. */
         if (!rb_valid) { rb_valid = 1; return; }
-        wait_for_gpu();   /* ensure last frame's list (the rb copy) completed */
+        wait_for_gpu_required();   /* ensure last frame's list (the rb copy) completed */
         u32* spx = NULL; D3D12_RANGE rr = {0, (SIZE_T)sp * sh};
         if (SUCCEEDED(rb->lpVtbl->Map(rb, 0, &rr, (void**)&spx)) && spx) {
             /* Uniform/empty readback: no real content is being presented
@@ -5007,6 +5094,7 @@ static void render_frame(void)
      * polygons). These workloads are a few draws/frame, so full serialisation
      * costs little. */
     gpu_pso_retire();
+    texture_retention_begin_batch();
     if (phase_on()) s_phase.drain = perf_now() - ph0;
     phase_gpu_collect();
 
@@ -5330,7 +5418,7 @@ static void render_frame(void)
      * tables can share descriptors, but each draw retains its constants and
      * resource transitions. PSO lookup normally occurs once during replay. */
     double _pre0 = perf_on() ? perf_now() : 0.0;
-    for (unsigned _i = 0; _i < s_d3d.vp_tex_capacity; _i++) s_d3d.vp_tex[_i].used = 0;
+    /* Pins cleared only after checked GPU retirement above. */
     memset(s_srv_table_hash, 0, sizeof s_srv_table_hash);
     s_srv_created = s_srv_tables_reused = s_pso_binds = s_srv_binds = 0;
     int shader_prefetch_pass=shader_pool_on();
@@ -6420,13 +6508,13 @@ skip_dump_consider: ;
 
     if (s_sc_dump_pending) {
         s_sc_dump_pending = 0;
-        wait_for_gpu();
+        wait_for_gpu_required();
         s_dump_name = "screencopy";
         dump_backbuffer_bmp();
         s_dump_name = NULL;
     }
     if (dumping) {
-        wait_for_gpu();            /* ensure the copy finished before mapping */
+        wait_for_gpu_required();            /* ensure the copy finished before mapping */
         dump_backbuffer_bmp();
         s_d3d.dump_frames_left--;
     }
@@ -6434,7 +6522,7 @@ skip_dump_consider: ;
     if (s_rtsave_state) {
         fprintf(stderr, "[RTT_SAVERT] writing rt_save.bmp %ux%u\n", s_rtsave_w, s_rtsave_h);
         if (!dumping) { double _g = perf_on() ? perf_now() : 0.0;
-                        wait_for_gpu();
+                        wait_for_gpu_required();
                         if (perf_on()) s_perf_gpu += perf_now() - _g; }
         void* mp = NULL; D3D12_RANGE rr = {0, (SIZE_T)s_rtsave_pitch * s_rtsave_h};
         if (SUCCEEDED(s_rtsave_buf->lpVtbl->Map(s_rtsave_buf, 0, &rr, &mp)) && mp) {
@@ -6528,6 +6616,10 @@ skip_dump_consider: ;
             int n = cap ? sscanf(cap, "%u:%u:%u", &a, &b, &c) : 0;
             rsx_capture_schedule_init(&s_cap, (n >= 1 && a) ? a : 200,
                 cap ? ((n >= 2 && b) ? b : 1) : 0, (n >= 3 && c) ? c : 1);
+            if (!rsx_capture_schedule_screen_only(&s_cap, getenv("RSX_CAP_SCREEN_ONLY"))) {
+                fprintf(stderr, "[rsxcap] invalid RSX_CAP_SCREEN_ONLY (expected 0 or 1)\n");
+                abort();
+            }
             const char* budget = getenv("RSX_CAP_BURST");
             const char* pad = getenv("RSX_CAP_PAD_MASK");
             if (pad) {
@@ -6740,7 +6832,7 @@ static int blink_dbg(void)
 static void record_batch_retire(void)
 {
     u32 fi = s_d3d.frame_index;
-    wait_for_gpu();
+    wait_for_gpu_required();
     HRESULT removed = s_d3d.device->lpVtbl->GetDeviceRemovedReason(s_d3d.device);
     u64 completed = s_d3d.fence->lpVtbl->GetCompletedValue(s_d3d.fence);
     if (removed != S_OK || completed == UINT64_MAX || completed < s_d3d.fence_values[fi]) {

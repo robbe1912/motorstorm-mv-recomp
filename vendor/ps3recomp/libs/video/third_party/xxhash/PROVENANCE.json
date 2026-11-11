@@ -1,0 +1,15 @@
+{
+  "repository": "https://github.com/Cyan4973/xxHash",
+  "tag": "v0.8.3",
+  "purpose": "Full content validation of uploaded texture faces; BSD-2-Clause source/license preserved. Same XXH3 practice as the pinned Mac port, without importing title addresses.",
+  "files": {
+    "xxhash.h": {
+      "git_blob": "78fc2e8dbf6db809650fbb59762c5566a71677ca",
+      "sha256": "17973c0dc49d9854ca26caa191f0e12f7a424b68858d9a78de3860d959d85e4b"
+    },
+    "LICENSE": {
+      "git_blob": "e4c5da7234eca7baad9a46f0b144e49ccad2e500",
+      "sha256": "6ffedbc0f7878612d2b23589f1ff2ab15633e1df7963a5d9fc750ec5500c7e7a"
+    }
+  }
+}

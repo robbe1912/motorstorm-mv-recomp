@@ -18,7 +18,30 @@ entry-return cleanup are distinct events. The trace reports sequential exit
 context and enabled-bit reads; it changes no task bits and does not prove an
 atomic snapshot or race acceptance. It is disabled by default.
 
-Owned child limits: 600s, available physical ≥4GiB, available commit ≥12GiB, private ≤14GiB. Write stop.txt in its run directory for closure. final.json distinguishes guards from natural exits; always inspect fatal logs even on exit 0. Match PID/create_time before attaching/stopping; preserve ordinary user RPCS3.
+Owned child limits: 600s, available physical ≥4GiB, available commit ≥12GiB by default, private ≤14GiB. `--min-free-commit-gib 6` explicitly selects a 6GiB host commit reserve; accepted reserves are finite and 1..12GiB. `--min-free-physical-gib 1` allows concurrent host work with a 1GiB free physical RAM floor; accepted reserves are finite and 1..4GiB. These reserves are host headroom, not game memory requirements. They stay fixed during the run so the guard does not silently reduce its own stop threshold. Lower physical or commit headroom may cause paging and perturb timings; retain the recorded policy when comparing runs. Other guards remain active. `launch.json` and `final.json` record all byte limits and launcher/guard source hashes; a resource stop records its exact metric, value and bound. The [guard policy](../scripts/native_resource_guard.py) and [historical admission checks](../scripts/check_native_resource_guard.py) keep defaults and every other limit enforced. Write stop.txt in its run directory for closure. final.json distinguishes guards from natural exits; always inspect fatal logs even on exit 0. Match PID/create_time before attaching/stopping; preserve ordinary user RPCS3.
+
+Menu/replay captures select `RSX_CAP_SCREEN_ONLY=1` and record it in launch
+identity. A periodic sample due during an offscreen capacity drain stays due
+until a nonempty presenting batch; it spends neither the scheduled nor burst
+budget on the drain. Raw diagnostic capture remains the backend default
+(unset or `RSX_CAP_SCREEN_ONLY=0`). This changes capture selection only, not
+rendering, submission order or guest presentation. A presenting manifest still
+requires successful-Present/error checks and semantic image inspection.
+
+Use `--d3d12-debug default|0|1` to select optional DX12 API validation.
+Inherited `D3D12_DBG` is cleared: `default` retains the compiled policy, `0`
+disables validation, and `1` requests it. Assertions and ordinary device,
+queue and resource error handling remain active. The requested setting and
+actual environment are recorded; confirm the backend's startup result because
+a requested debug interface can be unavailable. Compare the same executable
+with matched options before attributing a frame-time difference to validation.
+
+`--profile-textures` enables existing aggregate texture setup/lookup/checksum/
+remainder timing and cache outcomes (`PERF=1`, `RSX_TEXTURE_PROFILE=1`). It
+records this environment without enabling broad asset captures or GPU queries.
+These counters add overhead; retain the same profiling setting on both sides
+of a comparison. Texture-call remainder includes several kinds of work and
+must not be reported as allocation time alone.
 
 For a renderer timing trial, add `--profile-renderer` to the normal launcher.
 It enables the existing CPU phase counters and GPU timestamp queries, retaining
@@ -56,6 +79,16 @@ at its 12 s duration guard. This verifies launch readiness only. The inherited
 hide mechanism was not traced, and this run does not verify menu or race rendering.
 
 Inherited probes are cleared; development SPU_PM_INTERP=1 remains. Six known pre-menu wedge probes are zeroed: SPU_WP, SPU_PM_GATE_TRACE, SPU_PM_RETIRE_GUARD, SPU_PM_PC_RESUME, SPU_PM_FLOW_RESUME, SPU_PM_YIELD_RESUME. Probe-off boots both clean/instrumented menus; individual guilty knob is not isolated. FLOW_FSDBG=1 correlated with early resourcesystem 938 fatal and is omitted. Hooks alone were exonerated for this pre-menu wedge, not permanent stability.
+
+CPU surface dependency diagnostics use `scripts/run.py --profile-cpu-surfaces`.
+This explicitly enables and records the existing `RSX_CPU_SURFACE_PROFILE=1`
+backend diagnostics after inherited RSX settings are cleared. Each completed
+request reports absolute QPC timestamps, client/renderer IDs, exact-range
+matches, clean hits, copies, bytes, and disjoint queue/service/copy/fence phases.
+Use matches and copies to distinguish stale page dispatches from required GPU
+synchronization before changing ownership or waits. Per-request timing and log
+I/O perturb execution; keep these captures separate from performance comparisons.
+The option changes no readback, completion, error or deadline behavior.
 
 ## Input and proof
 
@@ -281,3 +314,33 @@ walk remains explicit. #155 full critical-path cost, #27 stable30 and #137
 rendering remain open; the next native rewrite still requires original/native
 parity and matched gameplay timing. All memory, binaries, symbols and captures
 remain private; CI uploads authored-test logs/JSON only.
+
+For the default-off fingerprint-owned job experiment, pass `--native-owned-jobs` to [run.py](../scripts/run.py). The launcher clears inherited SPU flags, explicitly selects and records `SPU_NATIVE_OWNED_JOBS=1`, and retains required policy interpretation. Environment inheritance alone does not select this mode.
+
+### Persistent DX12 texture cache
+
+`--texture-retention 0|1` explicitly selects the reference or bounded persistent
+cache (default `0`); `--texture-cache-mib 0..4096` sets its allocation target
+(default `512`). The launcher clears inherited selections and records both.
+The target counts owned default texture and upload allocation footprints, not
+all driver memory or physical VRAM residency. Indispensable live batch pins may
+exceed it; `[TEXRESIDENCY]` reports this overage with `--profile-textures`.
+A zero target retains required batch resources until genuine GPU retirement.
+
+Use identical cache targets, validation and profiling settings for comparisons.
+Retention validates every uploaded face with full XXH3; the reference retains
+its sparse source checksum. Complete hashing has a measurable cost. Verify the
+actual selected mode, allocations, evictions and bytes in `[TEXRESIDENCY]`, plus
+the exact executable identity; a requested option is not execution evidence.
+The new cache remains experimental pending native race observation and matched
+measurements. Use the existing normal menu route and resource/ownership guards.
+
+The restored native visibility operation uses explicit `--native-visibility 0|shadow|1` during runs. The default `0` overrides inherited `MS_NATIVE_VISIBILITY`; nonzero choices require a matching `--native-visibility` build and recorded executable identity. Shadow/native preserve the original operation fallback and real completion. Treat shadow results and operation timings separately from gameplay frame-rate acceptance.
+
+A profile may use a `kind: luminance_occupancy` secondary check for an animated
+preview, with explicit `luma_below`, `min_fraction` and `max_fraction` bounds.
+Every observed reference must qualify. The check cannot replace a primary
+button/target screen; independent text matching and owned completed-frame
+checks remain required. Validate real loaded/unloaded/distant/wrong-screen
+cases, preserve reference provenance, and inspect graphics separately: a
+readiness predicate is not graphics acceptance.

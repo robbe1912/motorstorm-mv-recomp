@@ -7,7 +7,8 @@
 typedef struct Resource Resource;
 typedef struct { void (*Release)(Resource*); } ResourceVtbl;
 struct Resource { ResourceVtbl* lpVtbl; unsigned refs; };
-typedef struct { Resource* res; Resource* up; } VPTexSlot;
+typedef uint32_t u32;typedef uint64_t u64;typedef Resource ID3D12Resource;typedef int DXGI_FORMAT,HRESULT;
+@TEXTURE_SLOT@
 typedef struct { Resource* pso; } VPFPEntry;
 static struct {
     int initialized, vp_vs_n;
@@ -16,6 +17,7 @@ static struct {
     VPTexSlot* vp_tex;
     VPFPEntry* vp_fp;
     rsx_pipeline_cache vp_fp_store;
+    u64 vp_tex_bytes,vp_tex_use_serial,vp_tex_peak_over_budget,vp_tex_evictions,vp_tex_resource_failures;
 } s_d3d;
 int s_fp_bytecode, s_fp_blob_ops;
 static unsigned releases, failures, retire_calls;
@@ -25,6 +27,8 @@ void shader_forget_vs_source(void* source) { (void)source; }
 void shader_pool_finish(void) {}
 void rsx_shader_cache_clear(int* cache, int* ops) { (void)cache; (void)ops; }
 @RETIRE@
+@TEXTURE_RETENTION@
+#include "rsx_d3d12_texture_residency.h"
 @FUNCTION@
 static void release(Resource* object) {
     ++releases;
@@ -47,10 +51,12 @@ int main(int argc, char** argv) {
     s_d3d.initialized = 1;
     s_d3d.vp_fp_store.count = s_d3d.vp_fp_store.capacity = 2;
     s_d3d.vp_fp = s_d3d.vp_fp_store.data = calloc(2, sizeof(VPFPEntry));
+    s_d3d.vp_tex_bytes=2048;
     s_d3d.vp_tex_capacity = 2; s_d3d.vp_tex = calloc(2, sizeof(VPTexSlot));
     if (!s_d3d.vp_fp || !s_d3d.vp_tex) return 2;
     for (unsigned i = 0; i < 2; ++i) {
         s_d3d.vp_fp[i].pso = owners + i;
+        s_d3d.vp_tex[i].allocation_bytes=1024;s_d3d.vp_tex[i].used=1;
         s_d3d.vp_tex[i].res = owners + 2 + i * 2;
         s_d3d.vp_tex[i].up = owners + 3 + i * 2;
     }

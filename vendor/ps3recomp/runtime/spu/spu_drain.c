@@ -6,6 +6,7 @@
  * gain real bodies in their own milestones. Keeping them as real out-of-line
  * functions (not macros) means the SPU_DRAIN/SPU_RET call sites are already in
  * place -- later milestones only replace the bodies. */
+#include "spu_native_owned.h"
 #include "spu_context.h"
 #include <setjmp.h>
 
@@ -442,7 +443,8 @@ static void spu_drain_call_scoped_body(spu_context* ctx, uint32_t return_pc)
 #define SPU_DRAIN_POP_IRQ() do { if (ctx->irq_frame == &f) ctx->irq_frame = f.prev; ctx->drain_ret_pc = 0; } while (0)
     for (;;) {
         while (g_spu_trampoline_fn) {
-            if (g_spu_trampoline_fn == spu_indirect_branch &&
+            /* Owned tails may name the genuine native caller continuation. */
+            if ((g_spu_trampoline_fn == spu_indirect_branch || spu_native_owned_policy(ctx)) &&
                 (ctx->pc & SPU_LS_MASK) == (return_pc & SPU_LS_MASK)) {
                 g_spu_trampoline_fn = 0;
                 SPU_DRAIN_POP_IRQ();
@@ -450,8 +452,10 @@ static void spu_drain_call_scoped_body(spu_context* ctx, uint32_t return_pc)
             }
             void (*fn)(spu_context*) = g_spu_trampoline_fn;
             g_spu_trampoline_fn = 0;
+            if (spu_native_owned_policy(ctx) && !spu_native_owned_can_run(ctx,ctx->pc))
+                fn=spu_indirect_branch;
             PS3_SPU_DISPATCH_BASE(fn);
-            ctx->drain_ret_pc = return_pc & SPU_LS_MASK;   /* re-set: a nested drain changed it */
+            ctx->drain_ret_pc = (return_pc & SPU_LS_MASK) ? (return_pc & SPU_LS_MASK) : SPU_LS_SIZE;   /* re-set: a nested drain changed it */
             yz_lockstep_tick(ctx);
             /* M12 [pm-clm]: explicit-trampoline probe. The pm-op probe in
              * spu_indirect_branch only sees DYNAMIC dispatches (jump-table
@@ -660,6 +664,8 @@ static void spu_drain_call_scoped_body(spu_context* ctx, uint32_t return_pc)
                         ctx->irq_frame = &f;
                     }
                     if (setjmp(f.env) == 0) {
+                        if (spu_native_owned_policy(ctx) && !spu_native_owned_can_run(ctx,ctx->pc))
+                            vf=spu_indirect_branch;
                         PS3_SPU_DISPATCH(ctx, vf);
                     vf(ctx);
                     { static int _vt = 0; if (ctx->policy_mode && ctx->image_id == 200 && _vt++ < 24) fprintf(stderr, "[vfret] post-take pc=0x%05X tramp=%d r0=0x%05X\n", ctx->pc & SPU_LS_MASK, g_spu_trampoline_fn != 0, ctx->gpr[0]._u32[0] & SPU_LS_MASK); }

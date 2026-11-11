@@ -1,5 +1,62 @@
 # Native game operations
 
+## PCM cubic DSP prototype (#288)
+
+The [typed PCM resampler](../src/motorstorm/pcm_cubic.h) accepts signed PCM16,
+sample positions, phase advances and an output span. Its four-lane x86 kernel
+uses truncate/flush arithmetic with the admitted fused operation boundaries;
+it restores the caller's FP controls and flags. It contains no guest context,
+registers, local store, channel operations or completion markers.
+
+The [game adapter](../src/motorstorm/pcm_cubic_adapter.cpp) replaces 63 of the
+64 original iterations (1,008 samples) and retains the final original iteration
+to preserve scratch lanes, stack restoration and the genuine return. The
+verified binding checks the original ELF/generated body and live code/table
+bytes. Runtime admission additionally checks CPU/OS support, private LS,
+registered image/first containing owner, IRQ/event/DMA state, observer and
+interpreter exclusions, constants, bounds and aliases. Unsupported inputs run
+the original operation once. Invalid mode or shadow mismatch aborts visibly.
+
+Build with `--native-pcm-cubic`; run with `--native-pcm-cubic 0`, `shadow` or `1`.
+Both build and runtime default to reference execution. The launcher rejects
+active mode without a matching native-enabled executable identity. Reference,
+shadow and native use the same binary; inherited PCM mode cannot select a run.
+
+The independent Fraction oracle checks 22 authored cases across 16 caller FP
+configurations, transactional rejection and an unfused-arithmetic mutant.
+Private original-loop comparisons also exercise actual scalar/vector generated
+code, the interpreter, and the production reference/shadow/native adapter.
+Those authored inputs establish bounded outputs/state/FP agreement, not complete
+IRQ/DMA/external-state equivalence. The checked optimized candidate (EXE
+`716ede82e23639a298d0870aff73ccc2af8cb8bec9d9b588790ee1878d8945df`)
+subsequently reached normal PLAY, original menus/bike and actual race HUD and
+opponents in both modes. Shadow run `20261105T174019.629793Z` reported at least
+282,624 comparisons; native run `20261105T175614.187163Z` reported 647,168
+completions. Both retained 1,016 early reference fallbacks, with no reported
+DSP error, and ended at their configured post-target guard without a resource
+breach. Existing shadow rectangles and shading defects remain.
+
+All 32 captured real entry/exit pairs agree with original vector-native,
+typed-native and canonical interpreter execution. Native comparisons cover the
+whole context and LS after normalizing its backing pointer; interpreter
+comparisons cover architectural state rather than host accounting fields.
+Unknown captured host FP state and atomic external-state equivalence remain
+outside that replay proof.
+
+In a separate unsuspended CPU replay executable, five alternating windows per
+side used one captured input, 50,000 operations, 32 warmups and consistent owned
+thread affinity. Reference median was 133.501 microseconds (132.223–135.296);
+native was 22.381 (21.890–23.229), a 5.965 median ratio. Both include the same
+268,960-byte context restore, actual adapter and real return, with output checks
+after every window and SIMD admission for reference. Concurrent host work was
+uncontrolled. This establishes a bounded operation improvement; matched
+end-to-end measurements remain pending. The native run's final 60 intact API
+Present groups contained 189 presents over reconstructed 60.173134 seconds
+(about 3.14/s), not scanout, a controlled game speedup or stable 30 FPS. Renderer
+CPU work and remaining interpreted jobs still need work.
+This follows the pinned Mac port's measured audio specialization and retained
+reference/guarded arithmetic practice, without importing its title ABI.
+
 ## Particle threshold scan (#204, acceptance pending)
 
 The next bounded operation under [#155](https://github.com/robbe1912/motorstorm-mv-recomp/issues/155)
@@ -132,6 +189,22 @@ The connected actual-interpreter operation was subsequently measured in five alt
 
 
 The issue-201 startup-option fix was then measured separately with the same actual-interpreter workload, tuning, assertions, eight inputs and five alternating 100,000-query trials per side. All 80 records passed work/output/count/clock validation and zero-fallback native accounting. Native/reference median cycle ratios were 0.124, 0.165, 0.124, 0.081, 0.119, 0.246, 0.162 and 0.161. Original medians ranged 14,648–45,888 cycles/query; native medians 3,603–3,722. These compare the final interpreter and native modes, not isolated cache-only effects across different runs. Separate steady profiles contain no sampled `getenv` weight in either mode: decoded dispatch dominates the reference, while arithmetic and the retained terminal iteration dominate native execution. Full per-trial ranges, clocks, outputs, binary/command hashes and profile archives remain under private `interpreter-operation-cached-*` artifacts. The current interpreter still passes 6,240 complete-state cases per mode; new counter tests prove policy-option presence is captured once. The final checked build (EXE `125ad91588215c7e4ba8b68ff3d23763209b0a4c3a5031e4c3e7927f81e532d6`, PDB `092c68b756aadc2c14dd287174eee0bca5cdba2fd59f9170c8008a0c9bf703b6`) completed a clean shadow run `20261022T224319.147606Z`: 8,728,576 printed completions/comparisons, 942 real interpreter fallbacks and 15 visible hierarchy-original fallbacks. Original menu/PLAY frame 11 and live race HUD/rider/opponents frame 98 (1:58.30) were visually inspected; explicit owned stop at 497.922 seconds, no mismatch/fatal/error diagnostic. The 44.475-second unsuspended window and selected raw evidence are protected outside rotation. Enabled run `20261022T225307.450210Z` then completed through normal PLAY with 22,210,560 printed native completions, zero shadow comparisons, 2,786 retained-interpreter fallbacks and 15 visible hierarchy-original fallbacks. Original live HUD/rider/opponents frame 112 (1:38.55) was visually inspected; explicit owned stop at 391.594 seconds, no mismatch/fatal/error diagnostic. The 44.439-second unsuspended window recorded async-worker CPU 39.125 seconds, renderer 27.906 seconds, GPU 3D median 17.380%/maximum 25.914% and process read-transfer 270,336 bytes (not exclusively disk). Main vehicle-wait overlap was 14.235 seconds and visibility-wait overlap 4.702 seconds; latency is not exclusive producer CPU cost. Selected evidence is SHA-protected outside rotation. A separate 30-second PresentMon trace captured 57 records for the same owned PID/swapchain: presentation interval median 479.380 ms/maximum 814.772 ms, display-change median 479.172 ms/maximum 756.930 ms, GPU-busy median 99.032 ms. All recorded display intervals exceed 33.333 ms; stable 30 FPS is contradicted. Presentation metrics do not prove new simulation/image FPS or a controlled before/after gain. The CLI privilege warning concerned querying other-account/short-lived processes; this live owned PID was identified and recorded, with no lost-event/error diagnostic. After both ETW and CPU/GPU windows ended, separate 10-second main/all-thread diagnostic profiles retained archive/PDB identity checks. Full IP accounting has no sampled getenv weight; decoded dispatch/SIMD remain present, while main wait-inclusive samples spend 61.81% inside the marker wait. These suspending samples include idle/waiting threads and are not exclusive CPU percentages. Current vehicle-wait evidence guides further producer binding under issue 155; the full native rewrite and stable-30 goal remain open.
+
+## Restoring the loaded-address visibility binding
+
+[Issue 294](https://github.com/robbe1912/motorstorm-mv-recomp/issues/294) restores the existing typed operation after SPU load-address discovery changed the generated setup partition. The original code/data are unchanged. The verified entry now includes the former setup fragments and queues only the current setup/terminal blocks; removed generated symbols are no longer linked. The bounded explicit continuation whitelist, complete-state shadow, instruction bookkeeping and original fallback remain enforced. The actual previous binding rejects the new body identity before any build or launch.
+
+The current emitted five-block reference and production interpreter pass 6,240 reconstructed complete-state cases per reference/shadow/native mode, including immutable LS, queued return, instruction counts and caller FP/TLS. These reconstructed inputs do not prove an atomic live job or external DMA/IRQ behavior. Existing independent math, adapter and binding controls also pass. The diagnostic shadow candidate reached original menus, loaded bike/rider and an actual race through normal PLAY, with over eight million comparisons and no reported comparison mismatch; graphics defects remained. Captured wrapper exits at 8448 are intermediate setup fragments, not complete operations. Replay of 32 live entry inputs now checks six paths per input: reference/shadow partial entries, complete original/native/shadow exits, and the production interpreter's architecture. Full native contexts/LS and interpreter results agree. Unknown captured host FP state and atomic external activity remain outside this proof.
+
+That replay exposed an unnecessary live scratch write before the original setup in compiled shadow mode. Shadow now leaves the complete incoming live context unchanged; an authored direct-entry assertion rejects the actual previous production source and a matching write mutant. Existing full-state, fallback and observer controls remain.
+
+The corrected enabled candidate (EXE `42d42baf79f41e52569195abf453e57009f8605c26d29d113a8b11b9ee11b735`) reached the original main menu, MOHAWK bike/rider and actual race through seven normal gated inputs and one observed Sony skip. Internal completed frames 11/18/31 were inspected; the race HUD showed 00:16.26 with opponents. Its configured post-target stop occurred at 295.984 seconds without a resource breach. Native counters reached 14,218,240 completions, zero shadow comparisons and 576 original fallbacks; no visibility error was reported. Existing dark shadow rectangles and shading defects remain.
+
+Separate unsuspended CPU replay used all 32 captured inputs, 64 warmups and 128,000 operations per window, five alternating windows per mode, with the owned benchmark thread pinned consistently. Actual compiled-reference and native paths both use SIMD admission, genuine bounded returns and positive work checks; every complete output context is compared. Operation QPC brackets include dispatch/count/FP checks but exclude the common full-context restore and output comparison. Median operation time was 2.680 microseconds (2.644–2.786) for compiled reference and 1.305 (1.293–1.363) for native. Outer wall and thread CPU, source/object/input hashes and full results remain under private `temp/issue294/visibility-live/benchmark`. Concurrent host activity was uncontrolled; these are warm operation timings, not whole-job or game speedups.
+
+The enabled race diagnostic contained 230 successful API Presents over reconstructed 59.902778 seconds in its last 60 intact groups (about 3.84/s), with no suspended sampler. Unsuspended 60.07253-second thread accounting still identified substantial async SPU and renderer/FIFO CPU work. Matched end-to-end gain, scanout cadence, stable 30 FPS and graphics acceptance remain unproved; the full goal stays open.
+
+The launcher selects `--native-visibility 0|shadow|1` explicitly, overriding inherited selection. Shadow/native require the matching flagged build and exact executable hash; reference remains the default. Build with `--native-visibility` to include the operation. The two handwritten visibility units retain scoped O2 under clang-cl checked builds, with strict arithmetic and assertions preserved. This restores the containment operation; full camera/PVS replacement remains separate under issue 282.
 
 ## Build and scene bridge
 

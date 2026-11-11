@@ -74,7 +74,7 @@ def main():
         adapter = prefix.replace('@FUNCTIONS@', '\n'.join(bodies[:3] + [ops] + bodies[3:]))
         actual = build('actual', adapter)
         run(actual)
-        for mode in ['device', 'incomplete', 'removed-sentinel']:
+        for mode in ['device', 'incomplete', 'removed-sentinel','wait-failed']:
             run(actual, [mode], 'PSO GPU retirement failed', expected_exit=77)
         # Missing hold reproduces the original cache-eviction defect. A failed
         # retirement must never free the recorded command list's borrowed PSOs.
@@ -88,6 +88,8 @@ def main():
             ['device'], failure='failed retirement released recorded PSO')
         release = function(source, 'static void gpu_working_sets_release(')
         lifecycle = (FIX / 'rsx_working_sets.c.in').read_text()
+        slot=re.search(r'typedef struct \{[^}]*\} VPTexSlot;',source).group(0)
+        lifecycle=lifecycle.replace('@TEXTURE_SLOT@',slot).replace('@TEXTURE_RETENTION@',function(source,'static int texture_retention_on(void)\n{'))
         def release_unit(body, legacy=False):
             retire = ('int gpu_pso_retire(void) { ++retire_calls; return !failure_mode; }'
                       if legacy else

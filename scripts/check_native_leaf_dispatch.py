@@ -19,11 +19,20 @@ out = root / 'build/self-tests/native-leaf-dispatch'
 out.mkdir(parents=True, exist_ok=True)
 env = {k:v for k,v in os.environ.items() if not k.startswith(('SPU_','SPURS_','YDKJ_','LBP_','GH3_'))}
 
+# Link the actual option readers; an adapter invocation is forbidden in this
+# disabled-mode leaf fixture. Owned-job transitions have a separate real-runtime checker.
+channels=(spu/'spu_channels.c').read_text(encoding='utf-8')
+a=channels.index('int spu_native_owned_enabled(void)');b=channels.index('void spu_native_owned_interpret',a)
+config=out/'owned-config-boundary.c'
+config.write_text('#include "spu_native_owned.h"\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n'+channels[a:b]+
+    'void spu_native_owned_interpret(spu_context* ctx) { (void)ctx; fputs("Unexpected owned adapter in disabled-mode leaf fixture\\n",stderr); abort(); }\n',encoding='utf-8')
+(out/'owned-config-boundary.json').write_text(json.dumps({'channels_sha256':hashlib.sha256(channels.encode()).hexdigest(),'readers_sha256':hashlib.sha256(channels[a:b].encode()).hexdigest(),'scope':'Actual option readers; aborting unexercised owned adapter, no owned-mode acceptance'},indent=2),encoding='utf-8')
+
 def build(name, source, baseline=False):
     directory=out/name
     directory.mkdir(exist_ok=True)
     exe=directory/('fixture.exe' if os.name=='nt' else 'fixture')
-    command=[args.compiler, str(source), str(root/'scripts/fixtures/native_leaf_dispatch.c'), str(spu/'spu_drain.c'), str(spu/'spu_float_simd.c')]
+    command=[args.compiler, str(source), str(root/'scripts/fixtures/native_leaf_dispatch.c'), str(spu/'spu_drain.c'), str(spu/'spu_float_simd.c'),str(config)]
     if os.name=='nt':
         command+=['/nologo','/std:c17','/Gy','/Gw','/O2','/UNDEBUG','/D_CRT_SECURE_NO_WARNINGS',
                   '/I'+str(root/'vendor/ps3recomp/include'),'/I'+str(spu),'/Fo'+str(directory)+os.sep,'/Fe'+str(exe),'/link','/OPT:REF']
@@ -82,6 +91,27 @@ source=(spu/'spu_interp.c').read_text(encoding='utf-8')
 # Recover the exact pre-port public implementation, not a second model of its
 # behavior. The pinned digest prevents the reconstruction from hiding drift.
 reference=source
+# Undo only the separately verified native-call scope in the pinned reference.
+marker='\n/* Permission belongs to this invocation, never TLS; retain stats/unwind and SIMD scopes. */'
+assert reference.count(marker)==1
+reference=reference[:reference.index(marker)]
+assert reference.count(', int native_call)')==2
+reference=reference.replace(', int native_call)',')')
+assert reference.count('interp_run_until_impl(ctx, start_lsa, stop_lsa, local_budget, native_call)')==3
+reference=reference.replace('interp_run_until_impl(ctx, start_lsa, stop_lsa, local_budget, native_call)','interp_run_until_impl(ctx, start_lsa, stop_lsa, local_budget)')
+assert reference.count('spu_interp_run_until_budget_scoped_body(ctx, start_lsa, stop_lsa, local_budget, 0)')==1
+reference=reference.replace('spu_interp_run_until_budget_scoped_body(ctx, start_lsa, stop_lsa, local_budget, 0)','spu_interp_run_until_budget_scoped_body(ctx, start_lsa, stop_lsa, local_budget)')
+new_scope='owned_mode && !in_kh && !local_budget &&\n            (!stop_lsa || (native_call && ctx->host_depth>0 && stop_lsa==ctx->drain_ret_pc)) &&'
+assert reference.count(new_scope)==1
+reference=reference.replace(new_scope,'owned_mode && !in_kh && !local_budget && !stop_lsa &&',1)
+# Keep the original historical identity; remove only the separately exercised
+# default-off owned-job bridge from the reconstructed reference.
+assert reference.count('#include "spu_native_owned.h"\n')==1
+reference=reference.replace('#include "spu_native_owned.h"\n','',1)
+assert reference.count('        int owned_mode=spu_native_owned_policy(ctx);\n        int owned_rejoin=owned_mode && !in_kh && !local_budget && !stop_lsa &&\n            !g_spu_interp_budget && !_tr && !_cap && !_g1 && !s_kh &&\n            !native_instrumented && spu_native_owned_can_run(ctx,ctx->pc);\n        int _rej = owned_mode\n            ? (owned_rejoin && spu_lifted_lookup(ctx,ctx->pc))\n            : (!in_span && !in_kh && ctx->image_id >= 0 &&\n               !s_forceint && spu_lifted_lookup(ctx,ctx->pc));')==1
+reference=reference.replace('        int owned_mode=spu_native_owned_policy(ctx);\n        int owned_rejoin=owned_mode && !in_kh && !local_budget && !stop_lsa &&\n            !g_spu_interp_budget && !_tr && !_cap && !_g1 && !s_kh &&\n            !native_instrumented && spu_native_owned_can_run(ctx,ctx->pc);\n        int _rej = owned_mode\n            ? (owned_rejoin && spu_lifted_lookup(ctx,ctx->pc))\n            : (!in_span && !in_kh && ctx->image_id >= 0 &&\n               !s_forceint && spu_lifted_lookup(ctx,ctx->pc));','        int _rej = (!in_span && !in_kh && ctx->image_id >= 0 &&\n                    !s_forceint && spu_lifted_lookup(ctx, ctx->pc));',1)
+assert reference.count('        if (fn && (!spu_native_owned_policy(ctx) ||\n                   spu_native_owned_can_run(ctx,target))) {')==1
+reference=reference.replace('        if (fn && (!spu_native_owned_policy(ctx) ||\n                   spu_native_owned_can_run(ctx,target))) {',"        if (fn) {",1)
 # Undo only observer additions in this hash-pinned reference. Production retains them.
 assert reference.count('#if PS3_EXECUTION_OBSERVATION\n    switch (d.op) {\n    case SPU_br: case SPU_bra: case SPU_brsl: case SPU_brasl:\n    case SPU_brz: case SPU_brnz: case SPU_brhz: case SPU_brhnz:\n    case SPU_bi: case SPU_bisl: case SPU_bisled: case SPU_iret:\n    case SPU_biz: case SPU_binz: case SPU_bihz: case SPU_bihnz:\n        PS3_SPU_EXECUTION(PS3_SPU_INTERPRETED_CONTROL, ctx, pc, next,\n            (uint64_t)d.op, PS3_SPU_SOURCE_INSTRUCTION, 0);\n        break;\n    default: break;\n    }\n#endif\n')==1
 reference=reference.replace('#if PS3_EXECUTION_OBSERVATION\n    switch (d.op) {\n    case SPU_br: case SPU_bra: case SPU_brsl: case SPU_brasl:\n    case SPU_brz: case SPU_brnz: case SPU_brhz: case SPU_brhnz:\n    case SPU_bi: case SPU_bisl: case SPU_bisled: case SPU_iret:\n    case SPU_biz: case SPU_binz: case SPU_bihz: case SPU_bihnz:\n        PS3_SPU_EXECUTION(PS3_SPU_INTERPRETED_CONTROL, ctx, pc, next,\n            (uint64_t)d.op, PS3_SPU_SOURCE_INSTRUCTION, 0);\n        break;\n    default: break;\n    }\n#endif\n','',1)
@@ -127,6 +157,11 @@ undo('uint32_t spu_interp_run_until(spu_context* ctx, uint32_t start_lsa, uint32
      'uint32_t spu_interp_run_until(spu_context* ctx, uint32_t start_lsa, uint32_t stop_lsa)\n{')
 assert reference.count('interp_run_until_impl(ctx, start_lsa, stop_lsa, local_budget)')==3
 reference=reference.replace('interp_run_until_impl(ctx, start_lsa, stop_lsa, local_budget)','interp_run_until_impl(ctx, start_lsa, stop_lsa)')
+# Reconstruct the same hash-pinned historical source, excluding the separately
+# verified native call-boundary port. Production above retains both fixes.
+undo('            if (_rej && !(stop_lsa && ctx->pc == (stop_lsa & SPU_LS_MASK))) g_spu_trampoline_fn = spu_indirect_branch;',
+     '            if (_rej) g_spu_trampoline_fn = spu_indirect_branch;')
+undo('ctx->pc == (stop_lsa & SPU_LS_MASK)', 'ctx->pc == stop_lsa')
 assert hashlib.sha256(reference.encode('utf-8')).hexdigest()=='45115b8e51070e7be2a393edc51a2531325a2229674216fa59c54ab476ec91b2','Pre-port source identity changed; review the actual baseline'
 path=out/'pre-port.c';path.write_text(reference,encoding='utf-8')
 baseline=build('pre-port',path,baseline=True)

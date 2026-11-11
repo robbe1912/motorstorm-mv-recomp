@@ -9,6 +9,35 @@ byte-range checks. Authored PowerPC vectors cover low-word, byte and partial
 doubleword overwrites, incompatible widths and an adjacent write, alongside
 the existing dispatch cases. No game input or generated guest code is included.
 
+## Restored warm MFC engine lookup (issue 261)
+
+This selective integration restores own-fork modular `codex/mfc-context-cache`
+commit `087ab42c1d6442a16b75e12e7f04b8d97870554b` and its whitespace cleanup
+`a516a99f`. Both were already integrated into the fork's single `combined`
+branch for issue 141. The registry header and authored fixture are byte-identical
+to that cleanup commit. This preserves the curated eight inline owners and
+private overflow engines; it does not import the newer upstream registry layout.
+Owner publication uses acquire/release operations. A thread cache remembers the
+last context and engine; an acquire-read global generation rejects that pointer
+after any release, including release by another host thread and address reuse.
+Release retains the existing requirement that the affected SPU has stopped.
+Channel, queue, tag, DMA, SIMD and observer behavior are otherwise unchanged.
+
+The current native profile behind issue 261 binds repeated overflow-list lookup
+to the busy async worker. Earlier issue 141 tested the cache, but the current
+curated source lacked it; the history of that source-integration gap remains
+unresolved. The suspended profile includes waits and perturbation and cannot
+predict an exclusive CPU fraction or game speedup.
+
+`check_spu_mfc_registry.py` executes the actual registry header with authored
+engine payloads. Its 11 contracts cover concurrent claims, 32 retained owners,
+private state, 32,000 warm lookups, cross-thread release/address reuse, unrelated
+release and final cleanup. Disabling the cache preserves ownership but fails the
+warm-lock contract with 24,000 locks; the actual previous curated registry fails
+the same contract through `--historical-source`. No guest or original game data
+is included. Native race and stable-30-FPS acceptance remain unproven. This
+bounded restoration does not add newer stopped-thread range-cleanup behavior.
+
 ## Depth admission and attachment-compatible fallbacks (issue 245)
 
 PR #252 ports the depth-use predicate and allocation diagnostics from own-fork
@@ -567,7 +596,7 @@ unmodified operand. The preserved baseline fails; the candidate passes.
 Both Windows and Linux CI run this contract. No external PR was opened.
 The native menu remains malformed; this is a repaired instruction contract.
 
-### Upstream recheck — October 12, 2026
+### Upstream recheck â€” October 12, 2026
 
 Rechecked all 230 upstream PRs and 14 issues, including open and closed entries.
 Upstream master remains `5244db92669b54831c6d3ebb7a96d58c4dbfa6df`
@@ -740,7 +769,7 @@ buffer against an owned snapshot. Pointer reuse alone never establishes a hit.
 Misses hash that snapshot with the unchanged legacy FNV basis and multiplier;
 allocation failure visibly falls back to the original calculation. Buffers must
 remain stable during the call, as before; this does not make concurrent writes
-atomic. Eligible sizes are 4–256 KiB, with 32 entries and at most 4 MiB retained
+atomic. Eligible sizes are 4â€“256 KiB, with 32 entries and at most 4 MiB retained
 per thread. Windows FLS and POSIX key destructors release the snapshots.
 
 `SPU_FINGERPRINT_CACHE=1` enables the cache; the default makes no snapshot
@@ -1141,7 +1170,7 @@ owner/device spy cover the coordinator; native acceptance remains separate.
 ## Exact SPU float values and scoped SIMD
 
 This selective vendor sync ports runtime `057c56c` and `daeb1575`, preserving
-Robin Fröhlich’s authorship. The [value contract](SPU_FLOAT_VALUES.md) records
+Robin FrÃ¶hlichâ€™s authorship. The [value contract](SPU_FLOAT_VALUES.md) records
 the finite exponent255 range, exact scalar fallback, SIMD scope and authored
 checks. Original vendor test/workflow paths are omitted; curated runners
 exercise the actual helpers and keep existing interpreter assertions. Native
@@ -1262,3 +1291,464 @@ fail. The curated fixture also rejects an unavailable submission-owner call
 without inventing replacement APIs. Windows checks compile the complete
 backend translation unit against the SDK. Windows clang-cl and Linux GCC
 pass; this establishes no game speedup or stable race FPS.
+
+## Checked host byte shuffle restoration (#264)
+
+The curated baseline helper used the scalar SHUFB path when `__SSE4_1__`
+was absent, even though the hot generated SPU TU had O2 enabled. Restore only
+our existing fork's capability-checked header from modular `a373063e` and its
+portable/link/AArch64 follow-ups, combined `8d9f65fc4db12fb85daae230a5300b0adffb03d2`.
+The production `spu_shuffle.h` and authored dispatch fixture are byte-identical
+to the current fork copies; the old inline selector implementation is removed.
+Other integer/float helpers, channel semantics, ISA baseline and native scopes
+are unchanged. This does not overlay the remaining combined runtime.
+
+The supported Windows/Linux check compiles actual baseline C and C++ callers,
+checks 204096 values against an authored oracle per variant, validates host
+SIMD admission, and verifies emitted `pshufb` only in the admitted variants.
+Forced scalar checks the unsupported-host fallback implementation. The optional
+`--historical-helper` control admits the real old helper's values but rejects
+its SIMD admission. Replacing production with that actual old helper makes
+the identical CI command fail with the required checked-dispatch owner named.
+This guards restoration without a whole-program ISA increase. Windows clang-cl
+and Linux GCC pass; helper admission is not game FPS. Native verification and
+sustained race performance remain separate obligations under #155/#27.
+
+### Screen capture deferral (#257)
+
+Own-fork modular branch `codex/issue-257-screen-capture` and combined commit
+`b7c1ff3f9c80246bcae85777264e972a8f73dab9` add explicit `RSX_CAP_SCREEN_ONLY` selection. The
+curated port takes only the mode field, strict 0/1 parser, offscreen deferral
+and checked backend initialization; the fork's separate late-presented phase
+API remains outside this port. Default/raw diagnostic capture is unchanged.
+
+A due screen capture remains due across empty/offscreen batches without
+spending periodic or burst budgets. Capture indices remain monotonic, overlap
+spends both budgets once, and maximum counts/stride behavior are preserved.
+The normal menu/replay launcher explicitly selects screen mode and retains
+the setting in launch identity. No Present, GPU wait or guest write is added.
+
+The actual selector/event fixture retains raw-mode and overflow checks and
+adds fourteen screen/parser/alias/burst checks. The historical disabled-mode
+control reproduces offscreen-budget loss. The checker executes the actual
+launcher capture/identity expressions in isolation and rejects omission of
+the mode, without creating a native process. Windows full-backend syntax and
+Linux GCC checks cover composition. Native fresh-present observation remains
+a separate acceptance requirement; no race/FPS or performance gain is claimed.
+
+
+## Exact native SPU call return boundaries (#270)
+
+The bounded return-boundary correction starts on the toolkit fork:
+`c06a3da36fff2d53d049c11bf8937f3ca89ce7cd`, with compiled-return controls
+`a17a7df7`; both are integrated on the fork's `combined` branch. This selective
+port keeps the curated policy interpretation, statistics/unwind and staged-span
+rules. It publishes the emitted return before callee/dispatcher entry, restores
+the enclosing boundary after drain, distinguishes a live return to LS zero, and
+clears boundaries whose native caller has unwound. A matching explicit return
+takes precedence over ordinary compiled rejoin. Existing fork prerequisites also
+preserve the indirect target before overwriting an aliased link register and
+mask wrapped guest links; no whole runtime replacement is used.
+
+[Production checker](../scripts/check_spu_call_boundaries.py) compiles the actual
+curated runtime and actual lifter emission. Windows and Linux pass 16 call cases,
+16 real pre-change-emitter failures and 13 existing transition cases. Coverage
+includes alternate links, indirect target/link aliasing, LS-zero returns,
+registered/unregistered continuation PCs, enclosing boundaries and host FP state.
+The canonical explicit-return queue regression fails before the curated priority
+adaptation. The source audit runs the same checker on Windows and Linux.
+
+The curated baseline intentionally differs from the toolkit baseline in two
+pre-existing contracts, independently reproduced with main `8405b2a` runtime
+sources: ordinary compiled rejoin queues the dispatcher, and nested-stop retains
+STOP_BY_STOP with its existing unresolved-fallback diagnostic. The fixture
+preserves those contracts and retains stderr; this does not establish complete
+architectural stop/halt correctness.
+
+[Separate-copy updater](../scripts/update_spu_call_boundaries.py)
+converts only recognized generated call brackets, records hashes, refuses the
+source path/existing outputs/unknown brackets, and is checked against the actual
+fork emitter plus idempotency and rejection controls. Original private generated
+trees stay read-only: run it as `python <tool> <input.c> <new-local-copy.c>` before
+building from a separately prepared private SPU tree. The actual old curated
+emitter is retained separately from the fork updater-equivalence control.
+
+This port is preparation for native owned-job execution, not a measured speedup.
+Original-US normal-route native acceptance is recorded below; experimental
+owned-job admission (#269) remains outside the combined and game runtime.
+
+
+The existing [native-leaf checker](../scripts/check_native_leaf_dispatch.py)
+retains its original hash-pinned pre-port interpreter and compares 56 empty-
+registry full-state/IRQ/FP/budget records. Its historical reconstruction reverses
+only the separately covered call-boundary lines; production retains them.
+Windows and Linux pass that comparison and reject the unsafe dispatch/environment
+mutants and faulty TLS callback. This is not live owned-job IRQ/DMA acceptance.
+
+
+Fork test follow-up `5995243b` (combined `3b8602c9`) adds a real interpreted
+STOP before a live LS-zero return: the compiled caller continuation must not
+execute. Windows/Linux now pass 17 production cases, reject 17 actual historical
+emitter controls and preserve all 13 baseline transitions. This added control
+passes the port without a production change; the suspected halt/return ambiguity
+did not reproduce.
+
+
+Fork follow-up `da924142` (combined `4eedf23b`) adds actual pending-event
+interrupt delivery through the production drain/resolver, actual channel event
+acknowledgement, and production-emitted IRET. A second case calls deeper from the
+handler and returns by the real IRQ-frame longjmp, skipping the dead native
+continuation. Both compare all 128 registers and full LS after deliberate handler
+clobbers, verify cleared IRQ ownership, exact call/outer-return ownership and host
+FP state. Windows/Linux pass 19 production cases, reject 19 real historical
+emitter controls, and preserve 13 baseline transitions. These are authored CPU
+transitions, not proof of all live owned-job IRQ/DMA behavior.
+
+Original-US DX12 run `20261104T182435.860264Z`, EXE SHA256
+`f624726a70f71ee7c53bba384c3df8d86a670a53a711817a479ac365ade2b051`,
+completed all seven normal menu gates and once-only observed intro skip, reached
+real race HUD, and stopped at the configured post-target observation boundary.
+The last complete recorded 59.789187-second Present interval measured 1.88997385
+successful API Presents/s. This is not a controlled speedup or stable30; buffered
+CSV termination can lose its tail, so it is not final-process coverage. Original
+menu assets are present, with dark boxes/shading defects still visible. Exact
+EXE/PDB, private-copy generated inputs, captures, resources and qualified profile
+are retained privately outside rolling runs. No shared generated input changed.
+
+
+## Owned native job bridge (issue 269)
+
+The default-off `SPU_NATIVE_OWNED_JOBS=1` bridge selectively follows fork
+combined `f9771b5c` (modular `2b16c4e8`, IRQ correction `720a0df5`, tests
+`80039698`, reference-fixture follow-up `725745cd`). It admits existing x86-compiled job bodies through the first
+resident-code owner already identified by original-US full-span fingerprints.
+Required `SPU_PM_INTERP=1` remains enabled; policy instructions and returns use
+the curated interpreter. No Complete Edition addresses or legacy signature ABI
+are imported.
+
+The curated port preserves its existing per-instruction interrupt delivery,
+IRET restoration, kernel services, statistics and unwind paths. Its adapter
+honors exact native return boundaries and preserves genuine queued dispatch.
+Policy continuations enter that adapter before legacy SMC microsteps; the
+legacy default path is unchanged. Invalid/missing/overlapping ownership,
+active IRQ state, enabled pending events, local/global budgets and observation
+retain reference execution. The option accepts only unset/0/1.
+
+[`check_spu_native_owned.py`](../scripts/check_spu_native_owned.py) compiles the
+actual runtime and authored guest programs. Windows and Linux cover native
+jobs, interpreted policy calls, real pending/queued IRQs, real MFC GET/tag
+completion and owner retirement, full GPR/LS/status/event/FP parity, ownership,
+observation and budget controls. Windows also exercises Clang musttail. Both
+run required-PM-mode cases; disabling the bridge must fail positive native-call
+admission. The actual pre-bridge runtime is an additional historical control.
+The reference removes host ownership while retaining the policy namespace;
+all guest instructions still execute through the real interpreter adapter.
+
+Five SHA-admitted original pre-RdDec states, the unchanged generated PVS entry,
+three controlled clocks and an independent full-architectural oracle passed
+15 cases/495 original instruction positions through policy continuation 0x2AC8
+with required PM interpretation. Host registries/pointers are reconstructed;
+this is not full-job or complete external-state replay. Prior shared-error
+controls establish the independent oracle's rejection behavior.
+
+The existing native-leaf checker links actual option-reader definitions and an
+aborting unexercised owned adapter for its disabled-mode tests. Its pinned
+historical source excludes only the new bridge; the original digest and 56
+full-state/IRQ/FP/budget comparisons remain unchanged. The separate real-runtime
+owned checker exercises the actual adapter. Default call/IRQ controls also pass.
+
+The bridge-only native run `20261104T220254.756292Z` reached original menus,
+normal PLAY and an actual player/opponent/HUD race. Its exact-symbol suspended
+profile sampled 44 generated job functions, including PVS and vehicle work;
+the PVS subtree still entered the interpreter under a genuine native return,
+motivating #277. The final intact diagnostic interval groups recorded about
+1.72 successful API Presents/s. This is structural admission evidence and one
+run's API cadence, not exclusive CPU attribution, scanout or a controlled gain.
+Dark vehicle shadow boxes and shading defects remain; stable 30 FPS is unmet.
+
+
+### Native job rejoin within an actual host call (#277)
+
+Selective source: own-fork modular `fdc59c6d2f90cf2c48b297385c6f67efedbdeb6b`,
+canonical combined `882f70b09c814f76d8613bdad76e9517058ec8d1`.
+The PR276 native race profile positively reached PVS/vehicle functions, but the
+PVS subtree returned to interpretation beneath a native call with a real return
+boundary. That boundary previously disabled every nested owned-job rejoin.
+
+`spu_interp_run_native_call` uses invocation-local permission for the actual
+native frame/return; ordinary explicit-stop and budget APIs keep permission off.
+The curated statistics/unwind and SIMD wrappers remain on both paths. Existing
+required policy interpretation, IRQ/IRET handling, kernel-home exclusions,
+first-owner/fingerprint invalidation, observer denial and global ceilings stay.
+Owned-mode queued tails reaching the genuine native return stop before executing
+a compiled caller continuation. There is no mutable TLS authorization or game
+address exception.
+
+Actual production controls reproduce one rather than two native callbacks before
+the correction, and a forbidden compiled return before the tail correction.
+Windows Clang and Linux GCC pass nested owned calls/tails, arbitrary inside-body
+stops, invalid native-call frames/returns and a live native-call global ceiling,
+plus prior ownership/IRQ/DMA/observer/default controls. Clang additionally tests
+the actual musttail dispatcher. All six interpreter-related CPU checks pass on
+both platforms: owned transitions, 19 production/19 historical/13 baseline call
+cases, pinned native-leaf comparisons/mutants, execution observers, productive
+IRET and 401 thread-reporting programs. The historical reference digest remains
+unchanged; only this separately tested scope is reversed in its reconstruction.
+
+Five original saved states, each under three controlled clock values, again pass
+15 cases/495 instruction positions through policy 0x2AC8, using the unchanged PVS
+function and an independent full-register/LS/PC/status/IRQ oracle. Fresh host
+registries and uncaptured-channel failure boundaries limit that proof; it is not
+whole-job replay.
+
+Scoped candidate `e9b13d7` (native integration `e0bebeaf`) completed normal PLAY
+in run `20261104T230007.349933Z`, EXE SHA256
+`894e494e9168256b9bd2f25f573f5c4828bfc2a626e9995f054e648ec33589f2`.
+Seven screen-gated normal inputs and one observed Sony skip reached original
+menu art, the loaded bike and actual rider/opponents/HUD in presenting captures
+34 and 40. The configured 120-second post-target guard ended the run; no
+resource breach was recorded. Dark vehicle shadow boxes and shading defects
+remain. The last 60 intact FPS-log groups contained 153 successful API Presents
+over 60.063285 seconds reconstructed from rounded means (rounding bound
+0.0000765 seconds): about 2.55 API Presents/s. The buffered CSV is incomplete.
+This single run establishes neither a controlled gain nor stable 30 FPS.
+
+That run has no CPU profile. Attempt `20261105T082302.995341Z` stopped at
+the 4 GiB host physical-memory floor before the race sampler; its pre-target
+cadence cannot establish race performance. #280/PR281 adds the
+operator-requested explicit lower reserve.
+
+Run `20261105T083057.978419Z` retained the same EXE and required PM mode,
+using 1 GiB free physical/4 GiB free commit headroom. The automated normal-PLAY
+target was acknowledged in presenting frame 39; a separately inspected frame
+38 shows the player, opponents, timer, boost, lap and position. The configured
+post-target guard stopped at 448.515 seconds, with no resource breach.
+Two nonoverlapping, exact-PE/PDB-admitted suspended profiles collected
+36,608 samples/12.046 seconds and 36,564 samples/12.047 seconds. They contain
+115 and 129 generated job functions respectively. The generated module
+manifest identifies `056ac0eea1a6/e12270` as PVS and `0c12886b2f86/e2100`
+as constraints; the initial profile summary incorrectly called the latter PVS.
+Neither has a sampled constraints-to-`spu_step` subtree; the earlier
+bridge-only profile did. PVS still has interpreted subtrees: suspended
+PVS-containing/with-step weights are 6.1656/0.3791 and 5.7019/0.5125,
+versus 19.5788/14.4399 in the earlier bridge-only window. These are unmatched
+structural samples, not exclusive CPU percentages or a controlled speedup.
+They support the intended path change for observed samples, not universal
+absence of fallback. Substantial interpreter
+activity remains without a generated-job ancestor and needs active-task binding
+before choosing the next typed rewrite. Audio and visibility also remain active.
+
+The final 60 intact diagnostic groups, after both profiler windows, contain
+189 successful API Presents over 60.051947 seconds reconstructed from rounded
+means (rounding bound 0.0000945 seconds), about 3.15 API Presents/s, intervals
+178.416--637.605 ms. This is one run's API cadence, not scanout or a matched
+speedup. Graphics defects and the stable-30 goal remain open. Protected hashed
+packets retain identities, captures, guards and both profiles outside rolling
+run retention; no proprietary bytes are public.
+
+
+## SPU discovery in execution coordinates (issue 283)
+
+This selective integration comes from own-fork modular `9351f7060ade0c68b9cb31818e32f840db0f2e14`
+and canonical combined `5c99615192221edb2b04bc01e5d20da147bf978f`.
+It preserves the curated emitter, runtime, image ownership and required policy
+interpretation. No upstream PR or title-specific toolkit exception is involved.
+
+The ELF load bias now applies before decoding and discovering functions.
+Relative branches, executable-segment addresses, ELF entry and section-defined
+function symbols use the execution address space. Absolute instruction/table
+values and absolute symbols retain their encoded LS addresses; undefined symbols
+are not loaded entries. Raw/origin overrides and zero-bias behavior remain
+separate. Moving discovered bounds afterward could discard valid absolute
+continuations or bias them twice, leaving interpreted fallbacks.
+
+`check_spu_load_bias.py` uses authored ELF inputs for immediate continuations,
+relative/absolute branches, nonzero segment origins, sized/absolute/undefined
+symbols, separate data pointer tables, raw compatibility and rejected invalid
+options. Actual previous curated production successfully emits its source but
+omits the authored continuation: the retained historical RED. Three real emitted
+plain/interrupt-disable/interrupt-enable branches execute the restored native
+entry through the production dispatcher. An independent expected GPR/LS/PC/
+status/IRQ/FP state and a registry-isolated interpreter run agree. Existing
+call-boundary controls retain actual pending-IRQ/IRET coverage; this authored
+fixture does not claim live DMA/job or whole-game equivalence.
+
+Focused fork discovery controls passed Windows, Linux and macOS; owned-job and
+call-boundary workflows also passed. Two unchanged broader harness dependency
+failures remain tracked in issue 284 rather than hidden or counted as passes.
+The curated Windows emitted-code fixture passes with its real diagnostic/thread
+support sources.
+
+Private original-US regeneration retains all ten module identities, link bases,
+entries and staged fingerprints, with zero unsupported instructions reported.
+It restores 68 PVS entries (including the observed missing continuation),
+89 vehicle entries and additional entries in the other modules. Former biased
+seeds are removed; raw function counts are not a performance metric. Original
+state regression passes 15 saved-state cases and 495 instruction positions.
+These remain architectural controls with reconstructed host state, not full
+job/DMA replay.
+
+Full candidate EXE `a72249074563e2f231bdfffad2d81944969237f87f4baccabcf6c8b3dac5ac53`
+reached normal PLAY, original bike/rider selection and actual race/HUD/opponents
+in run `20261105T105047.441439Z`. It closed at the configured post-target guard
+(307.860 seconds), without a resource breach. Earlier abnormal selection and a
+one-module isolation observation remain recorded; this subsequent full-candidate
+success means that comparison alone does not establish their cause. Existing
+shadow/shading defects remain; this is not graphics acceptance.
+
+A synchronous exact-symbol probe captured 85 real xform invocation pairs across
+52 functions, with no reported changed reads, exclusions or errors. All 85
+captured architectural exits agree with reconstructed scalar/vector native
+execution and the production interpreter: GPR, full LS, PC, status, stop and
+interrupt-enable. Host pointers/registries and FP environment are reconstructed;
+this is no atomic DMA/IRQ or whole-job proof. Another 818 authored natural-prefix
+comparisons agree under a deterministic fixture clock (262 explicit exclusions).
+The game clock and original execution/completion behavior were unchanged.
+
+The final 60 intact diagnostic groups contain 180 successful API Presents over
+59.693455 reconstructed seconds (about 3.02/s). That interval overlaps suspended
+stack profiling; it is not scanout, an unprofiled benchmark or controlled gain.
+No speedup or stable 30 FPS is established. The measured async SPU thread remains
+the next CPU-workload lead; per-thread CPU and inclusive stacks do not alone prove
+exclusive frame cost or a critical dependency.
+
+## Explicit DX12 validation control
+
+Contributor [PR 290](https://github.com/robbe1912/motorstorm-mv-recomp/pull/290)
+was ported author-preservingly to fork modular
+`6ef27cc449478afb16d4fd65346782afe7ad36d7`, then canonical combined
+`cf1027f302deaa990f9630f6e66f04441bb4f482`. It permits explicit `D3D12_DBG=0`
+in either build while retaining unset defaults, assertions and normal error
+handling. The fork and curated comments describe generic policy without an
+unmeasured per-title performance claim. The actual fork backend compiled with
+and without `NDEBUG`; this establishes compilation, not validation overhead.
+The launcher records explicit validation and existing texture-profile settings
+for the residency investigation in
+[issue 291](https://github.com/robbe1912/motorstorm-mv-recomp/issues/291).
+No toolkit PR was opened. Cache/lifetime changes and native performance
+acceptance remain separate work.
+
+### Bounded DX12 texture retention (issue 291)
+
+The fork modular branch `codex/d3d12-texture-residency` ends at `6191470f`;
+its lookup, budget, fingerprint, growth and required-wait changes are combined
+in canonical `d090e2f6`. The curated port preserves its decoded DXGI field, checked void
+PSO-retirement wrapper and per-draw descriptor implementation. It does not
+replace the backend wholesale with a divergent fork snapshot.
+
+The optional cache prefers empty entries, retains reusable entries while byte
+and metadata headroom remain, then evicts unpinned least-recently-used entries.
+Its target covers actual default+upload allocation footprints; indispensable
+batch pins remain intact with explicit overage. Pins clear only after checked
+GPU retirement. Allocation/map failures remain visible and fatal. Full XXH3
+validates every uploaded top-level cube face using shared checked mip/face
+addressing; unused mip gaps are not hashed. The vendored xxHash v0.8.3 header,
+license and verified upstream blob identities are recorded in its provenance
+file. This follows the pinned Mac cache/content-hash practice without importing
+title-specific addresses or changing guest completion behavior.
+
+The bounded GPU wait rechecks its own target fence after every event wake and
+retains a monotonic six-second deadline; a stale notification cannot admit an
+unfinished submission. Actual historical wait code fails the authored stale-wake
+case. CPU lookup/budget/fingerprint checks exercise production code and reject
+four/four/three mutants, plus the actual historical lookup and sparse-hash paths.
+Full fork backend compilation passes checked and NDEBUG configurations.
+
+Authored headless tests exercise actual uploader/retirement/resource bodies with
+real RTX 3080 and WARP devices: RGBA readback, six cube faces, formerly unsampled
+and later-face mutations, blocked and stale fences, pinned overage, byte trimming,
+metadata growth preserving cached resources, and shader-visible 2D/cube SRVs.
+Production SRV writing feeds two distinct 2D textures and all six cube directions
+through a real compute shader while later uploads preserve recorded bindings.
+The final RTX 3080 run reported zero validation messages/errors. Reference cache
+and historical wait controls fail their specific contracts. Unrelated public
+entry declarations become static only in the test copy for linkage; an unused
+relocation diagnostic boundary aborts. Original game assets are not test inputs.
+
+The curated GPU trial also passes against its actual checked retirement wrapper.
+Native candidate `0198d03479a4fc3479a89d564902fc7fbed160145d92a7e72017deb37a9e5544`
+with matched PE/PDB identity completed normal screen-gated PLAY in run
+`20261105T230519.607489Z`: original menu frame 11, loaded bike/rider frame 25,
+and actual player/opponents/race HUD frame 42 were inspected as completed
+presenting backbuffers. Seven normal inputs and one observed Sony skip were
+acknowledged. An additional inspected loaded-bike reference preserves the
+existing threshold, checks, input sequence and race target; unloaded, distant
+and wrong-menu captures remain rejected. An earlier failed navigation trial is
+retained as a failure. Shadow rectangles and shading defects remain.
+
+The configured post-target guard ended the run at 419.875 seconds without a
+resource breach. Aggregate-only diagnostics admitted 299 complete texture
+records: 27,973,970 calls, 453 misses/allocation pairs, 366 stale reuploads,
+365,287 validated hits and no reported resource failures or clock errors.
+Owned default+upload footprints peaked at 255,983,616 bytes under the selected
+512 MiB target; no budget evictions or pinned overage occurred. Texture-call
+wall totals were setup 1.102 s, lookup 14.056 s, checksum 6.897 s and remainder
+2.653 s; these are not exclusive CPU/frame costs. The final report had zero
+misses and 2,437 validated hits. Lookup scanning is now a visible cost.
+
+The final 60 intact diagnostic groups contain 202 successful API Presents over
+60.260426 reconstructed seconds (about 3.352/s, interval 183.674–616.115 ms,
+mean-rounding bound 0.000101 s). No suspended sampler ran. Sequential matched
+thread counters total 253.906 CPU seconds over 60.055 seconds; thread labels
+were unavailable, so this packet does not assign named-thread critical costs.
+These are single-run diagnostics, not scanout, an alternating matched gain or
+stable 30 FPS. Native GPU phase timings and a controlled end-to-end improvement
+remain unproven; the real-GPU fixture establishes functional queue/resource
+semantics. The full performance and graphics goal remains open.
+
+The retirement follow-up `6191470f` is integrated through the same canonical
+combined branch `d090e2f6`. Mandatory resize, resource-reuse and readback callers
+now abort visibly on a failed target-fence wait. The curated backend has ten
+such callers; its checked void retirement wrapper remains unchanged. CPU
+fixtures cover failure before and after capacity submission and preserve
+recorded ownership when the wait fails, even with an otherwise completed fence.
+
+
+### Sized-symbol internal SPU entries (#304)
+
+Fork modular `c24c44f9` is integrated through canonical combined
+`54d29d2e01d10e4dcb12c40d3d9a1f266d83ab03`. Discovery previously recognized
+internal jump-table targets but then coalesced them into enclosing sized ELF
+symbols, discarding native resume entries. Sized ranges now stop at the next
+validated seed; instruction semantics and runtime admission are unchanged.
+
+The authored sized-table regression fails actual previous discovery and a
+full-symbol-overlap mutant. Actual emitted table handlers and sized immediate
+continuations execute natively with positive counts and independent full GPR,
+LS, return, status, interrupt-control and caller-FP expectations against the
+production interpreter. Existing zero/raw/load-bias/symbol/data-table contracts
+and the 19 production/19 historical/13 baseline call-boundary controls pass
+locally. Focused fork Windows/Linux checks pass; macOS was cancelled before any
+step executed, so no macOS pass is claimed. Separate inherited native-leaf
+fixture failures are not reported as passes.
+
+Private exact-original image analysis restores entries at LS 0x4080 and 0x7660
+and changes detected partitions from 154 to 910. All 64 captured complete entry
+spans match original bytes. Actual newly emitted prefixes agree with production
+interpretation on captured GPR/LS/status/events and authored caller FP. The
+0x7660 prefix stops at its genuine queued successor; 0x4080 stops visibly at
+its first uncaptured callee, excluding lazy published PC and host bookkeeping
+there. Image/LS pointers and RUNNING host-driver status are reconstructed for
+both paths; this is instruction-prefix evidence, not full runtime-startup,
+callee, IRQ/DMA, job, gameplay or speedup proof.
+
+No proprietary input or generated code is committed. A private build regenerated
+only embedded image2, preserving its original fingerprint/registration and the
+other generated images, and was tested with PR303's separate readback-safety
+baseline. Exact EXE `d15cced9ee749f5f5a2948da70afffedd2390fae6d061d414af996b3e6888c42`
+and matching PDB reached normal PLAY, original menu/bike and actual race in
+`20261106T170141.608555Z` (presenting frames 11/17/30/49; race timer advanced
+00:10.32 to 04:00.28). It ended at its configured 402.297-second post-target
+guard with no resource breach; shadow/ground/shading defects remain.
+
+A bounded exact-symbol read-only probe observed 64 native entries each at
+0x4080/0x7660, image2, no bad-context/errors/truncation/cleanup failure. This
+proves those entries execute natively, not universal fallback elimination or
+whole-job completion. The probe was detached before the unsuspended 60.0791s
+CPU window: async 47.8594 CPU-s, MP3 PPU 43.2969, policy 42.7969, renderer
+26.4688. Thread costs overlap and omit threads absent at window boundaries.
+The last 60 intact diagnostic groups through nominal second401 recorded
+329 successful API Presents over 59.857331 reconstructed seconds (5.4964/s,
+115.040-355.418ms intervals; rounding bound0.0001645s, no missing groups).
+This single trial is not scanout, matched performance evidence or stable30FPS.
+#71's intermittent freeze and #27's full performance/graphics goal remain open.

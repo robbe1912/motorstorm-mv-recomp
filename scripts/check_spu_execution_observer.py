@@ -92,10 +92,16 @@ def build_run(name,enabled,changes=None):
     assert '__attribute__((musttail)) return fn(ctx);' in tail
     assert fixture.count('/* ACTUAL_RESOLVED_TAIL */')==1
     fixture=fixture.replace('/* ACTUAL_RESOLVED_TAIL */',tail)
+    fixture='#include "spu_native_owned.h"\n'+fixture
+    config='#include "spu_native_owned.h"\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n'
+    for signature in ['int spu_native_owned_enabled(void)','int spu_native_owned_observed(void)']:
+        config+=function(contents['runtime/spu/spu_channels.c'],signature)+'\n'
+    config+='void spu_native_owned_interpret(spu_context* c){(void)c;fputs("unexpected owned adapter\\n",stderr);abort();}\n'
+    (d/'owned-config.c').write_text(config)
     (d/'fixture.c').write_text(fixture.replace('/* ACTUAL_SCOPED_BODY */',body))
     exe=d/('fixture.exe'if os.name=='nt'else'fixture')
     inputs=[str(local/'spu_interp.c'),str(toolkit/'runtime/spu/spu_float_simd.c'),
-            str(d/'observer.c'),str(d/'fixture.c')]
+            str(d/'observer.c'),str(d/'fixture.c'),str(d/'owned-config.c')]
     if msvc:
         flags=['/nologo','/std:c17','/O2','/UNDEBUG','/D_CRT_SECURE_NO_WARNINGS',
             '/DPS3_EXECUTION_OBSERVATION='+str(enabled),'/I'+str(toolkit/'include'),'/I'+str(local),

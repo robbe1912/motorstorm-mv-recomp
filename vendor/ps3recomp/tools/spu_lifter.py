@@ -844,7 +844,7 @@ class SPULifter:
             tgt = self._branch_target(insn)
             # Link register: preferred word only, other slots ZERO (real HW /
             # RPCS3 v128::from32r) -- splatting corrupts full-quadword link use.
-            link = f"{g(link_rt)} = spu_link(0x{addr + 4:X});"
+            link = f"{g(link_rt)} = spu_link(0x{(addr + 4) & 0x3FFFC:X});"
             # SELF-LOOP TRAP: `brsl rX, .` (target == this instruction) is an
             # infinite loop on real SPU (re-sets the link each pass, never
             # advances) -- a trap, NOT a call. Emitting a host call recurses
@@ -870,8 +870,10 @@ class SPULifter:
                 # callee's own tail-chains so they don't grow the caller frame)
                 # + image save/restore (adopt-on-serve cannot leak upward).
                 return (f"{link} {{ int32_t _si = (int32_t)ctx->image_id; "
+                        f"uint32_t _sr = ctx->drain_ret_pc; ctx->drain_ret_pc = 0x{addr + 4:X}; "
                         f"ctx->host_depth++; {self.prefix}spu_func_{tgt:08X}(ctx); "
-                        f"spu_drain_call(ctx, 0x{addr + 4:X}); ctx->host_depth--; spu_img_restore(ctx, _si); }}")
+                        f"spu_drain_call(ctx, 0x{addr + 4:X}); ctx->host_depth--; "
+                        f"ctx->drain_ret_pc = _sr; spu_img_restore(ctx, _si); }}")
             return f"{link} /* TODO spu: brsl unresolved target */;"
         if mn in _COND_BR:
             tgt = self._branch_target(insn)
@@ -931,11 +933,12 @@ class SPULifter:
             # Indirect call: nested dispatch bracketed like brsl (host_depth +
             # SPU_DRAIN + image save/restore) so the callee's tail-chains drain
             # here and its `bi $r0` returns via host return.
-            return (f"{g(link_rt)} = spu_link(0x{addr + 4:X}); "
-                    f"{{ int32_t _si = (int32_t)ctx->image_id; "
-                    f"{_ied}ctx->pc = {g(tgt_reg)}._u32[0]; ctx->host_depth++; "
+            return (f"{{ uint32_t _tg = {g(tgt_reg)}._u32[0]; {g(link_rt)} = spu_link(0x{(addr + 4) & 0x3FFFC:X}); "
+                    f"int32_t _si = (int32_t)ctx->image_id; "
+                    f"uint32_t _sr = ctx->drain_ret_pc; ctx->drain_ret_pc = 0x{addr + 4:X}; "
+                    f"{_ied}ctx->pc = _tg; ctx->host_depth++; "
                     f"spu_indirect_branch(ctx); spu_drain_call(ctx, 0x{addr + 4:X}); "
-                    f"ctx->host_depth--; spu_img_restore(ctx, _si); }}")
+                    f"ctx->host_depth--; ctx->drain_ret_pc = _sr; spu_img_restore(ctx, _si); }}")
         # bisled: set link, branch to RA only if an external event is pending.
         if mn in ("bisled",):
             link_rt = insn.raw & 0x7F            # rt = link; ra (last) = target
@@ -1092,7 +1095,7 @@ def main() -> None:
     p.add_argument("--header-name", default="spu_recomp.h")
     p.add_argument("--source-name", default="spu_recomp.c")
     p.add_argument("--base", type=lambda x: int(x, 0), default=0,
-                   help="Base local-store address")
+                   help="Raw input LS origin; additive ELF load bias with --auto-functions")
     p.add_argument("--offset", type=lambda x: int(x, 0), default=0)
     p.add_argument("--length", type=lambda x: int(x, 0), default=0)
     p.add_argument("--functions", metavar="FILE",
@@ -1147,20 +1150,9 @@ def main() -> None:
         from find_spu_functions import detect_functions, parse_elf, pick_text
         with open(args.auto_functions, "rb") as f:
             elf_buf = f.read()
-        funcs, (text_off, base, size) = detect_functions(elf_buf)
+        funcs, (text_off, base, size) = detect_functions(elf_buf, load_bias=args.base)
         data = elf_buf[text_off:text_off + size]
-        if args.base != 0:
-            # Base override for auto-detected images (per-base codec lifts):
-            # --base B means "module vaddr 0 lands at LS B" -- the guest
-            # branches to B+e_entry and every label, link and registration
-            # address must land at B+module_off. disassemble_spu() takes the
-            # address of data[0] (= the text segment's p_vaddr), so shift the
-            # auto-detected bounds by B and the disassembly origin by p_vaddr+B.
-            # lqa/stqa immediates stay verbatim (module absolutes): the staged
-            # bytes carry them unpatched and the interpreter serves them raw,
-            # so the lift must too.
-            funcs = [(s + args.base, e + args.base) for (s, e) in funcs]
-            base = base + args.base
+        # Discovery already uses the execution address space.
         bounds = funcs
     else:
         with open(args.input, "rb") as f:

@@ -18,6 +18,7 @@ bool cpu = true, matches = true, spy = false;
 unsigned hook = 0, real_calls = 0, entry_calls = 0;
 bool inject_masked_event=false;
 unsigned policy_reads=0;
+bool verify_live_shadow_entry=false;
 spu_native_leaf registered_leaf{};
 spu_context* real_context = nullptr;
 std::unique_ptr<spu_context> expected_entry;
@@ -106,6 +107,9 @@ SETUP_STUB(00008418) SETUP_STUB(00008448) SETUP_STUB(00008450)
 // Independent analytic box: center (10,20,30), extents (2,3,4).
 // This fixture never calls production geometry to construct its expected state.
 void game_original_visibility_box(spu_context* ctx) {
+    if (ctx==real_context && verify_live_shadow_entry)
+        require(expected_entry && !std::memcmp(ctx,expected_entry.get(),sizeof(*ctx)),
+                "Shadow original entry receives unchanged live context");
     if (ctx == real_context) ++entry_calls;
     if (spy) { unchanged(ctx); return; }
     const float corners[8][4] = {{12,23,34,1},{8,23,34,1},{12,17,34,1},{8,17,34,1},
@@ -176,6 +180,13 @@ int main(int argc, char** argv) { try {
     }
     const std::string mode = std::getenv("MS_NATIVE_VISIBILITY") ? std::getenv("MS_NATIVE_VISIBILITY") : "0";
     const std::string command = argc > 1 ? argv[1] : "all";
+    if(command=="shadow_entry_only") {
+        require(mode=="shadow","Entry preservation test uses shadow mode");
+        auto ctx=entry(5,0);real_context=ctx.get();expected_entry=std::make_unique<spu_context>(*ctx);
+        verify_live_shadow_entry=true;motorstorm_visibility_planes(ctx.get());
+        require(entry_calls==1,"Shadow runs live original entry once");
+        std::puts("PASS shadow original entry receives unchanged live context");return 0;
+    }
     if(command=="snapshot_only") {
         require(mode=="shadow","Snapshot test uses shadow mode");
         auto ctx=entry(2,2);auto reference=entry(2,2);reference->event_status|=0x400;
