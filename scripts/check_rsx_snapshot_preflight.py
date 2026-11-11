@@ -1,12 +1,17 @@
 """Exercise actual snapshot provider admission with authored CPU state and copies."""
 
+from pathlib import Path
 import hashlib
 import json
 import os
 import shutil
 import subprocess
 import time
-from pathlib import Path
+
+if os.name == "nt":
+    import ctypes
+
+    ctypes.windll.kernel32.SetErrorMode(0x0001 | 0x0002)
 
 if os.name == "nt":
     from project import build_environment
@@ -61,6 +66,17 @@ static void cpu_surface_copy(OffRT *target) {
     ++copies;
     memory[0x1007] = 0x31;
     memory[0x1008] = 0x72;
+}
+typedef size_t SIZE_T;
+#define GetCurrentProcess() NULL
+static int ReadProcessMemory(void *process, const void *source, void *destination,
+    size_t bytes, size_t *copied) {
+    (void)process;
+    const uintptr_t begin=(uintptr_t)source, base=(uintptr_t)memory;
+    if(begin<base || begin-base>sizeof(memory) || bytes>sizeof(memory)-(begin-base)) {
+        *copied=0; return 0;
+    }
+    memcpy(destination,source,bytes); *copied=bytes; return 1;
 }
 // PRODUCTION
 static void rejected(void) {

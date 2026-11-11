@@ -1828,6 +1828,26 @@ The fixture schedules known closed boundaries. The actual FIFO protocol has
 separate controls; combined game FIFO/GPU execution, guest-resource identity
 and full-query admission remain required before replacing original readbacks.
 
+### Mixed CPU and GPU snapshot ranges (#302)
+
+Own-fork modular `ba99a491` / fixture correction `ab63c108` are integrated as
+canonical `7150bdc1` / `8926e0b4` and selectively adopted here. Each requested
+range intersecting a live target retains full containment and unique-view
+checks. A batch can include independent GPU targets and mapped CPU ranges,
+including bytes flushed by normal target retirement. The renderer synchronizes
+each selected GPU target once and stages every range through checked process
+memory reads. Unreadable or short reads reject the transaction. Callers retain
+their source allocations throughout the request.
+
+The full provider passes RTX 3080 and WARP controls for nonzero mixed ranges,
+two independent GPU views, inaccessible and partially readable memory, retired
+CPU data and concurrent requests. Thirteen source mutants are rejected. The
+retirement fixture waits for producer GPU completion before releasing its
+resource, matching the backend's normal lifetime ordering. Transport, FIFO,
+ownership, preflight, scalar-profile and checked/NDEBUG backend controls pass.
+Actual game-query admission and matched gameplay timing remain verification
+requirements.
+
 ### Curated snapshot runtime integration (#302)
 
 The game overlay selects transactional transport from fork `e7a21c4c`, held-FIFO
