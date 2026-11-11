@@ -1,5 +1,14 @@
 # Vendor provenance and upstream
 
+## Spilled jump-table review correction (#259)
+
+Own-fork modular `b8e3ba93` and canonical combined `eae442fd` preserve
+one- and two-level spilled table bases while rejecting overlapping stack
+writes and incompatible store/reload widths. The curated lifter uses the same
+byte-range checks. Authored PowerPC vectors cover low-word, byte and partial
+doubleword overwrites, incompatible widths and an adjacent write, alongside
+the existing dispatch cases. No game input or generated guest code is included.
+
 ## Depth admission and attachment-compatible fallbacks (issue 245)
 
 PR #252 ports the depth-use predicate and allocation diagnostics from own-fork

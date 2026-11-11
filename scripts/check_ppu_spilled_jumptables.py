@@ -38,6 +38,8 @@ def w_add(rt, ra, rb):     return (31 << 26) | (rt << 21) | (ra << 16) | (rb << 
 def w_slwi(ra, rs, n):     return (21 << 26) | (rs << 21) | (ra << 16) | (n << 11) | (0 << 6) | ((31 - n) << 1)
 def w_bctr():              return (19 << 26) | (20 << 21) | (528 << 1)
 def w_ld(rt, ra, d):       return (58 << 26) | (rt << 21) | (ra << 16) | (d & 0xFFFC)
+def w_stw(rs, ra, d):      return (36 << 26) | (rs << 21) | (ra << 16) | (d & 0xFFFF)
+def w_stb(rs, ra, d):      return (38 << 26) | (rs << 21) | (ra << 16) | (d & 0xFFFF)
 def w_std(rs, ra, d):      return (62 << 26) | (rs << 21) | (ra << 16) | (d & 0xFFFC)
 def w_stdu(rs, ra, d):     return (62 << 26) | (rs << 21) | (ra << 16) | (d & 0xFFFC) | 1
 def w_li(rt, si):          return (14 << 26) | (rt << 21) | (si & 0xFFFF)
@@ -120,6 +122,27 @@ def main():
                     w_cmplwi(0, 3, 1), w_ld(11, 1, 0x2D0), w_slwi(9, 3, 2),
                     w_lwzx(0, 9, 11), w_add(11, 0, 11), w_mtctr(11), w_bctr()], mem),
           None)
+
+    # Every intervening write is considered by byte extent, including the low
+    # word of an eight-byte spill and byte writes at either boundary.
+    mem = {TOC + 16: table, **offset_table(table, 0x100, 0x200, 0x300)}
+    for name, store in [('low word', w_stw(0, 1, 0x2D4)),
+                        ('last byte', w_stb(0, 1, 0x2D7)),
+                        ('overlapping doubleword', w_std(0, 1, 0x2CC))]:
+        check('overwritten spill ' + name,
+              discover([w_lwz(10, 2, 16), w_std(10, 1, 0x2D0), w_li(0, 0),
+                        store, w_cmplwi(0, 3, 2), w_ld(11, 1, 0x2D0),
+                        w_slwi(9, 3, 2), w_lwzx(0, 9, 11), w_add(11, 0, 11),
+                        w_mtctr(11), w_bctr()], mem), None)
+    check('narrow store cannot define a wide reload',
+          discover([w_lwz(10, 2, 16), w_stw(10, 1, 0x2D0), w_cmplwi(0, 3, 2),
+                    w_ld(11, 1, 0x2D0), w_slwi(9, 3, 2), w_lwzx(0, 9, 11),
+                    w_add(11, 0, 11), w_mtctr(11), w_bctr()], mem), None)
+    check('adjacent store preserves spill',
+          discover([w_lwz(10, 2, 16), w_std(10, 1, 0x2D0), w_stw(0, 1, 0x2D8),
+                    w_cmplwi(0, 3, 2), w_ld(11, 1, 0x2D0), w_slwi(9, 3, 2),
+                    w_lwzx(0, 9, 11), w_add(11, 0, 11), w_mtctr(11), w_bctr()], mem),
+          [0x11100, 0x11200, 0x11300])
 
     # unchanged: the plain gcc offset idiom
     mem = {TOC + 16: table, **offset_table(table, 0x100, 0x200, 0x300)}

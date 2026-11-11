@@ -3865,12 +3865,31 @@ def discover_jump_tables(all_insns, read_u32, toc, text_lo, text_hi, func_starts
                     _slot, _src = mem_disp(a[1]), None
                     for w2 in reversed([x for x in win_cand if x.addr < w.addr]):
                         b = [x.strip() for x in w2.operands.split(',')]
-                        if w2.mnemonic in ('std', 'stw') and len(b) == 2 and '(r1)' in b[1] \
-                                and mem_disp(b[1]) == _slot:
-                            _src = (b[0], w2.addr)
+                        # A reload requires one intact, equally wide spill.
+                        # Any intersecting write is the nearest definition,
+                        # including writes beginning inside or before the slot.
+                        if b and b[0] == 'r1' and not w2.mnemonic.startswith('st'):
                             break
-                        if b and b[0] == 'r1' and w2.mnemonic not in ('std', 'stw'):
-                            break               # the frame moved: another slot
+                        if not w2.mnemonic.startswith('st'):
+                            continue
+                        if len(b) != 2:
+                            if 'r1' in b[1:]:
+                                break           # indexed stack write, extent unknown
+                            continue
+                        if '(r1)' not in b[1]:
+                            continue
+                        if w2.mnemonic.endswith('u'):
+                            break               # updating store moved the frame
+                        _width = {'stb': 1, 'sth': 2, 'stw': 4, 'std': 8,
+                                  'stfs': 4, 'stfd': 8}.get(w2.mnemonic)
+                        if _width is None:
+                            break
+                        _start = mem_disp(b[1])
+                        _reload_width = 8 if w.mnemonic == 'ld' else 4
+                        if _start < _slot + _reload_width and _slot < _start + _width:
+                            if _start == _slot and w2.mnemonic == ('std' if _reload_width == 8 else 'stw'):
+                                _src = (b[0], w2.addr)
+                            break
                     if _src is not None:
                         for w2 in reversed([x for x in win_cand if x.addr < _src[1]]):
                             b = [x.strip() for x in w2.operands.split(',')]
