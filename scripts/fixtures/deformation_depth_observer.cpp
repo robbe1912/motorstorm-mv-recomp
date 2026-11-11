@@ -22,6 +22,7 @@ unsigned lock_calls{};
 unsigned byte_reads{};
 unsigned metadata_reads{};
 unsigned snapshot_calls{};
+unsigned native_calls{};
 int snapshot_status{VM_READ_SNAPSHOT_OK};
 std::uint64_t read_base{0x7000};
 unsigned read_count{5};
@@ -147,7 +148,17 @@ extern "C" int ppu_get_registered_function(std::uint32_t address, ps3emu_ppu_fun
     return 1;
 }
 
+void motorstorm_native_deformation_depth(ppu_context* context) {
+    ++native_calls;
+    context->gpr[3] = 0xdeadbeef;
+}
+
 int main(int argc, char** argv) {
+#if defined(_WIN32)
+    _putenv_s("MS_NATIVE_DEPTH", "0");
+#else
+    setenv("MS_NATIVE_DEPTH", "0", 1);
+#endif
     if (argc > 1) snapshot_status = std::atoi(argv[1]);
     if (argc > 2 && std::strcmp(argv[2], "wide") == 0) read_base += UINT64_C(0x100000000);
     if (argc > 2 && std::strcmp(argv[2], "short") == 0) read_count = 4;
@@ -170,8 +181,10 @@ int main(int argc, char** argv) {
 
 #if defined(_WIN32)
     _putenv_s("MS_DEPTH_OBSERVER", "1");
+    if (argc > 2 && !std::strcmp(argv[2], "native")) _putenv_s("MS_NATIVE_DEPTH", "1");
 #else
     setenv("MS_DEPTH_OBSERVER", "1", 1);
+    if (argc > 2 && !std::strcmp(argv[2], "native")) setenv("MS_NATIVE_DEPTH", "1", 1);
 #endif
     deformation_depth_observer_install();
     if (!check(registrations == 0, "missing entries rejected")) return 1;
@@ -186,6 +199,17 @@ int main(int argc, char** argv) {
         !check(entries[0] == func_0029C684 && entries[1] != original_lock, "bound depth and shadow Lock")) return 1;
     deformation_depth_observer_install();
     if (!check(registrations == 1, "duplicate installation rejected")) return 1;
+    if (argc > 2 && !std::strcmp(argv[2], "native")) {
+        for (unsigned index = 0; index != 4; ++index) {
+            ppu_context context{};
+            if (index & 1) entries[0](&context);
+            else func_0029C684(&context);
+            if (!check(context.gpr[3] == 0xdeadbeef, "native entry result")) return 1;
+        }
+        if (!check(native_calls == 4 && !depth_calls && !lock_calls, "native direct/table dispatch")) return 1;
+        std::puts("PASS selected native query dispatch");
+        return 0;
+    }
 
     // Startup calls without Lock must not exhaust later nested-Lock evidence.
     for (unsigned phase = 0; phase != 2; ++phase) {

@@ -143,7 +143,50 @@ def main():
             execute([mutant], ns)
         except SystemExit:
             raise AssertionError('Rejected missing observer build after removing its admission guard')
-    print(f'PASS actual native-mode parser/build/hash/environment admission; {admitted_cases} combinations, six invalid selectors, three mutants rejected')
+        native_argument = next(n for n in body if isinstance(n, ast.Expr)
+                               and isinstance(n.value, ast.Call) and n.value.args
+                               and isinstance(n.value.args[0], ast.Constant)
+                               and n.value.args[0].value == '--native-depth')
+        native_guard = next(n for n in body if isinstance(n, ast.If)
+                            and ast.unparse(n.test) == "args.native_depth != '0'")
+        native_environment = next(n for n in body if isinstance(n, ast.Assign)
+                                  and ast.unparse(n.targets[0]) == "env['MS_NATIVE_DEPTH']")
+
+        def native_cases(candidate, setting):
+            for mode in ('0', '1'):
+                for observer in (False, True):
+                    for built in (False, True):
+                        for stale in (False, True):
+                            (native/'build_identity.json').write_text(json.dumps(dict(
+                                depth_observer=True, native_depth_query=built,
+                                sha256='stale' if stale else digest)))
+                            ns = dict(argparse=argparse, __doc__=__doc__, ROOT=sandbox,
+                                      exe=exe, hashlib=hashlib, json=json,
+                                      env={'MS_NATIVE_DEPTH': '1'})
+                            execute([init, depth_argument, native_argument], ns)
+                            argv = ['--native-depth', mode] + (['--depth-observer'] if observer else [])
+                            ns['args'] = ns['ap'].parse_args(argv)
+                            try:
+                                execute([candidate, *setting], ns)
+                                admitted = True
+                            except SystemExit as error:
+                                assert 'Native depth requires' in str(error)
+                                admitted = False
+                            assert admitted == (mode == '0' or observer and built and not stale)
+                            if admitted:
+                                assert ns['env']['MS_NATIVE_DEPTH'] == mode
+
+        native_cases(native_guard, [native_environment])
+        missing_flag = ast.parse(ast.unparse(native_guard).replace(
+            "not identity.get('native_depth_query') or ", '', 1)).body[0]
+        for candidate, setting in ((missing_flag, [native_environment]), (native_guard, [])):
+            try:
+                native_cases(candidate, setting)
+            except AssertionError:
+                pass
+            else:
+                raise AssertionError('Native depth admission mutant escaped')
+    print(f'PASS native-mode admission; {admitted_cases} existing combinations plus 16 native-query combinations, five mutants rejected')
 
 
 if __name__ == '__main__':

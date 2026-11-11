@@ -127,6 +127,31 @@ The earlier registry-only observer missed direct GetDepth calls; zero samples
 from that build leave operation presence unproven. Live numeric pairing,
 coherent-view admission and performance acceptance remain separate gates.
 
+### Experimental native GetDepth query
+
+An observer build also includes a handwritten GetDepth control path. Select
+`--depth-observer --native-depth 1` through the supported launcher. The launcher
+checks its native-query build marker and executable hash before creating the
+owned process. Mode `0` selects the original query and its observer.
+
+The native path performs manager readiness, cached or scanned surface selection,
+original virtual Lock, typed coordinate planning, transactional corner acquisition,
+point or bilinear evaluation, virtual Unlock and cache cleanup. It retains original
+TransformPoint as a dependency and completes queued PPU trampolines at retained
+call boundaries. Unavailable bulk acquisition uses the normal scalar services in
+original corner order. Invalid or failed acquisition raises a visible error with
+Lock, cache, stack and TOC cleanup. The original default-depth constant is 0.25.
+
+`scripts/check_deformation_query.py` exercises the actual adapter with authored
+objects and callbacks across sixteen caller FP environments, direct and deferred
+calls, cache paths, early returns, nonzero samples and seven rejected mutants.
+A private comparison with the pinned emitted original passes the same control,
+output and ABI cases under nearest-even host rounding and four DAZ/FTZ settings.
+The emitted original changes results under non-nearest host rounding. These
+historical differences remain recorded in the private comparison. Live native
+query execution, diverse inputs, producer lifetime and matched gameplay timing
+remain acceptance gates for issue 302 and the stable-30 goal.
+
 Owned DX12 run `20261109T094927.873395Z`, EXE `56fe9332...e909b`, reached
 race HUD frame 35 through seven acknowledged required inputs and one observed
 intro skip. The inspected HUD reads 00:28.44, LAP 0/2 and POS 12/15. Its original

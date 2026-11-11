@@ -13,6 +13,7 @@
 #include <stdexcept>
 
 void game_original_deformation_depth(ppu_context*);
+void motorstorm_native_deformation_depth(ppu_context*);
 
 namespace {
 /* Original-US lifted PPU entry identities recovered from the pinned ELF.
@@ -49,6 +50,7 @@ struct State {
     std::atomic<std::uint64_t> completed_by_lock[2]{};
     std::atomic<std::uint64_t> memory_attempts{0};
     bool enabled{};
+    bool native_query{};
 };
 
 State& state() { static State value; return value; }
@@ -265,6 +267,10 @@ void motorstorm_observe_deformation_depth(ppu_context* ctx) {
         game_original_deformation_depth(ctx);
         return;
     }
+    if (state().native_query) {
+        motorstorm_native_deformation_depth(ctx);
+        return;
+    }
     observe_depth(ctx);
 }
 
@@ -286,9 +292,14 @@ void deformation_depth_observer_install() {
     }
     value.get_depth = game_original_deformation_depth;
     value.lock = lock;
+    const char* native = std::getenv("MS_NATIVE_DEPTH");
+    if (native && std::strcmp(native, "0") && std::strcmp(native, "1"))
+        throw std::invalid_argument("MS_NATIVE_DEPTH must be 0 or 1");
+    value.native_query = native && std::strcmp(native, "1") == 0;
     /* Registration is immediately after generated registration and before
      * guest execution, satisfying the registry's quiescence contract. */
     ppu_register_function(kPixelBufferLock, observe_lock);
     value.enabled = true;
     std::fputs("[depth-observe] installed raw GetDepth/PixelBuffer::Lock observer\n", stderr);
+    if (value.native_query) std::fputs("[native-depth-query] selected native query with retained TransformPoint\n", stderr);
 }

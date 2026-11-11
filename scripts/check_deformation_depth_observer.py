@@ -96,6 +96,8 @@ def main() -> None:
         native = [line for line in transcript.splitlines() if line.startswith("[depth-native]")]
         assert len(native) == 64 and all("plan=1 bytes-match=0 sampled=1" in line and
                                          "result-match=0" in line for line in native)
+        selected = subprocess.run([str(executable), "1", "native"], capture_output=True, text=True, timeout=30)
+        assert selected.returncode == 0 and 'PASS selected native query dispatch' in selected.stdout, selected.stderr
         for mode, expected in (("coherent", "3fb5f5f600000000"), ("point", "3fb5151520000000")):
             result = subprocess.run([str(executable), "1", mode], capture_output=True, text=True, timeout=30)
             assert result.returncode == 0, result.stdout + result.stderr

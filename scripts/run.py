@@ -38,6 +38,7 @@ def main():
     ap.add_argument('--native-pcm-cubic',choices=('0','shadow','1'),default='0',help='Explicit verified PCM DSP mode; requires matching native-enabled build')
     ap.add_argument('--native-visibility',choices=('0','shadow','1'),default='0',help='Explicit verified visibility mode; requires matching native-enabled build')
     ap.add_argument('--depth-observer',action='store_true',help='Enable the bounded raw depth observer; requires a matching observer build')
+    ap.add_argument('--native-depth',choices=('0','1'),default='0',help='Experimental native depth query; requires --depth-observer and a matching native-query build')
     ap.add_argument('--d3d12-debug',choices=('default','0','1'),default='default',help='Explicit API validation selection; default preserves build policy and assertions stay enabled')
     ap.add_argument('--profile-textures',action='store_true',help='Existing aggregate DX12 texture phases and cache outcomes; adds timing overhead')
     ap.add_argument('--profile-cpu-surfaces',action='store_true',help='Existing per-request CPU surface read queue, match, copy and fence diagnostics; adds timing and logging overhead')
@@ -79,6 +80,12 @@ def main():
         identity=json.loads((ROOT/'build/native/build_identity.json').read_text())
         if not identity.get('depth_observer') or identity.get('sha256') != hashlib.sha256(exe.read_bytes()).hexdigest():
             raise SystemExit('Depth observer requires a matching --depth-observer build; no process launched')
+    if args.native_depth != '0':
+        if not args.depth_observer:
+            raise SystemExit('Native depth requires --depth-observer and a matching native-query build; no process launched')
+        identity=json.loads((ROOT/'build/native/build_identity.json').read_text())
+        if not identity.get('native_depth_query') or identity.get('sha256') != hashlib.sha256(exe.read_bytes()).hexdigest():
+            raise SystemExit('Native depth requires a matching native-query build; no process launched')
     # User-approved storage policy, before any native process or PAD replay.
     # Referenced/failed/evidence runs and the supplied profile are protected.
     from prune_runs import automatic
@@ -90,6 +97,7 @@ def main():
     env['MS_NATIVE_PCM_CUBIC']=args.native_pcm_cubic
     env['MS_NATIVE_VISIBILITY']=args.native_visibility
     env['MS_DEPTH_OBSERVER']='1' if args.depth_observer else '0'
+    env['MS_NATIVE_DEPTH']=args.native_depth
     env.pop('D3D12_DBG',None)
     env.pop('PERF',None)
     if args.d3d12_debug != 'default':env['D3D12_DBG']=args.d3d12_debug
