@@ -152,6 +152,14 @@ historical differences remain recorded in the private comparison. Live native
 query execution, diverse inputs, producer lifetime and matched gameplay timing
 remain acceptance gates for issue 302 and the stable-30 goal.
 
+The retained projection also exposes a fused-rounding dependency. A byte-verified
+144-instruction TransformPoint case wraps a cancellation result to 0.0 under the
+preserved emitted arithmetic and to the expected 1.0 using the canonical VMX
+fused helper. `scripts/check_ppu_vmx_fused.py` exercises the corrected lifter
+against an independent binary32 oracle. The correction applies to newly
+generated code. Native projection binding or private regeneration is required
+to carry it into gameplay.
+
 Owned DX12 run `20261109T094927.873395Z`, EXE `56fe9332...e909b`, reached
 race HUD frame 35 through seven acknowledged required inputs and one observed
 intro skip. The inspected HUD reads 00:28.44, LAP 0/2 and POS 12/15. Its original

@@ -63,6 +63,7 @@ jobs:
           python scripts/check_deformation_depth.py
           python scripts/check_deformation_depth_observer.py
           python scripts/check_deformation_query.py
+          python scripts/check_ppu_vmx_fused.py
       - name: CPU surface target-fence ownership
         run: python scripts/check_rsx_surface_fence.py
       - name: Coherent snapshot transport and renderer admission
@@ -382,6 +383,7 @@ jobs:
           python scripts/check_deformation_depth.py
           python scripts/check_deformation_depth_observer.py
           python scripts/check_deformation_query.py
+          python scripts/check_ppu_vmx_fused.py
       - name: CPU surface target-fence ownership
         run: python scripts/check_rsx_surface_fence.py
       - name: Coherent snapshot transport and renderer admission

@@ -1910,6 +1910,25 @@ presentation and missing requester identity. Combined in-game resource/view
 identity, coherent lifetime and native-query performance remain acceptance
 requirements.
 
+### Fused VMX projection dependency (#302)
+
+The curated lifter routes `vmaddfp` and `vnmsubfp` through the existing fork
+`runtime/ppu/ppu_vmx.h` module from `12158c45`. This preserves fused binary32
+rounding, operand encoding order, big-endian lanes, destination aliases and
+VSCR non-Java denormal handling. The module is copied exactly from canonical
+combined `3df23866`. Its focused regression was published modular `d8dfc805`
+and cherry-picked into that combined commit.
+
+The actual emitted instructions pass 2,304 authored vectors against an exact
+rational binary32 oracle under nearest-even rounding. Three mutations cover
+unfused arithmetic, the wrong addend and disabled denormal handling. Windows,
+Linux and macOS focused CI pass. The historical curated emission fails 528
+lane comparisons. A private pinned projection case wraps to 0.0 with that
+emission and to the expected 1.0 with the fused helper. Gameplay adoption of
+the corrected projection requires private regeneration or a native transform
+binding. Existing native-query runtime evidence retains its generated
+TransformPoint dependency.
+
 ### PPU lifted-function lookup prerequisite (#302)
 
 The selective PPU registry lookup carries only the public API from fork modular
