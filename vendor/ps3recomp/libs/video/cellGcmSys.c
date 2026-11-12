@@ -11,6 +11,7 @@
 #include "rsx_live_draw.h"
 #include "rsx_draw_engine.h"
 #include "cellGcmSys.h"
+#include "rsx_fifo_boundary.h"
 #include "../../runtime/platform/win32_compat.h"
 #include "../../runtime/ppu/ppu_memory.h"   /* vm_write32 (translate + byte-swap, OOB-safe) */
 #include "../../runtime/memory/vm.h"    /* VM_HLE_INJECT_BASE */
@@ -1479,6 +1480,22 @@ void cellGcm_rsx_process_fifo(void)
     AcquireSRWLockExclusive(&s_gcm_fifo_lock);
     gcm_rsx_process_fifo_unlocked();
     ReleaseSRWLockExclusive(&s_gcm_fifo_lock);
+}
+
+int cellGcm_with_fifo_boundary(CellGcmFifoBoundaryHandler handler, void *opaque)
+{
+    if (!handler) return 0;
+    int result = 0;
+    AcquireSRWLockExclusive(&s_gcm_fifo_lock);
+    if (s_gcm_context_ea || s_gcm_syscall_mode) {
+        gcm_rsx_process_fifo_unlocked();
+        u32 put = vm_read32(GCM_CONTROL_GUEST_ADDR + 0);
+        atomic_thread_fence(memory_order_acquire);
+        u32 get = vm_read32(GCM_CONTROL_GUEST_ADDR + 4);
+        if (get == put) result = handler(opaque);
+    }
+    ReleaseSRWLockExclusive(&s_gcm_fifo_lock);
+    return result;
 }
 
 static void gcm_rsx_process_fifo_unlocked(void)

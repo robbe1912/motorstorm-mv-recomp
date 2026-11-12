@@ -69,6 +69,8 @@ def main():
                    help='Bind verified PCM cubic DSP (default off; explicit runtime reference/shadow/native mode)')
     b.add_argument('--native-particle-thresholds',action=argparse.BooleanOptionalAction,default=False,
                    help='Bind the verified particle scan (default off; runtime reference/shadow/native policy remains explicit)')
+    b.add_argument('--depth-observer',action='store_true',
+                   help='Build the opt-in raw GetDepth/PixelBuffer Lock observer (default off)')
     g=sub.add_parser('generate'); g.add_argument('--stage',choices=['ppu','spu'],required=True); g.add_argument('--jobs',type=int,default=8)
     sub.add_parser('check')
     args=ap.parse_args()
@@ -123,6 +125,7 @@ def main():
                         f'-DPORT_NATIVE_VISIBILITY={"ON" if args.native_visibility else "OFF"}',
                         f'-DPORT_NATIVE_PCM_CUBIC={"ON" if args.native_pcm_cubic else "OFF"}',
                         f'-DPORT_NATIVE_PARTICLE_THRESHOLDS={"ON" if args.native_particle_thresholds else "OFF"}',
+                        f'-DPORT_DEFORMATION_DEPTH_OBSERVER={"ON" if args.depth_observer else "OFF"}',
                         f'-DPORT_TARGET_ELF={c["elf"]}'])
         logs=ROOT/'temp/builds'/datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
         logged_run(command,logs/'configure.log',env=env)
@@ -135,6 +138,8 @@ def main():
         identity['native_visibility']=args.native_visibility
         identity['native_pcm_cubic']=args.native_pcm_cubic
         identity['native_particle_thresholds']=args.native_particle_thresholds
+        identity['depth_observer']=args.depth_observer
+        identity['native_depth_query']=args.depth_observer
         identity['renderer_optimization']=json.loads((binary/'renderer-optimization.json').read_text())
         if identity['renderer_optimization']['enabled'] != args.optimize_renderer:
             raise SystemExit('Renderer build configuration did not match the requested mode')
@@ -142,7 +147,7 @@ def main():
         if args.native_particle_thresholds:
             identity['native_particle_binding']=json.loads((binary/'native-particle-input/identity.json').read_text())
             identity['native_particle_binding_generator_sha256']=hashlib.sha256((ROOT/'scripts/native_particle_binding.py').read_bytes()).hexdigest()
-        if args.native_world_transforms or args.native_job_wait or args.native_visibility or args.native_pcm_cubic:
+        if args.native_world_transforms or args.native_job_wait or args.native_visibility or args.native_pcm_cubic or args.depth_observer:
             identity['native_world_binding']=json.loads((binary/'native-world-binding.json').read_text())
             identity['native_world_sources_sha256']={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in sorted((ROOT/'src/motorstorm').glob('*')) if p.is_file()}

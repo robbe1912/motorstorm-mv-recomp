@@ -89,6 +89,10 @@ Use matches and copies to distinguish stale page dispatches from required GPU
 synchronization before changing ownership or waits. Per-request timing and log
 I/O perturb execution; keep these captures separate from performance comparisons.
 The option changes no readback, completion, error or deadline behavior.
+It also records up to 64 snapshot admission observations from the renderer
+owner, including current primitive/draw state, requested ranges and candidate
+surface extents/generations. Sequence IDs join these records to returned
+statuses. A cap is explicit. These observations perturb diagnostic timing.
 
 ## Input and proof
 
@@ -108,6 +112,11 @@ error preserves the existing command and removes the pending file. The actual-se
 regression in `scripts/check_menu_replay.py` covers transient/permanent sharing,
 revocation during the delay, and a real Windows handle without delete sharing.
 This does not explain the separate historical replay-ownership failure.
+
+Replay binds required and optional sends to the frame whose complete gate set
+passed. A newer completed presenting frame before selection or PAD_FILE replacement
+requires fresh gate validation. The regression changes a secondary condition while
+preserving the caption and checks that neither route writes a command.
 
 Continuation profiles must include screen-gated intro skips in `optional_actions`.
 Each uses the same observed reference/ROI/label/button/polls as a required step,

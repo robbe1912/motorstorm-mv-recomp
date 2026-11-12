@@ -1,5 +1,6 @@
 """Game-free regressions for the formerly human/timed menu reproduction loop."""
 import json
+import itertools
 import os
 import struct
 import tempfile
@@ -43,6 +44,55 @@ class PadSendTests(unittest.TestCase):
         (frame.parent / 'manifest.txt').write_text('capture_index=1 capture_reason=1 presenting=1')
         return frame
 
+    def test_replay_does_not_send_on_a_frame_with_unchecked_secondary_conditions(self):
+        for optional in (False, True):
+            for advance in ('before selection', 'before write'):
+                with self.subTest(optional=optional, advance=advance), tempfile.TemporaryDirectory() as d, \
+                     patch('native_pad.psutil.Process') as factory:
+                    root = Path(d).resolve()
+                    checked = self.fixture(root, factory.return_value)
+                    pixels = bytearray(checked.read_bytes())
+                    offset = 54 + ((40 - 25 - 1) * 80 + 55) * 3
+                    pixels[offset:offset + 3] = b'\xff\xff\xff'
+                    checked.write_bytes(pixels)
+                    changed = root / 'rsx/frame_01/backbuffer.bmp'
+                    changed.parent.mkdir()
+                    synthetic_bmp(changed, 10)
+                    (changed.parent / 'manifest.txt').write_text('capture_index=2 presenting=1')
+                    target = root / 'target.bmp'
+                    synthetic_bmp(target, 45)
+                    launch = json.loads((root / 'launch.json').read_text())
+                    launch['elf_sha256'] = 'authored identity'
+                    (root / 'launch.json').write_text(json.dumps(launch))
+                    state = dict(reference=str(checked), roi=[0, 0, 40, 40], label='authored caption',
+                                 mask=0x4000, polls=4, checks=[dict(reference=str(checked),
+                                 roi=[40, 20, 40, 20], mode='pixels')])
+                    self.assertTrue(matches(checked, state))
+                    self.assertFalse(matches(changed, state))
+                    finish = dict(reference=str(target), roi=[0, 0, 80, 40], label='authored target')
+                    profile = dict(schema=1, elf_sha256='authored identity',
+                                   steps=[dict(finish, mask=0x4000, polls=4)] if optional else [state],
+                                   target=finish, optional_actions=[dict(state, after_step=0)] if optional else [])
+                    path = root / 'route.json'
+                    path.write_text(json.dumps(profile))
+                    replace = os.replace
+                    def acknowledge(source, destination):
+                        replace(source, destination)
+                        (root / 'native.log').write_text('[cellPad] PAD_FILE press 0x4000\n')
+                    clock = itertools.count(0, .1)
+                    frames = itertools.chain([checked] if advance == 'before write' else [],
+                                             itertools.repeat(changed))
+                    with patch('menu_replay.latest_frame', return_value=checked), \
+                         patch('native_pad.latest_frame', side_effect=lambda _: next(frames)), \
+                         patch('native_pad.os.replace', side_effect=acknowledge), \
+                         patch('menu_replay.time.monotonic', side_effect=lambda: next(clock)), \
+                         patch('menu_replay.time.sleep'):
+                        with self.assertRaises(TimeoutError):
+                            replay(root, path, timeout=1)
+                    self.assertEqual((root / 'pad.txt').read_text(), '0\n')
+                    self.assertFalse((root / 'navigation.jsonl').exists())
+                    self.assertEqual(list(root.glob('pad-*.pending')), [])
+
     def test_offscreen_capture_cannot_replace_presented_screen(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
@@ -84,7 +134,8 @@ class PadSendTests(unittest.TestCase):
                     (root / 'native.log').write_text('[cellPad] PAD_FILE press 0x4000\n')
                 with patch('native_pad.os.replace', side_effect=sharing), patch('native_pad.time.sleep'):
                     def send():
-                        return native_pad.send(root, frame, [0, 0, 80, 40], 0x4000, 8, 'authored sharing probe')
+                        return native_pad.send(root, frame, [0, 0, 80, 40], 0x4000, 8,
+                                               'authored sharing probe', expected_frame=frame)
                     if case == 'transient':
                         event = send()
                         self.assertTrue(event['acknowledged'])

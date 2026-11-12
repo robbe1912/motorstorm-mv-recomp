@@ -13,6 +13,32 @@ extern volatile unsigned char vm_read_sync_pages[1u << 20];
 void vm_read_sync_set_handler(vm_read_sync_handler handler, void *opaque);
 int vm_read_sync_mark_range(uint32_t address, uint64_t bytes);
 void vm_read_sync_dispatch(uint32_t address, uint32_t bytes);
+
+/* Small immutable native views. The provider must establish device visibility
+ * before filling the staging buffer. No installed provider means unavailable;
+ * this API never substitutes an unsynchronized guest-memory read.
+ *
+ * Installation/removal requires quiescent callers, as does handler lifetime.
+ * Callers keep guest source allocations alive and own the range descriptors
+ * and destination throughout the call.
+ * Destination writes are transactional, including provider rejection/failure.
+ */
+#define VM_READ_SNAPSHOT_MAX_RANGES 16u
+#define VM_READ_SNAPSHOT_MAX_BYTES 4096u
+typedef struct VmReadSnapshotRange {
+    uint32_t address, bytes, output_offset;
+} VmReadSnapshotRange;
+enum {
+    VM_READ_SNAPSHOT_FAILED = -2,
+    VM_READ_SNAPSHOT_INVALID = -1,
+    VM_READ_SNAPSHOT_UNAVAILABLE = 0,
+    VM_READ_SNAPSHOT_OK = 1
+};
+typedef int (*vm_read_snapshot_handler)(const VmReadSnapshotRange *ranges,
+    uint32_t count, void *staging, uint32_t output_bytes, void *opaque);
+void vm_read_snapshot_set_handler(vm_read_snapshot_handler handler, void *opaque);
+int vm_read_snapshot(const VmReadSnapshotRange *ranges, uint32_t count,
+    void *destination, uint32_t output_bytes);
 static inline unsigned char vm_read_sync_page(unsigned index) {
 #if defined(_MSC_VER) && !defined(__clang__)
     return (unsigned char)_InterlockedCompareExchange8((volatile char *)&vm_read_sync_pages[index],0,0);

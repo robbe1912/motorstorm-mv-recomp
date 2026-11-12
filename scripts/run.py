@@ -9,6 +9,17 @@ from native_resource_guard import commit_reserve, physical_reserve, limits, firs
 class Memory(ctypes.Structure):
     _fields_=[('length',ctypes.c_ulong),('load',ctypes.c_ulong)]+[(x,ctypes.c_ulonglong) for x in ('total_phys','available_phys','total_commit','available_commit','total_virtual','available_virtual','available_extended')]
 
+def require_worktree_private_replay(profile_path, profile):
+    """Reject replay inputs which would borrow another worktree's captures."""
+    private_root=(ROOT/'temp').resolve()
+    def require_private(path, label):
+        try: Path(path).resolve().relative_to(private_root)
+        except ValueError: raise SystemExit(f'{label} escapes this worktree temp directory; no process launched')
+    require_private(profile_path, 'Menu replay profile')
+    for step in profile['steps']: require_private(step['reference'], 'Menu replay reference')
+    target=profile['target']; require_private(target['reference'], 'Menu replay target reference')
+    for check in target.get('checks',[]): require_private(check['reference'], 'Menu replay target check reference')
+
 def main():
     ap=argparse.ArgumentParser(description=__doc__); ap.add_argument('--seconds',type=int,default=600)
     capture=ap.add_mutually_exclusive_group()
@@ -26,6 +37,8 @@ def main():
     ap.add_argument('--menu-replay',type=Path,help='Private observed-screen profile; normal PAD_FILE input, not a scene jump')
     ap.add_argument('--native-pcm-cubic',choices=('0','shadow','1'),default='0',help='Explicit verified PCM DSP mode; requires matching native-enabled build')
     ap.add_argument('--native-visibility',choices=('0','shadow','1'),default='0',help='Explicit verified visibility mode; requires matching native-enabled build')
+    ap.add_argument('--depth-observer',action='store_true',help='Enable the bounded raw depth observer; requires a matching observer build')
+    ap.add_argument('--native-depth',choices=('0','1'),default='0',help='Experimental native depth query; requires --depth-observer and a matching native-query build')
     ap.add_argument('--d3d12-debug',choices=('default','0','1'),default='default',help='Explicit API validation selection; default preserves build policy and assertions stay enabled')
     ap.add_argument('--profile-textures',action='store_true',help='Existing aggregate DX12 texture phases and cache outcomes; adds timing overhead')
     ap.add_argument('--profile-cpu-surfaces',action='store_true',help='Existing per-request CPU surface read queue, match, copy and fence diagnostics; adds timing and logging overhead')
@@ -46,6 +59,7 @@ def main():
     if args.menu_replay:
         from menu_replay import load_profile
         replay_profile=load_profile(args.menu_replay)  # Reject blind routes before process creation.
+        require_worktree_private_replay(args.menu_replay, replay_profile)
     if not 1<=args.seconds<=600: raise SystemExit('Bounded run must be 1..600 seconds')
     if not 1<=args.replay_observe_seconds<=600: raise SystemExit('Replay observation must be 1..600 seconds')
     if args.replay_observe_seconds!=5 and not args.menu_replay: raise SystemExit('Replay observation requires --menu-replay')
@@ -62,6 +76,16 @@ def main():
             identity=json.loads((ROOT/'build/native/build_identity.json').read_text())
             if not identity.get(flag) or identity.get('sha256') != hashlib.sha256(exe.read_bytes()).hexdigest():
                 raise SystemExit(f'{description} mode requires a matching --{flag.replace("_","-")} build; no process launched')
+    if args.depth_observer:
+        identity=json.loads((ROOT/'build/native/build_identity.json').read_text())
+        if not identity.get('depth_observer') or identity.get('sha256') != hashlib.sha256(exe.read_bytes()).hexdigest():
+            raise SystemExit('Depth observer requires a matching --depth-observer build; no process launched')
+    if args.native_depth != '0':
+        if not args.depth_observer:
+            raise SystemExit('Native depth requires --depth-observer and a matching native-query build; no process launched')
+        identity=json.loads((ROOT/'build/native/build_identity.json').read_text())
+        if not identity.get('native_depth_query') or identity.get('sha256') != hashlib.sha256(exe.read_bytes()).hexdigest():
+            raise SystemExit('Native depth requires a matching native-query build; no process launched')
     # User-approved storage policy, before any native process or PAD replay.
     # Referenced/failed/evidence runs and the supplied profile are protected.
     from prune_runs import automatic
@@ -72,6 +96,8 @@ def main():
     env=dict(os.environ)
     env['MS_NATIVE_PCM_CUBIC']=args.native_pcm_cubic
     env['MS_NATIVE_VISIBILITY']=args.native_visibility
+    env['MS_DEPTH_OBSERVER']='1' if args.depth_observer else '0'
+    env['MS_NATIVE_DEPTH']=args.native_depth
     env.pop('D3D12_DBG',None)
     env.pop('PERF',None)
     if args.d3d12_debug != 'default':env['D3D12_DBG']=args.d3d12_debug
@@ -132,7 +158,7 @@ def main():
     record['profile_textures']=args.profile_textures
     record['d3d12_debug']=args.d3d12_debug
     record['replay_observe_seconds']=args.replay_observe_seconds
-    record['environment'].update({k:v for k,v in env.items() if k in ('PERF','D3D12_DBG','RSX_TEXTURE_RETENTION','RSX_TEXTURE_CACHE_MIB','RSX_CPU_SURFACE_PROFILE') or k.startswith('MS_NATIVE_')})
+    record['environment'].update({k:v for k,v in env.items() if k in ('PERF','D3D12_DBG','RSX_TEXTURE_RETENTION','RSX_TEXTURE_CACHE_MIB','RSX_CPU_SURFACE_PROFILE','MS_DEPTH_OBSERVER') or k.startswith('MS_NATIVE_')})
     record['environment'].update({k:env[k] for k in ('SPU_TASK_LIFECYCLE_TRACE','SPU_TASK_LIFECYCLE_IMAGE') if k in env})
     (out/'launch.json').write_text(json.dumps(record,indent=2)); print('Owned native PID',p.pid,'output',out,flush=True)
     window_ready=False

@@ -1762,3 +1762,190 @@ The last 60 intact diagnostic groups through nominal second401 recorded
 115.040-355.418ms intervals; rounding bound0.0001645s, no missing groups).
 This single trial is not scanout, matched performance evidence or stable30FPS.
 #71's intermittent freeze and #27's full performance/graphics goal remain open.
+## CPU-surface target fence prerequisite (#302)
+
+The curated readback wait selectively carries fork modular
+`49ac5d3f802c772e64313e7f5b448720d6d9bbef`, through canonical combined
+`f77c7508b63e98850a9ac2aba3f4e1a31d0eb16b`. Its previous function was checked
+against the preserved fork source before replacement. Other surface-copy,
+request, generation and retirement logic is retained. A stale event wake is
+rechecked against the actual target; failure, device removal, sentinel and
+counter overflow remain visible errors under the existing 30-second bound.
+
+Actual function-body CPU tests cover nine outcomes and reject single-wake,
+omitted-sentinel and refreshed-deadline mutants. The authored headless GPU
+fixture uses real RTX 3080 queue/fence/event objects with validation enabled;
+the corrected wait and repeated reuse pass with zero validation messages, while
+the actual historical body returns before its target and fails the assertion.
+Whole backend checked and NDEBUG compilation also pass. These are protocol
+controls, not a game speedup or a complete CPU-surface pixel/coherence proof.
+
+Transactional snapshot transport and a held FIFO boundary callback are adopted
+in the curated integration below, following CPU and GPU validation. The separate
+inherited native-leaf workflow still fails linking its
+unchanged fixture dependencies; this is tracked by #284 and is not reported as
+a passing regression suite. The full native query remains draft PR303.
+
+### Snapshot ownership and pending-work admission (#302)
+
+Own-fork modular `codex/rsx-snapshot-admission` commit `e05383b0` and canonical
+combined `d9ff5563` tighten the existing snapshot provider before game adoption.
+The ownership helper rejects every intersecting second surface, including one
+that overlaps only part of a requested range. Adjacent nonoverlapping surfaces
+remain admissible. The provider returns unavailable while renderer state is
+missing, a primitive is open or CPU draw records await normal submission.
+Existing recorded-write failures remain visible.
+
+Both historical production bodies fail their new authored controls. Ownership
+checks reject five source mutants. The actual provider-body preflight checks
+reject three more while preserving destination bytes and copy counts on
+unavailable results. Transport, held-FIFO and target-fence CPU controls also
+pass. Complete fork backend compilation passes checked and NDEBUG modes on
+Windows. Focused modular and combined workflows pass on Windows, Linux and macOS.
+These establish CPU protocol and compilation gates. The GPU checks below extend
+this evidence.
+The original query remains the reference for the curated integration below.
+
+### Snapshot GPU producer validation (#302)
+
+Own-fork modular `a7397e95` on `codex/rsx-snapshot-gpu-validation` and canonical
+combined `b4d031b6` add `tools/test_rsx_snapshot_gpu.py`. The headless fixture
+compiles the complete production CPU-surface service, snapshot transport and
+packing code against an authored D3D12 producer and renderer-owner thread.
+Nonzero GPU writes exercise dirty copy/clean reuse, a blocked queue with a stale
+event, pitch padding, partial aliases, renderer admission, target resize and
+retirement. Four readers issue 128 concurrent requests. Four further requests
+queued before dirty-target retirement return unavailable with intact outputs;
+previously returned snapshot bytes remain intact after retirement.
+
+Hardware RTX 3080 and D3D12 WARP runs pass with zero validation messages.
+Recorded-write errors, forced device removal and unsupported formats remain
+visible failures. Three real-source mutants lose dirty copy, clean-generation
+tracking or the correct byte channel and fail the result oracle. Windows CI
+runs WARP; Linux and macOS retain the CPU protocol controls.
+
+The fixture schedules known closed boundaries. The actual FIFO protocol has
+separate controls; combined game FIFO/GPU execution, guest-resource identity
+and full-query admission remain required before replacing original readbacks.
+
+### Mixed CPU and GPU snapshot ranges (#302)
+
+Own-fork modular `ba99a491` / fixture correction `ab63c108` are integrated as
+canonical `7150bdc1` / `8926e0b4` and selectively adopted here. Each requested
+range intersecting a live target retains full containment and unique-view
+checks. A batch can include independent GPU targets and mapped CPU ranges,
+including bytes flushed by normal target retirement. The renderer synchronizes
+each selected GPU target once and stages every range through checked process
+memory reads. Unreadable or short reads reject the transaction. Callers retain
+their source allocations throughout the request.
+
+The full provider passes RTX 3080 and WARP controls for nonzero mixed ranges,
+two independent GPU views, inaccessible and partially readable memory, retired
+CPU data and concurrent requests. Thirteen source mutants are rejected. The
+retirement fixture waits for producer GPU completion before releasing its
+resource, matching the backend's normal lifetime ordering. Transport, FIFO,
+ownership, preflight, scalar-profile and checked/NDEBUG backend controls pass.
+Actual game-query admission and matched gameplay timing remain verification
+requirements.
+
+### Curated snapshot runtime integration (#302)
+
+The game overlay selects transactional transport from fork `e7a21c4c`, held-FIFO
+publication from `5a74c6df`, provider `711006ab` / combined `958c0804`, and the
+admission corrections above. Its reviewed reference is canonical `b4d031b6`.
+Renderer initialization installs the provider. Snapshot requests enter the
+renderer queue and run under the held FIFO callback after normal draining,
+with open-primitive, queued-draw and alias admission checks. Dirty copies retain
+the checked GPU fence and original layout conversion. Shutdown rejects pending
+requests with intact caller destinations.
+
+Curated checks compile the vendored transport, FIFO function, ownership helper
+and full provider against authored fixtures. Hardware RTX 3080 and WARP pass
+the nonzero producer, concurrency, retirement and error cases above with zero
+validation messages. Existing scalar-read and request-profile controls cover
+normal completed-batch service alongside the new queue protocol. Linux and
+Windows CI run CPU controls, and Windows also runs WARP.
+
+GetDepth continues through its retained original implementation. A game caller
+still needs authenticated allocation/view identity, the actual combined FIFO
+and GPU chronology, original/native parity and normal-PLAY timing before using
+this provider to replace its scalar reads. Stable 30 FPS and graphics acceptance
+remain separate requirements.
+
+### Snapshot admission observations (#302)
+
+Own-fork modular `677a5ee8` plus fixture correction `0682b7d8`, assembled in
+canonical combined `8f40d59f` plus `2c06f067`, add bounded observations under
+the existing default-off `RSX_CPU_SURFACE_PROFILE` selection. The renderer
+owner records primitive/draw state, actual requested ranges and candidate
+pitch-backed extents/generations immediately before admission. Sequence IDs
+join at most 64 observations to returned statuses, with an explicit cap.
+Admission, copies, synchronization, errors and caller destinations retain
+their existing behavior.
+
+The actual provider fixture verifies default-off silence, exact metadata,
+paired statuses, missing/open/pending-draw states and the cap. Three further
+source mutants lose the trace, corrupt pitch or repeat the cap while retaining
+original output correctness. Hardware and WARP controls retain the three
+existing GPU-data mutants. Scalar-profile fixtures declare the new dependency
+explicitly. These diagnostic observations still require actual game evidence
+before selecting an ownership or publication correction.
+
+### Snapshot submission of completed records (#302)
+
+Own-fork modular `42ef095f` plus declaration correction `1d7baade`, assembled
+in canonical combined `8e0eafcf` plus `316f6ec6`, submit completed CPU draw
+records through the existing nonpresenting capacity path at a closed held-FIFO
+boundary. The curated backend retains its checked pre/post-submission GPU
+retirement. An open primitive retains its pending records until closure.
+Snapshot requests also record their actual client thread identity.
+
+The GPU fixture compiles the actual submission and retirement helpers with
+authored render ports that produce real nonzero D3D12 data. It verifies one
+completed batch, restored presentation state, open-primitive admission, and
+snapshot queue preservation during completed-batch scalar service. Hardware
+and WARP retain zero validation messages and reject ten source mutants,
+including omitted submission, submission during an open primitive, accidental
+presentation and missing requester identity. Combined in-game resource/view
+identity, coherent lifetime and native-query performance remain acceptance
+requirements.
+
+### Fused VMX projection dependency (#302)
+
+The curated lifter routes `vmaddfp` and `vnmsubfp` through the existing fork
+`runtime/ppu/ppu_vmx.h` module from `12158c45`. This preserves fused binary32
+rounding, operand encoding order, big-endian lanes, destination aliases and
+VSCR non-Java denormal handling. The module is copied exactly from canonical
+combined `3df23866`. Its focused regression was published modular `d8dfc805`
+and cherry-picked into that combined commit.
+
+The actual emitted instructions pass 2,304 authored vectors against an exact
+rational binary32 oracle under nearest-even rounding. Three mutations cover
+unfused arithmetic, the wrong addend and disabled denormal handling. Windows,
+Linux and macOS focused CI pass. The historical curated emission fails 528
+lane comparisons. A private pinned projection case wraps to 0.0 with that
+emission and to the expected 1.0 with the fused helper. Gameplay adoption of
+the corrected projection requires private regeneration or a native transform
+binding. Existing native-query runtime evidence retains its generated
+TransformPoint dependency.
+
+### PPU lifted-function lookup prerequisite (#302)
+
+The selective PPU registry lookup carries only the public API from fork modular
+`b69ce0cc` plus `a090402f`, assembled in canonical combined `e44c7d58` plus
+`f38287ad`: public
+`ps3emu/ppu_function_registry.h`, the matching registry query, and its type
+alias. It deliberately leaves the generated function table and all existing
+dispatch behavior unchanged. The API declares the existing quiescent registry
+replacement operation and obtains the exact registered lifted entry before a
+caller replaces it; lookup returns zero for a missing address or null output,
+and preserves the caller's output on a failed lookup. Installation and lookup
+are explicitly quiescent-only with respect to guest dispatch.
+
+This is a generic prerequisite for an opt-in exact-fallback shadow observer;
+no native query replacement, view provider, synchronization bypass, gameplay
+run, or performance claim is part of this overlay. The fork's POSIX
+dispatch-depth fixture covers lookup, replacement and failure semantics. On
+the Windows integration host, the real vendored PPU loader compiled as x64
+clang-cl with a generated smoke header; the POSIX/ucontext fixture was not
+runnable locally.
