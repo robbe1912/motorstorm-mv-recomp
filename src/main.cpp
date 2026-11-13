@@ -96,6 +96,9 @@ uint64_t ppu_guest_call(uint32_t, uint64_t, uint64_t, uint64_t, uint64_t,
 void     cellGcmTickVBlank(void);
 void     cellGcmTickFlip(void);
 int      cellGcm_take_flip_pending_synced(void);
+void     cellGcm_flip_lat_present(int phase);
+void     cellGcm_flip_lat_iteration(unsigned long long ns);
+int      cellGcm_flip_lat_enabled(void);
 void     cellGcm_rsx_process_fifo(void);      /* drain get -> put */
 unsigned cellGcm_flip_request_count(void);
 /* A guest thread whose fence wait found the FIFO dry sets this; waiting on it
@@ -201,6 +204,7 @@ static int frame_clock_iteration(int rsx_ok)
      * flipping). */
     if (cellGcm_take_flip_pending_synced()) {
         present_guest_frame();
+        cellGcm_flip_lat_present(1);   /* FLIP_LAT=1 diagnostic only */
         return 1;
     }
     /* Boot fallback: before the first flip, present freely so the window is
@@ -271,6 +275,12 @@ static DWORD WINAPI frame_clock(LPVOID)
             }
         }
         if (!frame_clock_iteration(rsx_ok)) rsx_ok = 0;
+        /* FLIP_LAT=1: how long beats queue behind one iteration. */
+        if (cellGcm_flip_lat_enabled()) {
+            LARGE_INTEGER done;
+            QueryPerformanceCounter(&done);
+            cellGcm_flip_lat_iteration((unsigned long long)((done.QuadPart - (LONGLONG)now) * 1000000000.0 / qpf_li.QuadPart));
+        }
     }
 #else
     /* POSIX: no waitable-timer API; plain sleeps are already fine-grained.

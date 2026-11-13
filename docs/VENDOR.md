@@ -1,5 +1,36 @@
 # Vendor provenance and upstream
 
+## Prompt flip completion and latency state (#155)
+
+The opt-in GCM completion, FIFO hold and latency diagnostics are reconciled
+with current main directly on PR #316 following the maintainer's direction.
+Both completion switches and `FLIP_LAT` remain off by default. The SPURS
+publication wake-up selectively imports own-fork PR #4, combined merge
+`367c7e87b269ee7ae347a646ca2186d51dfa47c6`. Its selector cache is worker-local.
+
+A blocking state lock serializes wait generations, frame stamps, completion
+publication and delivery claims. Each completion stores a generation-tagged
+payload beside the notification bit, and resetting a wait invalidates older work. Status/frame flags use
+C11 atomics for their other cross-thread accesses. Guest callbacks execute
+after releasing the state lock. A returning or timed-out waiter can complete
+only its captured generation. The Win32 completion event and timestamp
+frequency initialize through `InitOnceExecuteOnce`.
+
+Latency timestamps and aggregates use an independent blocking lock. Reporting
+copies and resets one coherent window, then prints after unlocking. The
+frame-clock diagnostic timestamp is sampled only when diagnostics are enabled.
+
+The authored fixture compiles the actual GCM implementation on Windows and
+POSIX, using reserved virtual memory with authored control/ring contents. It
+covers four switch combinations, diagnostics off, FIFO holds, vblank bounds,
+beat fallback, a real producer and blocked Win32 waiter, replacement waits,
+128 cross-thread queued-generation replacements and concurrent diagnostic
+reporting. Eighteen compiled mutants must fail on both hosts. Windows adds a
+nineteenth control removing the publication doorbell. The queued-generation
+regression fails on the original PR in take/both modes. No guest bytes or
+generated guest code are included. Corrected native gameplay, visuals and
+matched frame-time performance remain unverified.
+
 ## Texture mip chains (#97)
 
 Curated change to `libs/video/rsx_d3d12_backend.c` and
