@@ -269,6 +269,15 @@ int main(int argc, char **argv) {
   if (fp_mode & 8)
     csr |= 0x8000;
   _mm_setcsr(csr);
+  if (argc >= 4 && std::string(argv[3]) == "capture-cap") {
+    for (unsigned index = 0; index != 80; ++index) {
+      auto context = setup();
+      const auto before = context;
+      run_query(&context);
+      completed(context, before, false);
+    }
+    return 0;
+  }
   for (unsigned point = 0; point != 2; ++point) {
     for (unsigned fallback = 0; fallback != 2; ++fallback) {
       for (unsigned cached = 0; cached != 2; ++cached) {

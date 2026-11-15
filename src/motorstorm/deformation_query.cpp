@@ -6,6 +6,8 @@
 #include <bit>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <stdexcept>
 #include <string>
 
@@ -109,9 +111,10 @@ struct Counts {
 };
 Counts counts;
 
-void report(bool sampled, bool snapshot) {
+std::uint64_t report(bool sampled, bool snapshot) {
+  std::uint64_t sample_number{};
   if (sampled) {
-    ++counts.sampled;
+    sample_number = ++counts.sampled;
     if (snapshot)
       ++counts.snapshots;
     else
@@ -128,6 +131,7 @@ void report(bool sampled, bool snapshot) {
                  static_cast<unsigned long long>(counts.snapshots.load()),
                  static_cast<unsigned long long>(counts.scalar.load()),
                  static_cast<unsigned long long>(counts.projected.load()));
+  return sample_number;
 }
 } // namespace
 
@@ -192,18 +196,22 @@ void motorstorm_native_deformation_depth(ppu_context *context) {
   const auto pixel = vm_read32(vm_read32(std::uint64_t(entry) + 4));
   double result;
   bool snapshot;
+  std::uint32_t width, height, bytes_per_pixel, base;
+  motorstorm::game::DeformationDepthPlan plan{};
+  motorstorm::game::DepthPatch patch{};
+  motorstorm::game::DepthSampleMode mode;
   {
     const PixelBufferLease lease(context, pixel);
-    const auto width = vm_read32(std::uint64_t(pixel) + 0x60);
-    const auto height = vm_read32(std::uint64_t(pixel) + 0x64);
+    width = vm_read32(std::uint64_t(pixel) + 0x60);
+    height = vm_read32(std::uint64_t(pixel) + 0x64);
     const auto format = vm_read32(std::uint64_t(pixel) + 0x54);
     const auto table = vm_read32(toc + 0x5aac);
-    const auto bytes_per_pixel =
+    bytes_per_pixel =
         vm_read32(std::uint64_t(table) + 4ULL * format) >> 3;
-    const auto plan = motorstorm::game::plan_deformation_depth(
+    plan = motorstorm::game::plan_deformation_depth(
         coordinates[0], coordinates[1],
         width, height, bytes_per_pixel);
-    const auto base = vm_read32(context->gpr[1] + 0x70);
+    base = vm_read32(context->gpr[1] + 0x70);
     VmReadSnapshotRange ranges[4]{};
     for (unsigned index = 0; index != 4; ++index) {
       if (plan.byte_offsets[index] > UINT32_MAX - base)
@@ -213,10 +221,10 @@ void motorstorm_native_deformation_depth(ppu_context *context) {
                            static_cast<std::uint32_t>(plan.byte_offsets[index]),
                        1, index};
     }
-    const auto mode = vm_read8(vm_read32(toc - 0x2c70)) != 0
+    mode = vm_read8(vm_read32(toc - 0x2c70)) != 0
                           ? motorstorm::game::DepthSampleMode::bilinear
                           : motorstorm::game::DepthSampleMode::point;
-    motorstorm::game::DepthPatch patch{{}, plan.x_fraction, plan.y_fraction};
+    patch = {{}, plan.x_fraction, plan.y_fraction};
     const auto status = vm_read_snapshot(ranges, 4, patch.samples.data(), 4);
     snapshot = status == VM_READ_SNAPSHOT_OK;
     if (status == VM_READ_SNAPSHOT_UNAVAILABLE) {
@@ -231,5 +239,38 @@ void motorstorm_native_deformation_depth(ppu_context *context) {
     result = motorstorm::game::sample_deformation_depth(patch, mode);
   }
   context->fpr[1] = result;
-  report(true, snapshot);
+  const auto sample_number = report(true, snapshot);
+  static const bool capture_inputs = [] {
+    const auto value = std::getenv("MS_DEPTH_OBSERVER");
+    return value && std::strcmp(value, "1") == 0;
+  }();
+  if (capture_inputs && sample_number <= 64) {
+    const auto bits = [](float value) {
+      return std::bit_cast<std::uint32_t>(value);
+    };
+    // Record owned copies only after Unlock. No guest or GPU reads are added.
+    std::fprintf(
+        stderr,
+        "[native-depth-input] seq=%llu manager=%08x selector=%08x pixel=%08x "
+        "nj=%u point=%08x/%08x/%08x/%08x row0=%08x/%08x/%08x/%08x "
+        "row1=%08x/%08x/%08x/%08x xy=%08x/%08x dims=%u/%u bpp=%u "
+        "base=%08x offsets=%zx/%zx/%zx/%zx fractions=%08x/%08x mode=%u "
+        "samples=%02x/%02x/%02x/%02x snapshot=%u value=%016llx\n",
+        static_cast<unsigned long long>(sample_number), manager, selector, pixel,
+        static_cast<unsigned>(projection.non_java),
+        bits(projection.point[0]), bits(projection.point[1]),
+        bits(projection.point[2]), bits(projection.point[3]),
+        bits(projection.rows[0][0]), bits(projection.rows[0][1]),
+        bits(projection.rows[0][2]), bits(projection.rows[0][3]),
+        bits(projection.rows[1][0]), bits(projection.rows[1][1]),
+        bits(projection.rows[1][2]), bits(projection.rows[1][3]),
+        bits(coordinates[0]), bits(coordinates[1]), width, height, bytes_per_pixel,
+        base, plan.byte_offsets[0], plan.byte_offsets[1], plan.byte_offsets[2],
+        plan.byte_offsets[3], bits(plan.x_fraction), bits(plan.y_fraction),
+        static_cast<unsigned>(mode), static_cast<unsigned>(patch.samples[0]),
+        static_cast<unsigned>(patch.samples[1]),
+        static_cast<unsigned>(patch.samples[2]),
+        static_cast<unsigned>(patch.samples[3]), static_cast<unsigned>(snapshot),
+        static_cast<unsigned long long>(std::bit_cast<std::uint64_t>(result)));
+  }
 }

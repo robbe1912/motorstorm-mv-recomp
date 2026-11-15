@@ -151,6 +151,15 @@ calls, cache paths, early returns, nonzero samples and twelve rejected mutants.
 Controls reject retained projection dispatch,
 a wrong homogeneous coordinate, matrix alignment/stride changes and ignored guest
 VSCR[NJ], alongside acquisition, fallback and cleanup failures.
+
+With `MS_DEPTH_OBSERVER=1`, the first 64 successful native samples additionally
+record owned point/matrix bits, projected coordinates, dimensions, byte offsets,
+fractions, interpolation mode, four sample bytes and returned result bits.
+Records retain snapshot versus scalar-fallback status and an atomic sample
+sequence. Logging occurs after Unlock and adds no guest or GPU reads. Capture
+disabled and 80-call cap controls, authentic authored fields, fallback records
+and four additional capture mutants run in the query checker. These bounded
+records support private original/native numeric pairing from actual live inputs.
 An earlier private comparison with the pinned emitted original passed the control,
 output and ABI cases under nearest-even host rounding and four DAZ/FTZ settings.
 The emitted original changes results under non-nearest host rounding. These
@@ -193,6 +202,23 @@ with no resource breach. The packet and local analysis are pinned. Dark ground
 patches remain visible. This binary predates the fragment-program bound fix in
 PR 317. Diverse live numeric pairing, graphics parity, matched operation timing,
 interpreter removal and minimum 30 FPS remain open.
+
+Integrated muted DX12 run `20261115T180150.936696Z`, EXE `8de408f2...9fbe`,
+reached the race HUD through normal PLAY with seven acknowledged required inputs
+and exactly one observed SONY skip. Its final logged checkpoint was
+`completed=52224 sampled=383 snapshots=383 scalar=0 projected=383`.
+Frame 44 shows timer 01:43.95, LAP 0/2 and POS 15/15, with the rider at the start
+and AI vehicles ahead. Ground, banner and vehicle shading defects remain.
+The guard closed after 428.031 seconds with no resource breach. The pinned
+packet includes its build identity and local analysis.
+
+The final acknowledged durable CSV window contains 142 successful Presents in
+60.089014 seconds, or 2.363 Presents/s. Median and p95 intervals are 430.928 and
+490.355 ms. This single instrumented window used checked optimized Debug with
+renderer optimization disabled, internal captures, CPU-surface diagnostics and
+required PM interpretation enabled. Native-query counters increased inside the
+window. Matched repetitions, separate operation timing, graphics acceptance,
+interpreter removal and minimum 30 FPS remain outstanding.
 
 Owned DX12 run `20261109T094927.873395Z`, EXE `56fe9332...e909b`, reached
 race HUD frame 35 through seven acknowledged required inputs and one observed
