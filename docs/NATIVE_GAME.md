@@ -220,6 +220,25 @@ required PM interpretation enabled. Native-query counters increased inside the
 window. Matched repetitions, separate operation timing, graphics acceptance,
 interpreter removal and minimum 30 FPS remain outstanding.
 
+Bounded-input run `20261115T185410.152811Z`, EXE `738eadc9...bd7d`,
+reached the race HUD through seven acknowledged required inputs and exactly one
+observed SONY skip. Its last logged counters were
+`completed=34816 sampled=1523 snapshots=1523 scalar=0 projected=1523`.
+The guard closed after 323.453 seconds without a resource breach. Frame 36 shows
+timer 01:51.94, LAP 0/2 and POS 15/15 with the rider near the start. Ground,
+banner and vehicle shading defects remain visible.
+
+A private replay of all 64 authentic input records matches original, native and
+logged coordinate/result bits, original scalar corner order and lease cleanup.
+A corrupted-result control fails. The records contain 64 distinct world points,
+but every matrix row, coordinate and sample byte is zero. Authored nonzero and
+NJ controls also pass. This live set therefore leaves broader numeric diversity
+and live GPU producer/lifetime acceptance open. The final durable instrumented
+window averages 2.376 successful Presents/s under the same checked optimized
+Debug, unoptimized renderer, capture/diagnostic and required-interpreter settings.
+No matched comparison or minimum-30 acceptance follows from this run. Its pinned
+packet includes input records, comparison receipt, build identity and analysis.
+
 Owned DX12 run `20261109T094927.873395Z`, EXE `56fe9332...e909b`, reached
 race HUD frame 35 through seven acknowledged required inputs and one observed
 intro skip. The inspected HUD reads 00:28.44, LAP 0/2 and POS 12/15. Its original
