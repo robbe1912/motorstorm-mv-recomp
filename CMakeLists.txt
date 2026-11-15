@@ -110,6 +110,19 @@ add_subdirectory("${PS3RECOMP_DIR}" "${CMAKE_BINARY_DIR}/ps3recomp_sdk"
                  EXCLUDE_FROM_ALL)
 include("${CMAKE_CURRENT_SOURCE_DIR}/src/renderer_optimization.cmake")
 motorstorm_configure_renderer_optimization("${PS3RECOMP_DIR}")
+# Measurement option (#155/#293): per-batch D3D12 draw records. Empty keeps the
+# backend default (2048); the backend rejects anything but a power of two in
+# 1024..8192 at compile time. Compare with the empty string, not truthiness:
+# CMake reads 0, OFF, NO and FALSE as false, so `if(PORT_RSX_MAX_DRAWS)` would
+# skip the checks for those and silently keep the default.
+set(PORT_RSX_MAX_DRAWS "" CACHE STRING "Per-batch D3D12 draw records (empty = 2048)")
+if(NOT PORT_RSX_MAX_DRAWS STREQUAL "")
+    if(NOT PORT_RSX_MAX_DRAWS MATCHES "^[0-9]+$")
+        message(FATAL_ERROR "PORT_RSX_MAX_DRAWS must be a number")
+    endif()
+    target_compile_definitions(ps3recomp_runtime PRIVATE RSX_MAX_DRAWS=${PORT_RSX_MAX_DRAWS})
+    message(STATUS "D3D12 draw records per batch: ${PORT_RSX_MAX_DRAWS}")
+endif()
 
 # ---------------------------------------------------------------------------
 # The HLE NID table

@@ -6,6 +6,20 @@
  * Cost when set: one QueryPerformanceCounter read + integer ops per present;
  * the CSV FILE* opens once, fprintf rows are opt-in, and the per-second
  * report is one stderr flush per second. No per-frame allocation.
+ *
+ * CSV persistence (FPS_STATS_CSV): rows are formatted into a fixed 64 KiB
+ * buffer owned here and written to an unbuffered FILE in one fwrite at
+ * whole-row boundaries only -- once per completed 1 s report window, earlier
+ * if the next row might not fit -- so no library buffer can write a partial
+ * row on its own. (A stdio buffer cannot guarantee that: glibc ignores the
+ * size for a setvbuf without a caller buffer and writes 4 KiB blocks
+ * mid-row.) After every successful write the [FPS] window line
+ * carries csv_persisted=<rows>@<t_ms>: that many complete rows, through that
+ * t_ms, were handed to the OS and survive an abrupt owned termination. Rows
+ * after the last acknowledged flush (at most one report window of presents)
+ * can still be lost by such a termination; nothing is fabricated or repaired.
+ * A failed write or flush is reported on stderr with the persisted coverage,
+ * and the CSV is closed rather than continued.
  */
 
 #include "rsx_fps_stats.h"
@@ -13,6 +27,7 @@
 #include <stdio.h>
 #include "ps3emu/loadtime_trace.h"
 #include <stdlib.h>
+#include <string.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -20,10 +35,19 @@
 #include <time.h>
 #endif
 
+#ifdef RSX_FPS_STATS_TEST_SEAMS
+/* Authored clock and stdio faults for scripts/check_fps_csv_persistence.py. */
+unsigned long long rsx_fps_stats_test_now_ns(void);
+size_t rsx_fps_stats_test_fwrite(const void* data, size_t size, size_t count, FILE* stream);
+#define fwrite rsx_fps_stats_test_fwrite
+#endif
+
 /* Same clock pattern as cellGcmSys.c get_timestamp_ns. */
 static unsigned long long fps_now_ns(void)
 {
-#ifdef _WIN32
+#ifdef RSX_FPS_STATS_TEST_SEAMS
+    return rsx_fps_stats_test_now_ns();
+#elif defined(_WIN32)
     static LARGE_INTEGER s_freq;
     LARGE_INTEGER now;
     if (!s_freq.QuadPart)
@@ -75,6 +99,16 @@ static volatile unsigned long long s_flips_since_present_v;
 static FILE* s_csv;
 static unsigned long long s_csv_frame;
 
+/* Rows waiting in s_csv_buf (complete rows only) and persistence accounting. */
+#define FPS_CSV_BUFFER_BYTES 65536u
+#define FPS_CSV_ROW_MAX_BYTES 128u
+static char s_csv_buf[FPS_CSV_BUFFER_BYTES];
+static size_t s_csv_pending_bytes;               /* formatted, not yet written */
+static unsigned long long s_csv_pending_rows;
+static unsigned long long s_csv_persisted_rows;  /* complete rows handed to the OS */
+static double s_csv_last_t_ms, s_csv_persisted_t_ms;
+static int s_csv_persisted_any;
+
 static void fps_summary(void);
 
 int rsx_fps_stats_enabled(void)
@@ -88,9 +122,66 @@ int rsx_fps_stats_enabled(void)
     return s_enabled;
 }
 
+/* A write or flush failure is not repaired: report what was persisted and
+ * stop recording rather than leave a silently truncated file. */
+static void fps_csv_fail(const char* operation, size_t partial_bytes)
+{
+    fprintf(stderr,
+            "[FPS] FPS_STATS_CSV %s failed after %llu rows: persisted %llu"
+            " complete rows through t_ms=%.3f",
+            operation, s_csv_frame, s_csv_persisted_rows,
+            s_csv_persisted_any ? s_csv_persisted_t_ms : 0.0);
+    if (partial_bytes)
+        fprintf(stderr, ", followed by %llu bytes of an incomplete write",
+                (unsigned long long)partial_bytes);
+    fprintf(stderr, "; CSV closed, later presents are not recorded\n");
+    fclose(s_csv);   /* unbuffered: closing writes nothing further */
+    s_csv = NULL;
+}
+
+/* Write every complete row formatted so far to the OS. Returns 0 on success. */
+static int fps_csv_flush(void)
+{
+    size_t written;
+    if (!s_csv)
+        return -1;
+    if (s_csv_pending_bytes) {
+        written = fwrite(s_csv_buf, 1, s_csv_pending_bytes, s_csv);
+        if (written != s_csv_pending_bytes || ferror(s_csv)) {
+            fps_csv_fail("write", written);
+            return -1;
+        }
+    }
+    s_csv_pending_bytes = 0;
+    s_csv_persisted_rows += s_csv_pending_rows;
+    s_csv_pending_rows = 0;
+    if (s_csv_persisted_rows) {
+        s_csv_persisted_t_ms = s_csv_last_t_ms;
+        s_csv_persisted_any = 1;
+    }
+    return 0;
+}
+
+/* Format one complete line into the pending buffer. */
+static int fps_csv_append(const char* line, int n)
+{
+    if (n < 0 || (unsigned)n >= FPS_CSV_ROW_MAX_BYTES) {
+        fps_csv_fail("format", 0);
+        return -1;
+    }
+    /* Write ahead of a line that might not fit. */
+    if (s_csv_pending_bytes + FPS_CSV_ROW_MAX_BYTES > FPS_CSV_BUFFER_BYTES &&
+        fps_csv_flush() != 0)
+        return -1;
+    memcpy(s_csv_buf + s_csv_pending_bytes, line, (size_t)n);
+    s_csv_pending_bytes += (size_t)n;
+    return 0;
+}
+
 static void fps_csv_open(void)
 {
     const char* path = getenv("FPS_STATS_CSV");
+    int n;
     if (!path || !path[0])
         return;
     s_csv = fopen(path, "w");
@@ -99,7 +190,29 @@ static void fps_csv_open(void)
                 path);
         return;
     }
-    fprintf(s_csv, "frame,t_ms,dt_ms,flips_since_prev_present\n");
+    if (setvbuf(s_csv, NULL, _IONBF, 0) != 0) {
+        fps_csv_fail("unbuffered setup", 0);
+        return;
+    }
+    {
+        char line[FPS_CSV_ROW_MAX_BYTES];
+        n = snprintf(line, sizeof line, "frame,t_ms,dt_ms,flips_since_prev_present\n");
+        if (fps_csv_append(line, n) == 0)
+            fps_csv_flush();   /* the header is durable before the first row */
+    }
+}
+
+static void fps_csv_row(unsigned long long now, unsigned long long dt)
+{
+    double t_ms = (double)(now - s_first_ns) / 1e6;
+    char line[FPS_CSV_ROW_MAX_BYTES];
+    int n = snprintf(line, sizeof line, "%llu,%.3f,%.3f,%llu\n",
+                     s_csv_frame, t_ms, (double)dt / 1e6, s_flips_since_present_v);
+    if (fps_csv_append(line, n) != 0)
+        return;
+    s_csv_frame++;
+    s_csv_pending_rows++;
+    s_csv_last_t_ms = t_ms;
 }
 
 static unsigned fps_hist_bucket(unsigned long long dt_ns)
@@ -127,6 +240,10 @@ static void fps_flush_window(void)
             (double)s_win_min / 1e6, avg, (double)s_win_max / 1e6);
     for (b = 0; b < FPS_HIST_BUCKETS; b++)
         fprintf(stderr, "%s%u", b ? "/" : "", s_win_hist[b]);
+    /* Acknowledged persistence boundary for this window (see top). */
+    if (s_csv && fps_csv_flush() == 0)
+        fprintf(stderr, " csv_persisted=%llu@%.3f", s_csv_persisted_rows,
+                s_csv_persisted_any ? s_csv_persisted_t_ms : 0.0);
     fprintf(stderr, "\n");
 
     s_win_presents = 0;
@@ -161,8 +278,17 @@ static void fps_summary(void)
     for (b = 0; b < FPS_HIST_BUCKETS; b++)
         fprintf(stderr, " %s:%u", s_hist_labels[b], s_total_hist[b]);
     fprintf(stderr, "\n");
-    if (s_csv)
-        fclose(s_csv);
+    if (s_csv && fps_csv_flush() == 0) {
+        if (fclose(s_csv) != 0) {
+            fprintf(stderr, "[FPS] FPS_STATS_CSV close failed after %llu rows\n",
+                    s_csv_frame);
+        } else {
+            fprintf(stderr, "[FPS] csv rows=%llu persisted=%llu through t_ms=%.3f\n",
+                    s_csv_frame, s_csv_persisted_rows,
+                    s_csv_persisted_any ? s_csv_persisted_t_ms : 0.0);
+        }
+        s_csv = NULL;
+    }
 }
 
 void rsx_fps_stats_on_present(void)
@@ -209,13 +335,8 @@ void rsx_fps_stats_on_present(void)
     s_total_presents++;
     s_win_presents++;
 
-    if (s_csv) {
-        fprintf(s_csv, "%llu,%.3f,%.3f,%llu\n",
-                s_csv_frame++,
-                (double)(now - s_first_ns) / 1e6,
-                (double)dt / 1e6,
-                s_flips_since_present_v);
-    }
+    if (s_csv)
+        fps_csv_row(now, dt);
     s_flips_since_present_v = 0;
 
     /* Aligned windows: a full second prints once per full second; the

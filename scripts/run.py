@@ -4,6 +4,7 @@ from pathlib import Path
 import psutil
 from project import ROOT, config
 from native_window import visible_native_window
+from runtime_profile import PROFILES, admit_execution_profile
 from native_resource_guard import commit_reserve, physical_reserve, limits, first_breach
 
 class Memory(ctypes.Structure):
@@ -22,6 +23,9 @@ def require_worktree_private_replay(profile_path, profile):
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__); ap.add_argument('--seconds',type=int,default=600)
+    ap.add_argument('--executable',type=Path,help='Executable with its adjacent build_identity.json')
+    ap.add_argument('--execution-profile',choices=PROFILES,default='baseline-interpreter',
+                    help='Runtime policy; toolkit-default explicitly starts a fresh baseline')
     capture=ap.add_mutually_exclusive_group()
     capture.add_argument('--capture-havok',action='store_true',help='Existing Havok plus graphics/audio diagnostic profile')
     capture.add_argument('--capture-havok-only',action='store_true',help='Enable only the existing Havok observer, without graphics/audio probes')
@@ -44,10 +48,12 @@ def main():
     ap.add_argument('--profile-cpu-surfaces',action='store_true',help='Existing per-request CPU surface read queue, match, copy and fence diagnostics; adds timing and logging overhead')
     ap.add_argument('--texture-retention',choices=('0','1'),default='0',help='Explicit reference or bounded persistent DX12 texture cache')
     ap.add_argument('--texture-cache-mib',type=int,default=512,help='Default+upload allocation target, 0..4096 MiB; live batch pins may exceed it')
+    ap.add_argument('--texture-mips',choices=('0','1'),default='0',help='Upload the guest mip chain below level 0 for 2D/cube textures (default 0: level 0 only)')
     ap.add_argument('--profile-renderer',action='store_true',help='CPU renderer phases and GPU timestamps, without broad asset/Havok probes; adds timing overhead')
     ap.add_argument('--replay-observe-seconds',type=int,default=5,help='Observe after the gated replay target (default 5; overall --seconds guard still applies)')
     ap.add_argument('--min-free-commit-gib',type=commit_reserve,default=12,help='Host free-commit reserve, 1..12 GiB (default 12); records budget and preserves other guards')
     ap.add_argument('--native-owned-jobs',action='store_true',help='Opt in to fingerprint-owned native jobs while retaining policy interpretation')
+    ap.add_argument('--jobmod-header-fnv',action='store_true',help='Also identify staged job images by their declared C0DEC0DE span, ignoring load padding')
     ap.add_argument('--min-free-physical-gib',type=physical_reserve,default=4,help='Host free physical RAM reserve, 1..4 GiB (default 4); lower explicitly for concurrent host work')
     args=ap.parse_args()
     if not 0<=args.texture_cache_mib<=4096: ap.error("Texture cache target must be 0..4096 MiB")
@@ -66,15 +72,19 @@ def main():
     if not 0<=args.trace_task_lifecycle<=4096: raise SystemExit('Task lifecycle trace must be 0..4096 events')
     if args.trace_task_image is not None and (args.trace_task_image<0 or not args.trace_task_lifecycle): raise SystemExit('Task image filter requires an enabled trace and nonnegative image ID')
     if any(p.info['name']=='ms1_recomp.exe' for p in psutil.process_iter(['name'])): raise SystemExit('A native instance already exists; close it first')
-    c=config(); exe=ROOT/'build/native/ms1_recomp.exe'
+    c=config(); exe=(args.executable or ROOT/'build/native/ms1_recomp.exe').resolve()
     if args.menu_replay and hashlib.sha256(c['elf'].read_bytes()).hexdigest()!=replay_profile['elf_sha256']:
         raise SystemExit('Menu replay target differs from configured ELF; no process launched')
     if not exe.is_file(): raise SystemExit('Build first: python scripts/project.py build')
+    elf_sha256=hashlib.sha256(c['elf'].read_bytes()).hexdigest()
+    try: admitted=admit_execution_profile(args.execution_profile,exe,elf_sha256)
+    except (OSError,ValueError) as error: raise SystemExit(str(error))
     for selected,flag,description in ((args.native_pcm_cubic,'native_pcm_cubic','PCM DSP'),
                                      (args.native_visibility,'native_visibility','Visibility')):
         if selected != '0':
-            identity=json.loads((ROOT/'build/native/build_identity.json').read_text())
-            if not identity.get(flag) or identity.get('sha256') != hashlib.sha256(exe.read_bytes()).hexdigest():
+            # The selected executable's own admitted build record, not build/native's.
+            identity=admitted['build_identity']
+            if not identity.get(flag) or identity.get('sha256') != admitted['exe_sha256']:
                 raise SystemExit(f'{description} mode requires a matching --{flag.replace("_","-")} build; no process launched')
     if args.depth_observer:
         identity=json.loads((ROOT/'build/native/build_identity.json').read_text())
@@ -104,9 +114,10 @@ def main():
     # Clear inherited diagnostics before applying the documented booting configuration.
     for key in list(env):
         if key.startswith(('SPU_','FLOW_','RSX_','GCM_','PAD_','FPS_','PM_','CAP_HAVOK','CAP_BIKE','LOADTIME_','AUDIO_','TEX_')) or key in ('FP_PICK','SCREEN_AS_TEX','RD_WWSJOB_SHIM','VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG'):env.pop(key)
-    env.update(PATH=str(c['ffmpeg']/'bin')+os.pathsep+env.get('PATH',''),PS3_VFS_ROOT=str(c['disc']),PS3_HDD0_ROOT=str(c['userdata']),PS3_SAVEDATA_ROOT=str(c['userdata']/'home/00000001/savedata'),AUDIO_MUTE='1',SPU_PM_INTERP='1',SPU_PROBE_INTERP='0',SCREEN_AS_TEX='0',PAD_FILE=str(out/'pad.txt'),FPS_STATS='1',FPS_STATS_CSV=str(out/'frames.csv'),RECOMP_TITLE='MotorStorm MV native')
+    env.update(PATH=str(c['ffmpeg']/'bin')+os.pathsep+env.get('PATH',''),PS3_VFS_ROOT=str(c['disc']),PS3_HDD0_ROOT=str(c['userdata']),PS3_SAVEDATA_ROOT=str(c['userdata']/'home/00000001/savedata'),AUDIO_MUTE='1',SCREEN_AS_TEX='0',PAD_FILE=str(out/'pad.txt'),FPS_STATS='1',FPS_STATS_CSV=str(out/'frames.csv'),RECOMP_TITLE='MotorStorm MV native')
+    env.update(admitted['execution_environment'])
     if args.native_owned_jobs:env['SPU_NATIVE_OWNED_JOBS']='1'
-    for key in ('SPU_WP','SPU_PM_GATE_TRACE','SPU_PM_RETIRE_GUARD','SPU_PM_PC_RESUME','SPU_PM_FLOW_RESUME','SPU_PM_YIELD_RESUME'):env[key]='0'
+    if args.jobmod_header_fnv:env['SPU_JOBMOD_HEADER_FNV']='1'
     env['PS3_KEYS_FILE']=str(c.get('keys',ROOT/'game/private_keys')/'keys.json')
     if args.trace_task_lifecycle:
         env['SPU_TASK_LIFECYCLE_TRACE']=str(args.trace_task_lifecycle)
@@ -131,7 +142,7 @@ def main():
         env.update(PERF='1',RSX_TEXTURE_PROFILE='1')
     if args.profile_cpu_surfaces:
         env['RSX_CPU_SURFACE_PROFILE']='1'
-    env.update(RSX_TEXTURE_RETENTION=args.texture_retention,RSX_TEXTURE_CACHE_MIB=str(args.texture_cache_mib))
+    env.update(RSX_TEXTURE_RETENTION=args.texture_retention,RSX_TEXTURE_CACHE_MIB=str(args.texture_cache_mib),RSX_TEX_MIPS=args.texture_mips)
     (out/'pad.txt').write_text('0\n')
     if args.capture_menu or args.menu_replay:
         (out/'rsx').mkdir()
@@ -140,6 +151,9 @@ def main():
         env.update(RSX_CAP_ARM_FILE=str(out/'capture-burst.arm'),RSX_CAP_BURST=str(args.capture_burst_frames))
     if args.capture_on_pad:
         env['RSX_CAP_PAD_MASK']=hex(args.capture_on_pad)
+    if (hashlib.sha256(exe.read_bytes()).hexdigest()!=admitted['exe_sha256'] or
+            hashlib.sha256(c['elf'].read_bytes()).hexdigest()!=elf_sha256):
+        raise SystemExit('Executable or ELF changed after profile admission; no process launched')
     log=(out/'native.log').open('wb');err=(out/'native.err').open('wb')
     # Request a GUI window while keeping the launcher console hidden.
     startup=subprocess.STARTUPINFO()
@@ -147,18 +161,20 @@ def main():
     startup.wShowWindow=5  # SW_SHOW
     p=subprocess.Popen([str(exe),str(c['elf'])],cwd=ROOT,env=env,stdout=log,stderr=err,creationflags=subprocess.CREATE_NO_WINDOW,startupinfo=startup)
     proc=psutil.Process(p.pid); start=time.monotonic(); reason='guard tooling failure'; terminated=False
-    record={'pid':p.pid,'create_time':proc.create_time(),'exe':str(exe),'exe_sha256':hashlib.sha256(exe.read_bytes()).hexdigest(),'elf_sha256':hashlib.sha256(c['elf'].read_bytes()).hexdigest(),'output':str(out),'muted':True,'capture_menu':bool(args.capture_menu or args.menu_replay),'menu_replay':str(args.menu_replay.resolve()) if args.menu_replay else None,'capture_textures':args.capture_textures,'trace_video':args.trace_video,'capture_havok':args.capture_havok or args.capture_havok_only,'capture_bike':args.capture_bike,'loadtime_trace':args.loadtime_trace,'capture_profile':'broad' if args.capture_havok else 'havok-only' if args.capture_havok_only else 'none','environment':{k:v for k,v in env.items() if k in ('PS3_VFS_ROOT','PS3_HDD0_ROOT','PS3_SAVEDATA_ROOT','AUDIO_MUTE','PAD_FILE','CAP_HAVOK_DIR','CAP_BIKE_DIR','CAP_BIKE_ARM_FILE','LOADTIME_TRACE','LOADTIME_TRACE_FILE','SPU_PM_INTERP','SPU_NATIVE_OWNED_JOBS') or k.startswith(('SPU_PM_','TEX_','RSX_')) or k in ('VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG') or k=='SPU_WP'}}
+    record={'pid':p.pid,'create_time':proc.create_time(),'exe':str(exe),'exe_sha256':hashlib.sha256(exe.read_bytes()).hexdigest(),'elf_sha256':hashlib.sha256(c['elf'].read_bytes()).hexdigest(),'output':str(out),'muted':True,'capture_menu':bool(args.capture_menu or args.menu_replay),'menu_replay':str(args.menu_replay.resolve()) if args.menu_replay else None,'capture_textures':args.capture_textures,'trace_video':args.trace_video,'capture_havok':args.capture_havok or args.capture_havok_only,'capture_bike':args.capture_bike,'loadtime_trace':args.loadtime_trace,'capture_profile':'broad' if args.capture_havok else 'havok-only' if args.capture_havok_only else 'none','environment':{k:v for k,v in env.items() if k in ('PS3_VFS_ROOT','PS3_HDD0_ROOT','PS3_SAVEDATA_ROOT','AUDIO_MUTE','PAD_FILE','CAP_HAVOK_DIR','CAP_BIKE_DIR','CAP_BIKE_ARM_FILE','LOADTIME_TRACE','LOADTIME_TRACE_FILE','SPU_PM_INTERP','SPU_NATIVE_OWNED_JOBS','SPU_JOBMOD_HEADER_FNV') or k.startswith(('SPU_PM_','TEX_','RSX_')) or k in ('VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG') or k=='SPU_WP'}}
     record['resource_limits']=resource_policy
     record['resource_breach']=None
     record['launcher_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     record['resource_guard_sha256']=hashlib.sha256(Path(__file__).with_name('native_resource_guard.py').read_bytes()).hexdigest()
     record['capture_burst_frames']=args.capture_burst_frames
     record['capture_on_pad']=args.capture_on_pad
+    record.update(admitted)
+    record['environment'].update(admitted['execution_environment'])
     record['profile_renderer']=args.profile_renderer
     record['profile_textures']=args.profile_textures
     record['d3d12_debug']=args.d3d12_debug
     record['replay_observe_seconds']=args.replay_observe_seconds
-    record['environment'].update({k:v for k,v in env.items() if k in ('PERF','D3D12_DBG','RSX_TEXTURE_RETENTION','RSX_TEXTURE_CACHE_MIB','RSX_CPU_SURFACE_PROFILE','MS_DEPTH_OBSERVER') or k.startswith('MS_NATIVE_')})
+    record['environment'].update({k:v for k,v in env.items() if k in ('PERF','D3D12_DBG','RSX_TEXTURE_RETENTION','RSX_TEXTURE_CACHE_MIB','RSX_TEX_MIPS','RSX_CPU_SURFACE_PROFILE','MS_DEPTH_OBSERVER') or k.startswith('MS_NATIVE_')})
     record['environment'].update({k:env[k] for k in ('SPU_TASK_LIFECYCLE_TRACE','SPU_TASK_LIFECYCLE_IMAGE') if k in env})
     (out/'launch.json').write_text(json.dumps(record,indent=2)); print('Owned native PID',p.pid,'output',out,flush=True)
     window_ready=False

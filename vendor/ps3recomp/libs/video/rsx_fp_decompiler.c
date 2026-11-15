@@ -218,6 +218,14 @@ u32 rsx_fp_canonical_program(const u8* ucode,u32 max_bytes,u8* out,u32 capacity)
 
 u64 rsx_fp_structural_hash(const u8* ucode, u32 max_bytes, u64 seed)
 {
+    return rsx_fp_structural_hash_sized(ucode, max_bytes, seed, NULL);
+}
+
+u64 rsx_fp_structural_hash_sized(const u8* ucode, u32 max_bytes, u64 seed,
+                                 u32* out_size)
+{
+    if (out_size)
+        *out_size = 0;
     if (!ucode)
         return 0;
     static const u32 structural_tag = 0x31535046u; /* "FPS1" */
@@ -245,6 +253,8 @@ u64 rsx_fp_structural_hash(const u8* ucode, u32 max_bytes, u64 seed)
                 &instruction_count, sizeof(instruction_count), hash);
             hash = fp_hash_bytes(
                 &constant_count, sizeof(constant_count), hash);
+            if (out_size)
+                *out_size = off;
             return hash;
         }
     }

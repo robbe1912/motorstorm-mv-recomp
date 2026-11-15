@@ -52,9 +52,139 @@ static void pixels(int r,int g,int b){
  }
  D3D12_RANGE wr={0,0};rb->lpVtbl->Unmap(rb,0,&wr);
 }
-static int upload(unsigned id){return vp_upload_tex_slot_impl(0x1000+id*0x10000,128,128,0xa5,0,1,NULL);}
+static int upload(unsigned id){return vp_upload_tex_slot_impl(0x1000+id*0x10000,128,128,0xa5,0,1,1,NULL);}
 static DWORD WINAPI release_gate(void* value){
  Sleep(500);ID3D12Fence*gate=value;return FAILED(gate->lpVtbl->Signal(gate,1))?1:0;
+}
+
+/* RSX_TEX_MIPS: authored chains with an independent placement walk (Morton
+ * order per level, levels packed after level 0, 4x4 blocks), read back per
+ * subresource and sampled through the production SRV writer. */
+static unsigned ref_morton(unsigned x,unsigned y,unsigned lw,unsigned lh){
+ unsigned o=0,b=0;for(unsigned i=0;i<16;i++){if(i<lw)o|=((x>>i)&1u)<<b++;if(i<lh)o|=((y>>i)&1u)<<b++;}return o;}
+static unsigned ref_lg(unsigned v){unsigned l=0;while((1u<<l)<v)l++;return l;}
+static uint8_t mip_texel(unsigned face,unsigned level,unsigned x,unsigned y,unsigned c){return (uint8_t)(face*41u+level*61u+x*7u+y*13u+c*29u+1u);}
+/* Fill an A8R8G8B8 chain at `off`; returns the bytes of one face's chain. */
+static unsigned fill_argb_chain(u32 off,unsigned face,unsigned w,unsigned h,unsigned levels,int swz){
+ unsigned at=0;
+ for(unsigned l=0;l<levels;l++){
+  for(unsigned y=0;y<h;y++)for(unsigned x=0;x<w;x++){
+   unsigned o=at+(swz?ref_morton(x,y,ref_lg(w),ref_lg(h)):y*w+x)*4u;
+   for(unsigned c=0;c<4;c++)vm_base[off+o+c]=mip_texel(face,l,x,y,c);
+  }
+  at+=w*h*4u;w=w>1?w>>1:1;h=h>1?h>>1:1;
+ }
+ return at;
+}
+static void read_sub(int slot,unsigned sub,uint8_t**data,D3D12_PLACED_SUBRESOURCE_FOOTPRINT*fp,UINT*rows,UINT64*row_bytes,ID3D12Resource**keep){
+ ID3D12Resource*r=s_d3d.vp_tex[slot].res;D3D12_RESOURCE_DESC td;r->lpVtbl->GetDesc(r,&td);UINT64 total=0;
+ s_d3d.device->lpVtbl->GetCopyableFootprints(s_d3d.device,&td,sub,1,0,fp,rows,row_bytes,&total);
+ D3D12_HEAP_PROPERTIES hp={0};hp.Type=D3D12_HEAP_TYPE_READBACK;
+ D3D12_RESOURCE_DESC d={0};d.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;d.Width=total;d.Height=1;d.DepthOrArraySize=1;d.MipLevels=1;d.SampleDesc.Count=1;d.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+ ID3D12Resource*read=NULL;HR(s_d3d.device->lpVtbl->CreateCommittedResource(s_d3d.device,&hp,D3D12_HEAP_FLAG_NONE,&d,D3D12_RESOURCE_STATE_COPY_DEST,NULL,&IID_ID3D12Resource,(void**)&read));
+ reset_commands();
+ D3D12_RESOURCE_BARRIER b={0};b.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;b.Transition.pResource=r;b.Transition.StateBefore=D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;b.Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_SOURCE;b.Transition.Subresource=sub;
+ s_d3d.cmd_list->lpVtbl->ResourceBarrier(s_d3d.cmd_list,1,&b);
+ D3D12_TEXTURE_COPY_LOCATION dst={0},src={0};dst.pResource=read;dst.Type=D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;dst.PlacedFootprint=*fp;src.pResource=r;src.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;src.SubresourceIndex=sub;
+ s_d3d.cmd_list->lpVtbl->CopyTextureRegion(s_d3d.cmd_list,&dst,0,0,0,&src,NULL);
+ b.Transition.StateBefore=D3D12_RESOURCE_STATE_COPY_SOURCE;b.Transition.StateAfter=D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;s_d3d.cmd_list->lpVtbl->ResourceBarrier(s_d3d.cmd_list,1,&b);
+ submit();REQUIRE(vp_upload_retire(NULL));gpu_pso_retire();
+ D3D12_RANGE range={0,(SIZE_T)total};HR(read->lpVtbl->Map(read,0,&range,(void**)data));*keep=read;
+}
+static void done_sub(ID3D12Resource*read){D3D12_RANGE w={0,0};read->lpVtbl->Unmap(read,0,&w);read->lpVtbl->Release(read);}
+static void check_argb_level(int slot,unsigned face,unsigned levels,unsigned level,unsigned w,unsigned h){
+ uint8_t*p;D3D12_PLACED_SUBRESOURCE_FOOTPRINT fp;UINT rows;UINT64 rb_;ID3D12Resource*read;
+ read_sub(slot,face*levels+level,&p,&fp,&rows,&rb_,&read);
+ REQUIRE(fp.Footprint.Width==w&&fp.Footprint.Height==h);
+ for(unsigned y=0;y<h;y++)for(unsigned x=0;x<w;x++){
+  const uint8_t*v=p+y*fp.Footprint.RowPitch+x*4;
+  REQUIRE(v[0]==mip_texel(face,level,x,y,1)&&v[1]==mip_texel(face,level,x,y,2)&&v[2]==mip_texel(face,level,x,y,3)&&v[3]==mip_texel(face,level,x,y,0));
+ }
+ done_sub(read);
+}
+static void check_block_level(int slot,unsigned level,const uint8_t*src,unsigned row_bytes,unsigned block_rows){
+ uint8_t*p;D3D12_PLACED_SUBRESOURCE_FOOTPRINT fp;UINT rows;UINT64 rb_;ID3D12Resource*read;
+ read_sub(slot,level,&p,&fp,&rows,&rb_,&read);
+ REQUIRE(rows==block_rows&&rb_==row_bytes);
+ for(unsigned r=0;r<block_rows;r++)REQUIRE(!memcmp(p+r*fp.Footprint.RowPitch,src+r*row_bytes,row_bytes));
+ done_sub(read);
+}
+static unsigned resource_levels(int slot){D3D12_RESOURCE_DESC td;s_d3d.vp_tex[slot].res->lpVtbl->GetDesc(s_d3d.vp_tex[slot].res,&td);return td.MipLevels;}
+/* Load one texel of a given level through srv_write_ex, as a shader does. */
+static void load_level(int slot,unsigned level,uint32_t out[4]){
+ static const char shader[]="Texture2D<float4>A:register(t0);RWStructuredBuffer<uint4>O:register(u0);cbuffer L:register(b0){uint lv;};"
+  "[numthreads(1,1,1)]void main(){O[0]=uint4(round(A.Load(int3(0,0,lv))*255));}";
+ ID3DBlob*cs=NULL,*errors=NULL,*signature=NULL;
+ HRESULT hr=D3DCompile(shader,sizeof(shader)-1,NULL,NULL,NULL,"main","cs_5_0",0,0,&cs,&errors);
+ if(errors){fprintf(stderr,"Shader compiler: %s\n",(char*)errors->lpVtbl->GetBufferPointer(errors));errors->lpVtbl->Release(errors);errors=NULL;}HR(hr);
+ D3D12_DESCRIPTOR_RANGE range={0};range.RangeType=D3D12_DESCRIPTOR_RANGE_TYPE_SRV;range.NumDescriptors=1;
+ D3D12_ROOT_PARAMETER params[3]={0};params[0].ParameterType=D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;params[0].DescriptorTable.NumDescriptorRanges=1;params[0].DescriptorTable.pDescriptorRanges=&range;
+ params[1].ParameterType=D3D12_ROOT_PARAMETER_TYPE_UAV;params[2].ParameterType=D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;params[2].Constants.Num32BitValues=1;
+ D3D12_ROOT_SIGNATURE_DESC desc={0};desc.NumParameters=3;desc.pParameters=params;
+ HR(D3D12SerializeRootSignature(&desc,D3D_ROOT_SIGNATURE_VERSION_1,&signature,&errors));
+ ID3D12RootSignature*root=NULL;ID3D12PipelineState*pso=NULL;
+ HR(s_d3d.device->lpVtbl->CreateRootSignature(s_d3d.device,0,signature->lpVtbl->GetBufferPointer(signature),signature->lpVtbl->GetBufferSize(signature),&IID_ID3D12RootSignature,(void**)&root));
+ D3D12_COMPUTE_PIPELINE_STATE_DESC pd={0};pd.pRootSignature=root;pd.CS.pShaderBytecode=cs->lpVtbl->GetBufferPointer(cs);pd.CS.BytecodeLength=cs->lpVtbl->GetBufferSize(cs);
+ HR(s_d3d.device->lpVtbl->CreateComputePipelineState(s_d3d.device,&pd,&IID_ID3D12PipelineState,(void**)&pso));
+ D3D12_RESOURCE_DESC rd={0};rd.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;rd.Width=16;rd.Height=1;rd.DepthOrArraySize=1;rd.MipLevels=1;rd.SampleDesc.Count=1;rd.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;rd.Flags=D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+ D3D12_HEAP_PROPERTIES hp={0};hp.Type=D3D12_HEAP_TYPE_DEFAULT;ID3D12Resource*o=NULL,*read=NULL;
+ HR(s_d3d.device->lpVtbl->CreateCommittedResource(s_d3d.device,&hp,0,&rd,D3D12_RESOURCE_STATE_COMMON,NULL,&IID_ID3D12Resource,(void**)&o));
+ hp.Type=D3D12_HEAP_TYPE_READBACK;rd.Flags=0;
+ HR(s_d3d.device->lpVtbl->CreateCommittedResource(s_d3d.device,&hp,0,&rd,D3D12_RESOURCE_STATE_COPY_DEST,NULL,&IID_ID3D12Resource,(void**)&read));
+ reset_commands();
+ srv_write_ex(0,s_d3d.vp_tex[slot].res,DXGI_FORMAT_R8G8B8A8_UNORM,D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,0);
+ D3D12_RESOURCE_BARRIER tr={0};tr.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;tr.Transition.Subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+ tr.Transition.pResource=o;tr.Transition.StateBefore=D3D12_RESOURCE_STATE_COMMON;tr.Transition.StateAfter=D3D12_RESOURCE_STATE_UNORDERED_ACCESS;s_d3d.cmd_list->lpVtbl->ResourceBarrier(s_d3d.cmd_list,1,&tr);
+ tr.Transition.pResource=s_d3d.vp_tex[slot].res;tr.Transition.StateBefore=D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;tr.Transition.StateAfter=D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;s_d3d.cmd_list->lpVtbl->ResourceBarrier(s_d3d.cmd_list,1,&tr);
+ s_d3d.cmd_list->lpVtbl->SetDescriptorHeaps(s_d3d.cmd_list,1,&s_d3d.srv_heap);
+ s_d3d.cmd_list->lpVtbl->SetComputeRootSignature(s_d3d.cmd_list,root);s_d3d.cmd_list->lpVtbl->SetPipelineState(s_d3d.cmd_list,pso);
+ D3D12_GPU_DESCRIPTOR_HANDLE start;s_d3d.srv_heap->lpVtbl->GetGPUDescriptorHandleForHeapStart(s_d3d.srv_heap,&start);
+ s_d3d.cmd_list->lpVtbl->SetComputeRootDescriptorTable(s_d3d.cmd_list,0,start);
+ s_d3d.cmd_list->lpVtbl->SetComputeRootUnorderedAccessView(s_d3d.cmd_list,1,o->lpVtbl->GetGPUVirtualAddress(o));
+ s_d3d.cmd_list->lpVtbl->SetComputeRoot32BitConstant(s_d3d.cmd_list,2,level,0);
+ s_d3d.cmd_list->lpVtbl->Dispatch(s_d3d.cmd_list,1,1,1);
+ tr.Transition.StateBefore=D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;tr.Transition.StateAfter=D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;s_d3d.cmd_list->lpVtbl->ResourceBarrier(s_d3d.cmd_list,1,&tr);
+ tr.Transition.pResource=o;tr.Transition.StateBefore=D3D12_RESOURCE_STATE_UNORDERED_ACCESS;tr.Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_SOURCE;s_d3d.cmd_list->lpVtbl->ResourceBarrier(s_d3d.cmd_list,1,&tr);
+ s_d3d.cmd_list->lpVtbl->CopyBufferRegion(s_d3d.cmd_list,read,0,o,0,16);
+ submit();REQUIRE(vp_upload_retire(NULL));gpu_pso_retire();
+ D3D12_RANGE rr={0,16};uint32_t*v=NULL;HR(read->lpVtbl->Map(read,0,&rr,(void**)&v));memcpy(out,v,16);D3D12_RANGE w={0,0};read->lpVtbl->Unmap(read,0,&w);
+ read->lpVtbl->Release(read);o->lpVtbl->Release(o);pso->lpVtbl->Release(pso);root->lpVtbl->Release(root);signature->lpVtbl->Release(signature);cs->lpVtbl->Release(cs);
+}
+static void mips_phase(void){
+ const u32 swz2d=0x140000,lin2d=0x150000,dxt=0x160000,cube=0x170000,cube_stride=5120;
+ fill_argb_chain(swz2d,0,64,32,7,1);
+ fill_argb_chain(lin2d,0,24,10,3,0);
+ for(unsigned i=0;i<16*16/2+64;i++)vm_base[dxt+i]=(uint8_t)(i*37u+5u);  /* 128+32+8+8+8 bytes of DXT1 */
+ for(unsigned f=0;f<6;f++)REQUIRE(fill_argb_chain(cube+f*cube_stride,f,32,32,2,1)==cube_stride);
+ reset_commands();
+ int a=vp_upload_tex_slot_impl(swz2d,64,32,0x85,0,7,1,NULL),b=vp_upload_tex_slot_impl(lin2d,24,10,0xA5,0,3,1,NULL);
+ int c=vp_upload_tex_slot_impl(dxt,16,16,0x86,0,5,1,NULL),d=vp_upload_tex_slot_impl(cube,32,32,0x85,1,2,1,NULL);
+ REQUIRE(a>=0&&b>=0&&c>=0&&d>=0);submit();REQUIRE(vp_upload_retire(NULL));gpu_pso_retire();
+ fprintf(stderr,"levels a=%u b=%u c=%u d=%u\n",resource_levels(a),resource_levels(b),resource_levels(c),resource_levels(d));
+ REQUIRE(resource_levels(a)==7&&resource_levels(b)==3&&resource_levels(c)==5&&resource_levels(d)==2);
+ for(unsigned l=0,w=64,h=32;l<7;l++,w=w>1?w>>1:1,h=h>1?h>>1:1)check_argb_level(a,0,7,l,w,h);
+ for(unsigned l=0,w=24,h=10;l<3;l++,w=w>1?w>>1:1,h=h>1?h>>1:1)check_argb_level(b,0,3,l,w,h);
+ { unsigned at=0,w=16,h=16;
+   for(unsigned l=0;l<5;l++){unsigned rb_=((w+3)/4)*8,br=(h+3)/4;check_block_level(c,l,vm_base+dxt+at,rb_,br);at+=rb_*br;w=w>1?w>>1:1;h=h>1?h>>1:1;} }
+ for(unsigned f=0;f<6;f++){check_argb_level(d,f,2,0,32,32);check_argb_level(d,f,2,1,16,16);}
+ /* The production SRV exposes every level to a shader. */
+ for(unsigned l=0;l<7;l++){uint32_t v[4];load_level(a,l,v);
+   REQUIRE(v[0]==mip_texel(0,l,0,0,1)&&v[1]==mip_texel(0,l,0,0,2)&&v[2]==mip_texel(0,l,0,0,3)&&v[3]==mip_texel(0,l,0,0,0));}
+ /* A change confined to a lower level is a change: re-upload, same slot. */
+ texture_retention_begin_batch();reset_commands();
+ vm_base[swz2d+64*32*4+32*16*4+16*8*4+8*4*4+4*2*4+2*1*4+1]^=0x5A;  /* level 6 (1x1), R byte of ARGB */
+ vm_base[cube+3*cube_stride+32*32*4+5*4+1]^=0x33;                   /* face 3, level 1 */
+ REQUIRE(vp_upload_tex_slot_impl(swz2d,64,32,0x85,0,7,1,NULL)==a);
+ REQUIRE(vp_upload_tex_slot_impl(cube,32,32,0x85,1,2,1,NULL)==d);
+ submit();REQUIRE(vp_upload_retire(NULL));gpu_pso_retire();
+ { uint8_t*p;D3D12_PLACED_SUBRESOURCE_FOOTPRINT fp;UINT rows;UINT64 rb_;ID3D12Resource*read;
+   read_sub(a,6,&p,&fp,&rows,&rb_,&read);REQUIRE(p[0]==(uint8_t)(mip_texel(0,6,0,0,1)^0x5A));done_sub(read);
+   read_sub(d,3*2+1,&p,&fp,&rows,&rb_,&read);
+   unsigned hit=0;for(unsigned y=0;y<16;y++)for(unsigned x=0;x<16;x++)if(ref_morton(x,y,4,4)==5){
+     hit++;REQUIRE(p[y*fp.Footprint.RowPitch+x*4]==(uint8_t)(mip_texel(3,1,x,y,1)^0x33));}
+   REQUIRE(hit==1);done_sub(read); }
+ texture_retention_begin_batch();
+ for(unsigned i=0;i<s_d3d.vp_tex_capacity;i++)texture_slot_release(&s_d3d.vp_tex[i]);REQUIRE(!s_d3d.vp_tex_bytes);
 }
 
 /* Execute real 2D/cube SRVs through the production descriptor writer. */
@@ -131,7 +261,7 @@ int main(int argc,char**argv){
  ID3D12Debug*debug=NULL;HR(D3D12GetDebugInterface(&IID_ID3D12Debug,(void**)&debug));debug->lpVtbl->EnableDebugLayer(debug);debug->lpVtbl->Release(debug);
  const char*choice=getenv("RSX_TEST_ADAPTER");int warp=choice&&!strcmp(choice,"warp");IDXGIAdapter*chosen=NULL;
  if(warp){IDXGIFactory4*f=NULL;HR(CreateDXGIFactory1(&IID_IDXGIFactory4,(void**)&f));HR(f->lpVtbl->EnumWarpAdapter(f,&IID_IDXGIAdapter,(void**)&chosen));f->lpVtbl->Release(f);}
- HR(D3D12CreateDevice(chosen,D3D_FEATURE_LEVEL_11_0,&IID_ID3D12Device,(void**)&s_d3d.device));if(chosen)chosen->lpVtbl->Release(chosen);
+ HR(D3D12CreateDevice((IUnknown*)chosen,D3D_FEATURE_LEVEL_11_0,&IID_ID3D12Device,(void**)&s_d3d.device));if(chosen)chosen->lpVtbl->Release(chosen);
  LUID luid;s_d3d.device->lpVtbl->GetAdapterLuid(s_d3d.device,&luid);
  IDXGIFactory4*factory=NULL;IDXGIAdapter1*adapter=NULL;DXGI_ADAPTER_DESC1 ad;
  HR(CreateDXGIFactory1(&IID_IDXGIFactory4,(void**)&factory));
@@ -167,12 +297,13 @@ int main(int argc,char**argv){
   goto finish;
  }
 
+ if(argc>1&&!strcmp(argv[1],"mips-only")){mips_phase();goto finish;}
  if(argc>1&&!strcmp(argv[1],"descriptor-only")){
   const u32 source=0x100000,stride=81920;
   for(unsigned f=0;f<6;f++)for(unsigned i=0;i<128*128;i++){
    uint8_t*p=vm_base+source+f*stride+i*4;p[0]=255;p[1]=(f&1)?255:0;p[2]=(f&2)?255:0;p[3]=(f&4)?255:0;
   }
-  reset_commands();int a=upload(0),b=upload(1),c=vp_upload_tex_slot_impl(source,128,128,0xA5,1,2,NULL);REQUIRE(a>=0&&b>=0&&c>=0);
+  reset_commands();int a=upload(0),b=upload(1),c=vp_upload_tex_slot_impl(source,128,128,0xA5,1,2,1,NULL);REQUIRE(a>=0&&b>=0&&c>=0);
   sample_descriptors(a,b,c);gpu_pso_retire();texture_retention_begin_batch();
   for(unsigned i=0;i<s_d3d.vp_tex_capacity;i++)texture_slot_release(&s_d3d.vp_tex[i]);REQUIRE(!s_d3d.vp_tex_bytes);goto finish;
  }
@@ -215,13 +346,13 @@ int main(int argc,char**argv){
  for(unsigned f=0;f<6;f++)for(unsigned j=0;j<128*128;j++){
   uint8_t*v=vm_base+cube_off+f*cube_stride+j*4;v[0]=255;v[1]=(f&1)?255:0;v[2]=(f&2)?255:0;v[3]=(f&4)?255:0;
  }
- reset_commands();int cube=vp_upload_tex_slot_impl(cube_off,128,128,0xa5,1,2,NULL);REQUIRE(cube>=0);
+ reset_commands();int cube=vp_upload_tex_slot_impl(cube_off,128,128,0xa5,1,2,1,NULL);REQUIRE(cube>=0);
  for(unsigned f=0;f<6;f++){
   capture_face(cube,f);submit();REQUIRE(vp_upload_retire(NULL));pixels_argb(vm_base+cube_off+f*cube_stride);
   gpu_pso_retire();texture_retention_begin_batch();reset_commands();
  }
  vm_base[cube_off+5*cube_stride+7]^=255;
- REQUIRE(vp_upload_tex_slot_impl(cube_off,128,128,0xa5,1,2,NULL)==cube);
+ REQUIRE(vp_upload_tex_slot_impl(cube_off,128,128,0xa5,1,2,1,NULL)==cube);
  capture_face(cube,5);submit();REQUIRE(vp_upload_retire(NULL));pixels_argb(vm_base+cube_off+5*cube_stride);
  gpu_pso_retire();texture_retention_begin_batch();
  for(unsigned i=0;i<10;i++)texture_slot_release(&s_d3d.vp_tex[i]);REQUIRE(!s_d3d.vp_tex_bytes);

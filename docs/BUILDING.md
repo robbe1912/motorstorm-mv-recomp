@@ -91,6 +91,16 @@ python scripts/project.py build
 
 The wrapper kills ms1_recomp.exe before relinking, configures root CMake into build/native, uses clang-cl and at most eight jobs. Full warnings/errors go to unique temp/builds/TIMESTAMP/configure.log and build.log. Failure prints a bounded tail and full log path; no warning suppression added. Success records EXE/ELF hashes/tree paths/log directory in build_identity.json.
 
+It also records selected runtime capabilities, the capability-source SHA256 and
+the toolkit checkout's revision/dirty status when available. The default remains
+the curated `vendor/ps3recomp`; `build --ps3recomp-dir PATH` explicitly selects
+another source root through the existing CMake `PS3RECOMP_DIR` interface. This
+does not make arbitrary runtime/generated-tree combinations compatible. A change
+to the recorded capability source or revision during compilation rejects the
+new identity. Launching requires a matching recorded build; see
+[runtime profile admission](OPERATIONS.md#runtime-profile-admission-issue-149).
+
+
 The selected debug-US build binds native hierarchy work and cooperative job waits by default. Its original ELF and reference functions must match the verified contracts; the build copies generated inputs locally and changes only the copied binding TUs. See [native binding and reference mode](NATIVE_GAME.md#build-and-scene-bridge). Use `--no-native-world-transforms --no-native-job-wait --no-native-visibility` for an unbound reference build. Other targets require their own verified bindings.
 
 The visibility prototype is opt-in: `--native-visibility` binds its verified SPU module, while runtime `MS_NATIVE_VISIBILITY=0` remains the default reference mode. `shadow` compares current operations and `1` selects native work; checked normal-PLAY shadow and native invocation are validated, with remaining performance limits in [Native game operations](NATIVE_GAME.md). Stable 30 FPS is unachieved. Direct CMake uses `PORT_NATIVE_VISIBILITY=ON`. Keep `--no-native-visibility` for a fully unbound reference build.

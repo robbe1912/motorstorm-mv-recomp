@@ -1,6 +1,7 @@
 /* Production callbacks/record layout; authored storage and submission adapters. */
 #include "rsx_commands.h"
 #include "rsx_primitives.h"
+#include "rsx_env_once.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

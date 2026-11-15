@@ -1,4 +1,5 @@
 """Authored retention safety checks; never touches real runs."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -153,6 +154,12 @@ class RetentionTests(unittest.TestCase):
         exe.parent.mkdir(parents=True, exist_ok=True)
         exe.write_bytes(b'authored dummy, not a native executable')
         cfg = {k: self.repo / k for k in ('elf', 'ffmpeg', 'userdata', 'disc')}
+        cfg['elf'].write_bytes(b'authored target identity')
+        (exe.parent / 'build_identity.json').write_text(json.dumps(dict(
+            sha256=hashlib.sha256(exe.read_bytes()).hexdigest(),
+            elf_sha256=hashlib.sha256(cfg['elf'].read_bytes()).hexdigest(),
+            ps3recomp_dir=str(self.repo / 'authored-runtime'),
+            runtime_capabilities={'policy_interpreter': True})))
         with patch.object(native_launcher, 'ROOT', self.repo), patch.object(native_launcher, 'config', return_value=cfg), \
              patch.object(native_launcher.psutil, 'process_iter', return_value=[]), \
              patch.object(native_launcher.psutil, 'disk_usage', return_value=SimpleNamespace(free=free)), \

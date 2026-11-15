@@ -2,6 +2,7 @@
 #include "rsx_commands.h"
 #include "rsx_index_strip.h"
 #include "rsx_upload_buffer.h"
+#include "rsx_env_once.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

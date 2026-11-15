@@ -27,7 +27,7 @@ def main():
     header,count=re.subn(r'(?m)^(int|void) (rsx_d3d12_backend_\w+\([^;]*;)',r'static \1 \2',public_header.read_text())
     assert count==4,'Backend entry-point interface changed; review fixture linkage'
     paths=[backend,public_header,VENDOR/'libs/video/rsx_d3d12_texture_residency.h',VENDOR/'libs/video/rsx_texture_fingerprint.h',VENDOR/'libs/video/rsx_texture_layout.c',ROOT/'scripts/fixtures/rsx_d3d12_texture_gpu.c',VENDOR/'libs/video/third_party/xxhash/PROVENANCE.json']
-    result={'qualification':'Actual production backend function bodies and real DX12 allocation, queue/fence, upload and readback. Four unrelated entry-point declarations become static only for fixture linkage; an unexercised relocation diagnostic boundary aborts visibly. Authored bytes. Production SRV writer tested by actual 2D/cube shader sampling; no whole-game or throughput/FPS proof. Stale-event case signals only an authored blocking gate; the real queue must complete its own target fence.', 'adapter_requested':args.adapter,'source_sha256':{str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths},'commands':[]}
+    result={'qualification':'Actual production backend function bodies and real DX12 allocation, queue/fence, upload and readback. Four unrelated entry-point declarations become static only for fixture linkage; an unexercised relocation diagnostic boundary aborts visibly. Authored bytes. Production SRV writer tested by actual 2D/cube shader sampling and per-level Load; RSX_TEX_MIPS chains read back per subresource; no whole-game or throughput/FPS proof. Stale-event case signals only an authored blocking gate; the real queue must complete its own target fence.', 'adapter_requested':args.adapter,'source_sha256':{str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths},'commands':[]}
     result['renderer_optimization']=args.optimize_renderer
     env=dict(os.environ)
     for k in list(env):
@@ -47,6 +47,10 @@ def main():
     exe=build(source,'production')
     for tag,arguments in [('full',[]),('stale-wake',['stale-wake-only']),('descriptor',['descriptor-only'])]:
         p=command([str(exe)]+arguments,tag);assert p.returncode==0,f'{tag}: {out}/result.json';print(p.stdout.strip())
+    p=command([str(exe),'mips-only'],'mips',dict(env,RSX_TEX_MIPS='1'))
+    assert p.returncode==0,f'mips: {out}/result.json';print(p.stdout.strip())
+    p=command([str(exe),'mips-only'],'mips-reference-red',dict(env,RSX_TEX_MIPS='0'))
+    assert p.returncode==7 and 'resource_levels(a)==7' in p.stderr,f'Expected single-level reference failure: {out}/result.json';print('PASS actual single-level reference RED: mips')
     p=command([str(exe),'growth-only'],'growth',dict(env,RSX_TEXTURE_CACHE_MIB='2'))
     assert p.returncode==0,f'growth: {out}/result.json';print(p.stdout.strip())
     p=command([str(exe),'growth-only'],'reference-growth-red',dict(env,RSX_TEXTURE_RETENTION='0',RSX_TEXTURE_CACHE_MIB='2'))

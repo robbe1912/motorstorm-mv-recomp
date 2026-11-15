@@ -72,6 +72,10 @@ def main():
                               hashlib=hashlib, json=json,
                               os=SimpleNamespace(environ={'MS_NATIVE_PCM_CUBIC':'1',
                                                          'MS_NATIVE_VISIBILITY':'shadow'}))
+                    # run.py admits the selected executable's adjacent record
+                    # first; the guard reads that admitted record.
+                    ns['admitted'] = dict(build_identity=json.loads((native/'build_identity.json').read_text()),
+                                          exe_sha256=digest)
                     execute([init, *arguments], ns)
                     ns['args'] = ns['ap'].parse_args(['--native-pcm-cubic',pcm,
                                                    '--native-visibility',visibility])

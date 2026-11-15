@@ -16,9 +16,17 @@
  *   FPS_STATS_CSV=path  Also write one CSV row per present:
  *                         frame,t_ms,dt_ms,flips_since_prev_present
  *                       dt_ms is 0 on the first row (no predecessor); t_ms is
- *                       ms since the first present. Flushed once per second
- *                       and closed in the exit summary. Summarize with
- *                       recomp/out/debug_feasibility/analyze_fps.py.
+ *                       ms since the first successful present, measured on
+ *                       the same monotonic clock (QueryPerformanceCounter /
+ *                       CLOCK_MONOTONIC) -- not since process start.
+ *                       Rows are flushed whole, once per report window (or
+ *                       sooner if the 64 KiB buffer would fill), and each
+ *                       [FPS] line then ends with csv_persisted=<rows>@<t_ms>:
+ *                       the complete rows already handed to the OS. An abrupt
+ *                       termination can lose only rows after the last such
+ *                       mark. A write/flush failure is reported with that
+ *                       coverage and closes the CSV. The exit summary flushes,
+ *                       closes and prints "[FPS] csv rows=N persisted=N".
  *
  * Hot path: one QueryPerformanceCounter read + integer ops per present;
  * nothing is allocated per frame and the CSV FILE* opens once. Disabled cost

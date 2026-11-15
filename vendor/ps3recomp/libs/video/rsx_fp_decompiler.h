@@ -145,6 +145,12 @@ int rsx_fp_collect_constants(
 /* Zero inline constants only for buffered-HLSL prefetch identity. */
 u32 rsx_fp_canonical_program(const u8* ucode,u32 max_bytes,u8* out,u32 capacity);
 u64 rsx_fp_structural_hash(const u8* ucode, u32 max_bytes, u64 seed);
+/* The same hash, plus the program's byte length (instructions and inline
+ * CONST slots up to and including PROGRAM_END) in one walk. *out_size is the
+ * value rsx_fp_program_size returns whenever the hash is nonzero, and 0 when
+ * the hash is 0. */
+u64 rsx_fp_structural_hash_sized(const u8* ucode, u32 max_bytes, u64 seed,
+                                 u32* out_size);
 
 /* Hash the exact legacy HLSL literal spellings (%g) for a program while also
  * retaining structural identity. This is intended for aggregate diagnostics;

@@ -80,6 +80,48 @@ hide mechanism was not traced, and this run does not verify menu or race renderi
 
 Inherited probes are cleared; development SPU_PM_INTERP=1 remains. Six known pre-menu wedge probes are zeroed: SPU_WP, SPU_PM_GATE_TRACE, SPU_PM_RETIRE_GUARD, SPU_PM_PC_RESUME, SPU_PM_FLOW_RESUME, SPU_PM_YIELD_RESUME. Probe-off boots both clean/instrumented menus; individual guilty knob is not isolated. FLOW_FSDBG=1 correlated with early resourcesystem 938 fatal and is omitted. Hooks alone were exonerated for this pre-menu wedge, not permanent stability.
 
+## Runtime profile admission (issue 149)
+
+The default `--execution-profile baseline-interpreter` retains that curated
+environment. Admission requires the selected EXE's adjacent `build_identity.json`,
+matching EXE and configured ELF hashes, selected runtime source and recorded
+capabilities. Older builds without capabilities must be rebuilt. Capabilities
+are never inferred from a later source checkout. An unsupported baseline fails
+before run retention, output creation, PAD replay or process creation.
+
+For a deliberate trial of a runtime without the curated policy interpreter:
+
+```powershell
+python scripts/run.py --executable 'build/separate/ms1_recomp.exe' --execution-profile toolkit-default --seconds 60
+```
+
+`toolkit-default` omits the curated interpreter and resume/probe switches; inherited
+SPU/FLOW diagnostics are still cleared. It requires explicit selection even if
+the baseline is unsupported. `launch.json` and `final.json` retain the selected
+profile, exact profile environment, matching build record and EXE/ELF identities.
+The recorded build source includes its capability-source hash and, for a toolkit
+Git checkout, revision and dirty status. These records identify the selected
+build; they do not prove all possible source capabilities or execution parity.
+
+This selection starts a fresh runtime baseline. It is not an API-only comparison
+with an earlier curated D3D12 build. Renderer comparisons need matching runtime,
+CPU/SPU/input profiles, build conditions and observations on both renderers.
+Vulkan host integration remains under #146; this tooling change launches no
+Vulkan trial and establishes no original assets, race entry or 30 FPS result.
+
+`python scripts/check_runtime_profile.py` uses authored inert identities and
+intercepts native compilation/process creation while executing the real build
+and launcher entry points. It requires Python 3.10+ and `psutil` from
+`requirements.txt`. Add `--historical-runtime PATH` to verify actual
+`runtime/spu/spu_channels.c` from own-fork commit
+`39a36296511c445707adabcd312f0b740cfbd694` (Git blob
+`506da3f99dbfa7576dda3d0d53d9d859643e54fb`): the unsupported default must
+reject before launch and explicit toolkit-default must record the selection.
+`--fetch-historical` fetches only that file at the pinned commit (CI uses it on
+Linux and Windows). Without that source, only this optional historical check is
+skipped, and the skip is reported. No game
+inputs or original instructions are used by either check.
+
 CPU surface dependency diagnostics use `scripts/run.py --profile-cpu-surfaces`.
 This explicitly enables and records the existing `RSX_CPU_SURFACE_PROFILE=1`
 backend diagnostics after inherited RSX settings are cleared. Each completed
@@ -326,6 +368,8 @@ remain private; CI uploads authored-test logs/JSON only.
 
 For the default-off fingerprint-owned job experiment, pass `--native-owned-jobs` to [run.py](../scripts/run.py). The launcher clears inherited SPU flags, explicitly selects and records `SPU_NATIVE_OWNED_JOBS=1`, and retains required policy interpretation. Environment inheritance alone does not select this mode.
 
+Pass `--jobmod-header-fnv` as well to select and record `SPU_JOBMOD_HEADER_FNV=1` (default off). The staging matcher then also identifies a job image by the span its C0DEC0DE header declares (image minus the 0x20 trailer), once per burst. Without it, a job the policy module loads with tail padding never matches its registered identity and runs interpreted; the MP3 job objects (ids 217/218) are loaded this way. A header match logs `[pm-jobmod] header identity`. [check_spu_jobmod_identity.py](../scripts/check_spu_jobmod_identity.py) covers the matcher with authored images.
+
 ### Persistent DX12 texture cache
 
 `--texture-retention 0|1` explicitly selects the reference or bounded persistent
@@ -335,6 +379,16 @@ The target counts owned default texture and upload allocation footprints, not
 all driver memory or physical VRAM residency. Indispensable live batch pins may
 exceed it; `[TEXRESIDENCY]` reports this overage with `--profile-textures`.
 A zero target retains required batch resources until genuine GPU retirement.
+
+`--texture-mips 0|1` (`RSX_TEX_MIPS`, default `0`) uploads the mip levels
+SET_TEXTURE_FORMAT declares below level 0 for 2D and cube textures, clamped to
+the halvings the dimensions allow; volumes keep one level. Each (face, level)
+is decoded at its own size and layout and copied to its own subresource, and
+the identity covers every uploaded level. `[RSXTEXMIP]` names the first chained
+uploads and their class. Linear (LN) chains assume lower levels packed at their
+own width; that rule has no hardware cross-check yet. Game-free coverage:
+[check_rsx_texture_mips.py](../scripts/check_rsx_texture_mips.py); D3D12
+readback and per-level sampling: `check_rsx_texture_gpu.py` phase `mips-only`.
 
 Use identical cache targets, validation and profiling settings for comparisons.
 Retention validates every uploaded face with full XXH3; the reference retains

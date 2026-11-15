@@ -9,6 +9,7 @@ typedef struct { void (*Release)(Resource*); } ResourceVtbl;
 struct Resource { ResourceVtbl* lpVtbl; unsigned refs; };
 typedef uint32_t u32;typedef uint64_t u64;typedef Resource ID3D12Resource;typedef int DXGI_FORMAT,HRESULT;
 @TEXTURE_SLOT@
+u32 s_vp_tex_hint[8192]; /* verified lookup hints, cleared with the pool */
 typedef struct { Resource* pso; } VPFPEntry;
 static struct {
     int initialized, vp_vs_n;

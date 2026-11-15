@@ -1,5 +1,177 @@
 # Vendor provenance and upstream
 
+## D3D12 fragment-program bound (#317)
+
+The fragment-program parser bound is 16 KiB throughout the D3D12 backend.
+The equivalent five-consumer toolkit correction was validated first on
+`robbe1912/ps3recomp` branch `codex/d3d12-fp-ucode-bound`, production commit
+`ab885a8ac4eb689ac1b3f62a59b502c579ef33ff`, with the self-contained fixture
+follow-up `8d66db96de044deb7502b1970e58d8388f8b46b6`. The final commit is
+integrated into `combined`. Its Windows and Ubuntu program-bound jobs pass.
+The existing combined texture-profile fixture remains failing on its older,
+incompatible extracted lookup model, as it did before these commits.
+
+PR #317 applies the same bound to this curated backend's snapshot storage,
+copy and refresh, live hash, canonical prefetch, ordinary/native-depth HLSL
+translation, `FP_PICK`, b1 constant collection and native-depth texture mask.
+The 512-slot snapshot ring holds 8 MiB of program bytes. Its ownership and
+constant-refresh rules are preserved, as is the 143-constant draw-record cap
+and its explicit refusal. Metal's parser bound is outside this D3D12 change.
+
+`scripts/check_rsx_fp_snap_cache.py` extracts the actual capacity definition
+with the snapshot implementation. It exercises long snapshot/live identities,
+a constant edit beyond 4 KiB, exact-bound and over-bound END, zero-tail reuse,
+eight compiled mutants and nine consumer-bound omission controls.
+`scripts/fixtures/rsx_fp_program_bound.c.in` selectively imports the authored
+own-fork fixture for 4,112-byte/64-constant, 4,384-byte/64-constant and
+16-KiB programs. It adapts the curated constant-payload output argument and
+uses NOP padding at the maximum byte boundary to isolate that bound from the
+separate HLSL-output capacity. Windows compiles all three generated shaders
+with actual FXC `ps_5_0` at O3. The old 4-KiB bound fails the authored full-size
+control. Fixtures contain no captured guest programs.
+
+These checks establish parser, snapshot and host-shader compilation behavior.
+The author's original-head mud-rendering and race observations remain their
+reported evidence. Corrected-head native visual parity, matched performance,
+gameplay and stable 30 FPS remain unverified.
+
+## Prompt flip completion and latency state (#155)
+
+The opt-in GCM completion, FIFO hold and latency diagnostics are reconciled
+with current main directly on PR #316 following the maintainer's direction.
+Both completion switches and `FLIP_LAT` remain off by default. The SPURS
+publication wake-up selectively imports own-fork PR #4, combined merge
+`367c7e87b269ee7ae347a646ca2186d51dfa47c6`. Its selector cache is worker-local.
+
+A blocking state lock serializes wait generations, frame stamps, completion
+publication and delivery claims. Each completion stores a generation-tagged
+payload beside the notification bit, and resetting a wait invalidates older work. Status/frame flags use
+C11 atomics for their other cross-thread accesses. Guest callbacks execute
+after releasing the state lock. A returning or timed-out waiter can complete
+only its captured generation. The Win32 completion event and timestamp
+frequency initialize through `InitOnceExecuteOnce`.
+
+Latency timestamps and aggregates use an independent blocking lock. Reporting
+copies and resets one coherent window, then prints after unlocking. The
+frame-clock diagnostic timestamp is sampled only when diagnostics are enabled.
+
+The authored fixture compiles the actual GCM implementation on Windows and
+POSIX, using reserved virtual memory with authored control/ring contents. It
+covers four switch combinations, diagnostics off, FIFO holds, vblank bounds,
+beat fallback, a real producer and blocked Win32 waiter, replacement waits,
+128 cross-thread queued-generation replacements and concurrent diagnostic
+reporting. Eighteen compiled mutants must fail on both hosts. Windows adds a
+nineteenth control removing the publication doorbell. The queued-generation
+regression fails on the original PR in take/both modes. No guest bytes or
+generated guest code are included. Corrected native gameplay, visuals and
+matched frame-time performance remain unverified.
+
+## Texture mip chains (#97)
+
+Curated change to `libs/video/rsx_d3d12_backend.c` and
+`rsx_texture_fingerprint.h`. With `RSX_TEX_MIPS=1` (default 0) the VP texture
+upload creates 2D and cube resources with the guest's mip levels, clamped by
+`rsx_texture_mip_chain` to the halvings the dimensions allow. Each (face,
+level) is decoded at its own layout into the placed footprint
+`GetCopyableFootprints` assigns and copied to its own subresource; level 0
+keeps the historical row pitch. The level count joins the cache key and slot
+reuse check, and the retained identity widens to every uploaded level of each
+face (`rsx_texture_source_view_extend`). `srv_write_ex` views every level of a
+non-null resource, which is unchanged for single-level resources. Volumes stay
+single-level. Lower levels of a linear chain are read packed at their own width,
+as `rsx_texture_mip_chain` already describes; no hardware capture confirms that
+rule. `check_rsx_texture_mips.py` covers offsets, per-level decode, identity and
+selection with five mutants; the Windows GPU fixture adds a `mips-only` phase
+(per-subresource readback, per-level Load, lower-level mutation) and passes the
+volume `depth` argument `vp_upload_tex_slot_impl` gained in #307. No game input
+or generated code is included.
+
+
+Current-main integration preserves the verified texture lookup hint. Hint
+acceptance, its diagnostic verification scan and the ordinary scan all compare
+the normalized uploaded level count. `check_rsx_texture_profile.py` now checks
+a stale single-level hint beside a chained slot and rejects independently
+removing the level check from each path, under both retention modes and with
+hints disabled. Authored integrated DX12 allocation/upload/readback checks also
+pass on the RTX 3080 with zero validation messages. Guest linear-chain packing
+and matched native visuals remain unverified.
+
+## Padded job-module header identity (#300)
+
+The reusable header decoder, selector and diagnostic limit in
+`runtime/spu/spu_jobmod_identity.h` and its authored
+`runtime/spu/tests/test_spu_jobmod_identity.c`, retained locally as
+`scripts/fixtures/spu_jobmod_identity_threads.c.in`, come byte-identically from
+own-fork modular `codex/spu-jobmod-header-identity`, commit
+`a4e725d6f7eaa27fc5b2aff34fcb9bfae4712d38`, then fast-forwarded into `combined`.
+The curated contiguous-load matcher retains its existing policy-module
+integration and legacy all-byte fingerprint. Default-off
+`SPU_JOBMOD_HEADER_FNV=1` also offers the header-declared image-minus-trailer
+span when the link base matches, allowing padded loads to identify once.
+
+The selector cache and sixteen-message diagnostic cap are worker-local.
+Eight real simultaneous first callers verify distinct live cache/counter
+storage; shared-state mutants fail. The curated authored staging fixture
+retains eleven identity cases and four span/switch mutants, and compiles the
+same worker fixture with both shared-state mutants on Windows and POSIX.
+Native decoded-PCM parity and matched game performance remain unverified.
+No guest payload or generated code is included.
+
+## SPU EA alias page-cache publication (#155)
+
+Selective integration from own-fork PR #5, modular commit
+`db15251858f8f63e3ad579a77fcf4af259f112b2`, merged into `combined` as
+`3a512ae05aa21ae6bcbd538694b09ecb94cb71e5`. Follow-up writer serialization
+was authored on own-fork `codex/spu-alias-writer-serialization`, commit
+`16fc783e311deb5e50ed8cc4b4275eba99e3fc86`, then fast-forwarded into `combined`.
+`runtime/syscalls/spu_ea_alias.c` is byte-identical to that final revision.
+Cached 4 KiB page answers use acquire/release publication. An atomic range
+count publishes initialized, append-only records for mixed-page fallback.
+An internal blocking mutex serializes allocator and mapper registration;
+the curated mapper registers after releasing its allocator lock. Guest
+address lookups retain the lock-free atomic page/scan path.
+
+The own-fork authored fixture checks four concurrent readers, four concurrent
+writers, 6,746,751 reference-equivalent fixups and nine compiled mutants.
+Type assertions reject the original unsynchronized page/count declarations.
+Disabling the writer lock fails an actual held-lock registration control.
+Local MinGW, clang-cl and POSIX GCC checks and Ubuntu/Windows CI pass. The
+existing memory-capacity and allocation-exhaustion contract passes locally.
+Game performance remains unverified by this review. No guest bytes or
+generated code are included.
+
+## Fragment-program snapshot identity reuse (#155)
+
+Curated change to `libs/video/rsx_d3d12_backend.c` and `rsx_fp_decompiler.c/.h`.
+Each draw walked the same fragment program up to seven times: the snapshot
+refresh hashed it, `vp_fp_snap_take` sized and hashed it again and cleared all
+4 KiB of its slot, and `vp_get_fp_pso`, called once when compiling and once when
+replaying the draw, hashed and sized it each time. `vp_fp_snap_take` now copies
+the program once, hashes and sizes that copy in one walk
+(`rsx_fp_structural_hash_sized`, same hash), takes no ring slot when the copy
+does not verify, and clears only the tail a longer previous occupant left.
+`vp_get_fp_pso` uses a verified snapshot's stored hash and size instead of
+rehashing its bytes; a live read is still hashed. Hash values, PSO keys and
+`rsx_fp_snapshot_check` are unchanged. `check_rsx_fp_snap_cache.py` exercises the
+extracted production ring and PSO identity selection with authored bytecode and
+four mutants. No game input or generated code is included.
+
+## Read-once renderer switches (#155)
+
+Curated change to `libs/video`: new `rsx_env_once.h`, used by
+`rsx_d3d12_backend.c` and `cellGcmSys.c`. Diagnostic switches read on every
+draw, bind, upload, present or FIFO pass called `getenv`, which walks the whole
+environment block; a sampled native race put that walk (`strchr`) at 14.5% of
+the renderer thread. `rsx_env_once(name)` returns a private copy of the value
+at the first lookup, keyed by the name literal's address in a fixed lock-free
+table that falls back to `getenv` when full. Sites already behind a one-time
+guard, startup-only reads and the CPU surface files are unchanged. Every switch
+keeps its meaning; a value changed after launch is no longer seen.
+`check_rsx_env_once.py` tests the header (copies, first-lookup values,
+overflow, concurrent first lookups, three mutants) and audits the hot-path
+functions for raw reads. The triangle-capacity and VP-upload fixtures include
+the header. No game input or generated code is included.
+
 ## Graphics review corrections (#271, #307)
 
 Own-fork branch `codex/fix-hammer-graphics` pins the reviewed graphics runtime

@@ -231,7 +231,7 @@ static u32 native_depth_units(const D3D12DrawRecord* dr)
     u32 off = cellGcmResolveLocated((dr->fp_addr & 3u) == 1, dr->fp_addr & ~3u);
     if (off == 0xFFFFFFFFu) return 0;
     const u8* uc = vp_fp_snap_bytes(dr->fp_snap, off);
-    return rsx_fp_texture_units(uc ? uc : vm_base + off, 4096);
+    return rsx_fp_texture_units(uc ? uc : vm_base + off, VP_FP_UCODE_MAX);
 }
 
 /* written[slot]: an earlier record of this batch renders that attachment, so

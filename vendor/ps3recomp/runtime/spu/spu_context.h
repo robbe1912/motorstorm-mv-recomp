@@ -338,6 +338,12 @@ typedef struct spu_context {
      * the only reliable source anchor under DMA-list scatter staging. */
     uint32_t stage_ea0;
     uint64_t stage_fnv;
+    /* SPU_JOBMOD_HEADER_FNV=1: a burst whose first transfer is a C0DEC0DE
+     * job image linked at its staging address is also identified by its
+     * declared image minus the 0x20-byte trailer (stage_hdr_span bytes),
+     * independent of any load padding after it. 0 span = not tracked. */
+    uint32_t stage_hdr_span, stage_hdr_len;
+    uint64_t stage_hdr_fnv;
     /* Un-lifted span currently being interpreted (SPU_INTERP_UNLIFTED): while
      * set, the interpreter must not "rejoin" a lift inside the range. A module
      * the title stages at runtime (MS1's flashATRAC codec at LS 0x33880)
