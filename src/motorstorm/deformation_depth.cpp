@@ -57,7 +57,54 @@ std::uint32_t clamped_index(float product, std::uint32_t dimension) {
     return value < dimension ? value : dimension - 1;
 }
 
+float projection_flush(float value, bool non_java) {
+    const auto bits = std::bit_cast<std::uint32_t>(value);
+    if (non_java && (bits & 0x7f800000u) == 0)
+        return std::bit_cast<float>(bits & 0x80000000u);
+    return value;
+}
+
+float projection_madd(float a, float b, float c, bool non_java) {
+    a = projection_flush(a, non_java);
+    b = projection_flush(b, non_java);
+    c = projection_flush(c, non_java);
+    const auto value = std::fma(a, b, c);
+    const auto bits = std::bit_cast<std::uint32_t>(value);
+    if ((bits & 0x7fffffffu) > 0x7f800000u)
+        return std::bit_cast<float>(0x7fc00000u);
+    return projection_flush(value, non_java);
+}
+
+float projection_fraction(float value) {
+    const auto bits = std::bit_cast<std::uint32_t>(value);
+    const auto exponent = (bits >> 23) & 0xffu;
+    float integer = 0.0f;
+    if (exponent >= 127) {
+        const auto mask = exponent < 150 ? 0x7fffffu >> (exponent - 127) : 0u;
+        integer = std::bit_cast<float>(bits & ~mask);
+    }
+    const float fraction = single(value - integer);
+    return fraction < 0.0f ? static_cast<float>(single(fraction + 1.0f)) : fraction;
+}
+
 } // namespace
+
+std::array<float, 2> project_deformation_point(const DeformationProjection& input) {
+    const ScopedDepthFp fp;
+    std::array<float, 2> result{};
+    for (unsigned index = 0; index != result.size(); ++index) {
+        const auto& row = input.rows[index];
+        const auto& point = input.point;
+        const float x = projection_madd(row[0], point[0], 0.0f, input.non_java);
+        const float z = projection_madd(row[2], point[2], 0.0f, input.non_java);
+        const float xy = projection_madd(row[1], point[1], x, input.non_java);
+        const float zw = projection_madd(row[3], point[3], z, input.non_java);
+        const float sum = single(projection_flush(xy, input.non_java) +
+                                 projection_flush(zw, input.non_java));
+        result[index] = projection_fraction(projection_flush(sum, input.non_java));
+    }
+    return result;
+}
 
 DeformationDepthPlan plan_deformation_depth(
     float normalized_x, float normalized_y, std::uint32_t width,

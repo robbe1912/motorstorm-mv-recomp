@@ -301,5 +301,5 @@ void deformation_depth_observer_install() {
     ppu_register_function(kPixelBufferLock, observe_lock);
     value.enabled = true;
     std::fputs("[depth-observe] installed raw GetDepth/PixelBuffer::Lock observer\n", stderr);
-    if (value.native_query) std::fputs("[native-depth-query] selected native query with retained TransformPoint\n", stderr);
+    if (value.native_query) std::fputs("[native-depth-query] selected native query with typed projection\n", stderr);
 }

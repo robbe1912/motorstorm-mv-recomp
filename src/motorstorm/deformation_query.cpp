@@ -9,8 +9,8 @@
 #include <stdexcept>
 #include <string>
 
-// TransformPoint remains a retained dependency of this native query adapter.
-void func_0029BE08(ppu_context *);
+// SurfaceQuery retains ownership of the title's surface-to-matrix lookup.
+void func_006CCF6C(ppu_context *);
 extern "C" void ps3_indirect_call(ppu_context *);
 extern "C" thread_local void (*g_trampoline_fn)(void *);
 
@@ -105,7 +105,7 @@ struct PixelBufferLease {
 };
 
 struct Counts {
-  std::atomic<std::uint64_t> completed{}, sampled{}, snapshots{}, scalar{};
+  std::atomic<std::uint64_t> completed{}, sampled{}, snapshots{}, scalar{}, projected{};
 };
 Counts counts;
 
@@ -122,11 +122,12 @@ void report(bool sampled, bool snapshot) {
       total % 1024 == 0)
     std::fprintf(stderr,
                  "[native-depth-query] completed=%llu sampled=%llu "
-                 "snapshots=%llu scalar=%llu\n",
+                 "snapshots=%llu scalar=%llu projected=%llu\n",
                  static_cast<unsigned long long>(total),
                  static_cast<unsigned long long>(counts.sampled.load()),
                  static_cast<unsigned long long>(counts.snapshots.load()),
-                 static_cast<unsigned long long>(counts.scalar.load()));
+                 static_cast<unsigned long long>(counts.scalar.load()),
+                 static_cast<unsigned long long>(counts.projected.load()));
 }
 } // namespace
 
@@ -151,20 +152,35 @@ void motorstorm_native_deformation_depth(ppu_context *context) {
   if (end < begin || ((end - begin) & 3))
     throw std::runtime_error("Invalid native depth surface vector");
 
+  motorstorm::game::DeformationProjection projection{};
   const auto source = context->gpr[4] & ~std::uint64_t(15);
-  QueryFrame frame(context);
   for (unsigned word = 0; word != 4; ++word)
-    vm_write32(context->gpr[1] + 0x80 + 4 * word, vm_read32(source + 4 * word));
-  context->gpr[4] = context->gpr[1] + 0x80;
-  context->gpr[7] = context->gpr[1] + 0x74;
-  context->lr = 0x0029c70c;
-  func_0029BE08(context);
+    projection.point[word] = read_float(source + 4 * word);
+  const auto query_argument = context->gpr[5];
+  const auto properties = vm_read32(std::uint64_t(manager) + 0x14);
+  QueryFrame frame(context);
+  context->gpr[3] = static_cast<std::uint32_t>(properties + 0x38u);
+  context->gpr[4] = query_argument;
+  context->gpr[5] = selector;
+  context->gpr[6] = context->gpr[1] + 0x90;
+  context->lr = 0x0029be8c;
+  func_006CCF6C(context);
   complete_retained_calls(context);
-  if (!context->gpr[3]) {
+  const auto matrix = vm_read32(context->gpr[1] + 0xcc);
+  if (!matrix) {
     context->fpr[1] = default_depth;
     report(false, false);
     return;
   }
+  projection.point[3] = read_float(vm_read32(toc - 0x2c90) & ~std::uint32_t(15));
+  projection.non_java = (context->vscr & (1u << 16)) != 0; // VSCR[NJ].
+  const auto matrix_base = matrix & ~std::uint32_t(15);
+  for (unsigned row = 0; row != 2; ++row)
+    for (unsigned word = 0; word != 4; ++word)
+      projection.rows[row][word] = read_float(std::uint64_t(matrix_base) +
+                                             row * 16 + word * 4);
+  const auto coordinates = motorstorm::game::project_deformation_point(projection);
+  ++counts.projected;
 
   CacheReset cache{manager};
   const auto entry = select_surface(manager, (selector >> 20) & 0x7ff);
@@ -185,7 +201,7 @@ void motorstorm_native_deformation_depth(ppu_context *context) {
     const auto bytes_per_pixel =
         vm_read32(std::uint64_t(table) + 4ULL * format) >> 3;
     const auto plan = motorstorm::game::plan_deformation_depth(
-        read_float(context->gpr[1] + 0x74), read_float(context->gpr[1] + 0x78),
+        coordinates[0], coordinates[1],
         width, height, bytes_per_pixel);
     const auto base = vm_read32(context->gpr[1] + 0x70);
     VmReadSnapshotRange ranges[4]{};

@@ -136,20 +136,26 @@ owned process. Mode `0` selects the original query and its observer.
 
 The native path performs manager readiness, cached or scanned surface selection,
 original virtual Lock, typed coordinate planning, transactional corner acquisition,
-point or bilinear evaluation, virtual Unlock and cache cleanup. It retains original
-TransformPoint as a dependency and completes queued PPU trampolines at retained
-call boundaries. Unavailable bulk acquisition uses the normal scalar services in
+point or bilinear evaluation, virtual Unlock and cache cleanup. It constructs the
+homogeneous point, reads both matrix rows and executes the
+typed native projection. The retained SurfaceProperties::SurfaceQuery supplies
+the matrix pointer, and original virtual Lock/Unlock callbacks acquire and release
+the pixel view. Queued PPU trampolines complete at those retained call boundaries.
+Unavailable bulk acquisition uses the normal scalar services in
 original corner order. Invalid or failed acquisition raises a visible error with
 Lock, cache, stack and TOC cleanup. The original default-depth constant is 0.25.
 
 `scripts/check_deformation_query.py` exercises the actual adapter with authored
 objects and callbacks across sixteen caller FP environments, direct and deferred
-calls, cache paths, early returns, nonzero samples and seven rejected mutants.
-A private comparison with the pinned emitted original passes the same control,
+calls, cache paths, early returns, nonzero samples and twelve rejected mutants.
+Controls reject retained projection dispatch,
+a wrong homogeneous coordinate, matrix alignment/stride changes and ignored guest
+VSCR[NJ], alongside acquisition, fallback and cleanup failures.
+An earlier private comparison with the pinned emitted original passed the control,
 output and ABI cases under nearest-even host rounding and four DAZ/FTZ settings.
 The emitted original changes results under non-nearest host rounding. These
-historical differences remain recorded in the private comparison. Live native
-query execution, diverse inputs, producer lifetime and matched gameplay timing
+historical differences remain recorded in the private comparison. Diverse live
+inputs, producer lifetime and matched gameplay timing
 remain acceptance gates for issue 302 and the stable-30 goal.
 
 The retained projection also exposes a fused-rounding dependency. A byte-verified
@@ -157,8 +163,36 @@ The retained projection also exposes a fused-rounding dependency. A byte-verifie
 preserved emitted arithmetic and to the expected 1.0 using the canonical VMX
 fused helper. `scripts/check_ppu_vmx_fused.py` exercises the corrected lifter
 against an independent binary32 oracle. The correction applies to newly
-generated code. Native projection binding or private regeneration is required
-to carry it into gameplay.
+generated code. The typed projection below carries the fused contract into the
+native query without regenerating the preserved input tree.
+
+The experimental native query now binds the typed projection directly. It retains
+binary32 fused multiply-add boundaries, the pairwise row reduction, VSCR[NJ]
+subnormal handling and signed fractional wrapping. The original caller's aligned
+point load supplies XYZ, and the verified homogeneous constant supplies W. Matrix
+views retain the original aligned vector loads. The query counter additionally
+records `projected`, and the launcher marker identifies typed projection.
+
+`python scripts/check_deformation_projection.py` checks 544 authored projections
+against an independent exact-rational binary32 oracle across sixteen host FP
+settings. Five source mutants reject unfused arithmetic, a wrong point lane,
+missing negative wrapping, ignored NJ and caller FP leakage. A private comparison
+passes the same cases against the byte-verified 144-instruction original using
+canonical VMX FMA/add helpers. This preserves the distinction between the original
+instruction contract and the saved generated arithmetic's cancellation error.
+The comparison requires exact finite output bits and matching NaN classification.
+
+Owned muted DX12 run `20261113T123822.614497Z`, EXE `147d0f56...6fc2`, used
+the proven v4 normal-PLAY profile with seven acknowledged required inputs and
+exactly one screen-gated SONY intro skip. It observed race HUD frame 35, whose
+timer reads 00:18.06, LAP 0/2 and POS 10/15. The last logged query counters were
+`completed=31744 sampled=28 snapshots=28 scalar=0 projected=28`, establishing
+at least 28 typed projections with successful transactional samples. The guard
+closed after 386.593 seconds, including 120 seconds after target observation,
+with no resource breach. The packet and local analysis are pinned. Dark ground
+patches remain visible. This binary predates the fragment-program bound fix in
+PR 317. Diverse live numeric pairing, graphics parity, matched operation timing,
+interpreter removal and minimum 30 FPS remain open.
 
 Owned DX12 run `20261109T094927.873395Z`, EXE `56fe9332...e909b`, reached
 race HUD frame 35 through seven acknowledged required inputs and one observed

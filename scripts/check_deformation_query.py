@@ -133,6 +133,18 @@ void vm_write64(std::uint64_t, std::uint64_t);
             "status == VM_READ_SNAPSHOT_UNAVAILABLE || status == VM_READ_SNAPSHOT_FAILED)",
             1,
         ),
+        "retained projection": original.replace("func_006CCF6C", "func_0029BE08"),
+        "wrong homogeneous coordinate": original.replace(
+            "projection.point[3] = read_float(vm_read32(toc - 0x2c90) & ~std::uint32_t(15));",
+            "projection.point[3] = 0.0f;", 1,
+        ),
+        "unaligned matrix": original.replace(
+            "matrix & ~std::uint32_t(15)", "matrix", 1,
+        ),
+        "wrong matrix row": original.replace("row * 16 + word * 4", "row * 8 + word * 4", 1),
+        "ignored guest NJ": original.replace(
+            "(context->vscr & (1u << 16)) != 0", "false", 1,
+        ),
     }
     for index, (label, changed) in enumerate(mutants.items()):
         assert changed != original, label
@@ -154,7 +166,7 @@ void vm_write64(std::uint64_t, std::uint64_t);
         run(candidate_command, 120)
         run([str(candidate_exe), "0", "1"], 30, succeeds=False)
     print(
-        "PASS native query control, reference outputs, acquisition/fallback, cleanup and ABI; 16 FP modes, seven mutants rejected"
+        "PASS typed projection, query control, acquisition/fallback, cleanup and ABI; 16 FP modes, twelve mutants rejected"
     )
     print(out / "result.json")
 

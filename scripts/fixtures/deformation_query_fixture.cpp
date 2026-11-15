@@ -28,6 +28,7 @@ std::vector<std::uint64_t> byte_reads;
 bool transform_success = true, locked, deferred_calls;
 int snapshot_status = VM_READ_SNAPSHOT_OK;
 unsigned snapshot_calls;
+std::uint32_t expected_addresses[4] = {0x9040, 0x9041, 0x9140, 0x9141};
 
 void check(bool value, const char *message) {
   if (value)
@@ -66,28 +67,29 @@ void vm_write64(std::uint64_t address, std::uint64_t value) {
   vm_write32(address + 4, std::uint32_t(value));
 }
 
-void perform_transform(ppu_context *context) {
-  events.emplace_back("transform");
-  check(context->gpr[3] == manager && context->gpr[5] == 0x76543210 &&
-            context->gpr[6] == 0x30000f,
-        "transform arguments");
-  check(context->gpr[4] == stack - 0xe0 + 0x80 &&
-            context->gpr[7] == stack - 0xe0 + 0x74,
-        "transform scratch ownership");
-  check(vm_read32(context->gpr[4]) == 0x12345678, "aligned vector copied");
-  vm_write32(context->gpr[4], 0xabcdef01);
-  vm_write32(context->gpr[7], 0x3e808000);
-  vm_write32(context->gpr[7] + 4, 0x3f3f8000);
-  context->gpr[3] = transform_success;
+void perform_surface_query(ppu_context *context) {
+  events.emplace_back("surface-query");
+  check(context->gpr[3] == 0x1438 && context->gpr[4] == 0x76543210 &&
+            context->gpr[5] == 0x30000f,
+        "surface query arguments");
+  check(context->gpr[6] == stack - 0xe0 + 0x90,
+        "surface query output ownership");
+  vm_write32(context->gpr[6] + 0x3c, transform_success ? 0x2407 : 0);
+  context->gpr[3] = 0xdeadbeef; // The matrix pointer determines success.
 }
 
 void func_0029BE08(ppu_context *context) {
+  (void)context;
+  check(false, "retained projection called from native query");
+}
+
+void func_006CCF6C(ppu_context *context) {
   if (deferred_calls) {
     g_trampoline_fn = [](void *opaque) {
-      perform_transform(static_cast<ppu_context *>(opaque));
+      perform_surface_query(static_cast<ppu_context *>(opaque));
     };
   } else {
-    perform_transform(context);
+    perform_surface_query(context);
   }
 }
 
@@ -133,14 +135,13 @@ extern "C" int vm_read_snapshot(const VmReadSnapshotRange *ranges,
   check(locked && count == 4 && bytes == 4, "snapshot inside Lock");
   events.emplace_back("snapshot");
   ++snapshot_calls;
-  const std::uint32_t addresses[] = {0x9040, 0x9041, 0x9140, 0x9141};
   for (unsigned index = 0; index != 4; ++index) {
-    check(ranges[index].address == addresses[index] &&
+    check(ranges[index].address == expected_addresses[index] &&
               ranges[index].bytes == 1 && ranges[index].output_offset == index,
           "planned snapshot ranges");
     if (snapshot_status == VM_READ_SNAPSHOT_OK)
       static_cast<std::uint8_t *>(destination)[index] =
-          memory[addresses[index]];
+          memory[expected_addresses[index]];
   }
   return snapshot_status;
 }
@@ -158,7 +159,9 @@ ppu_context setup() {
   transform_success = true;
   snapshot_status = VM_READ_SNAPSHOT_OK;
   snapshot_calls = 0;
-  vm_write32(manager + 0x14, 1);
+  const std::uint32_t addresses[] = {0x9040, 0x9041, 0x9140, 0x9141};
+  std::copy(std::begin(addresses), std::end(addresses), expected_addresses);
+  vm_write32(manager + 0x14, 0x1400);
   vm_write32(manager + 0x48, 1);
   vm_write32(manager + 0x24, 0x2000);
   vm_write32(manager + 0x28, 0x2008);
@@ -186,7 +189,15 @@ ppu_context setup() {
   vm_write32(toc - 0x2c6c, 0x3e800000);
   vm_write32(toc - 0x2cac, 0x3f800000);
   vm_write32(toc - 0x2c74, 0x3b808081);
-  vm_write32(0x4000, 0x12345678);
+  vm_write32(toc - 0x2c90, 0x6107);
+  vm_write32(0x6100, 0x3f800000); // Homogeneous coordinate constant.
+  const std::uint32_t point[] = {0x40000000, 0xbf000000, 0x40800000, 0xc2f60000};
+  const std::uint32_t rows[] = {0x3e000000, 0x3f000000, 0x3d800000, 0x3a800000,
+                                0x3e000000, 0x3f000000, 0x3e000000, 0x3e7e0000};
+  for (unsigned word = 0; word != 4; ++word)
+    vm_write32(0x4000 + 4 * word, point[word]);
+  for (unsigned word = 0; word != 8; ++word)
+    vm_write32(0x2400 + 4 * word, rows[word]);
   memory[0x5000] = 1;
   memory[0x9040] = 21;
   memory[0x9041] = 22;
@@ -228,7 +239,7 @@ void completed(const ppu_context &context, const ppu_context &before,
   check(context.fpr[1] == double(expected), "native/reference result");
   check(!g_trampoline_fn,
         "retained calls completed before native continuation");
-  check(!locked && events.front() == "transform" && events.back() == "unlock",
+  check(!locked && events.front() == "surface-query" && events.back() == "unlock",
         "call order and release");
   check(!vm_read32(manager + 0x4c) && vm_read32(manager + 0x44) == UINT32_MAX,
         "cache reset");
@@ -241,7 +252,8 @@ void completed(const ppu_context &context, const ppu_context &before,
   }
   check((context.cr & 0x00fff000) == (before.cr & 0x00fff000),
         "callee-saved CR");
-  check(vm_read32(0x4000) == 0x12345678, "input vector immutable");
+  check(vm_read32(0x4000) == 0x40000000 && vm_read32(0x400c) == 0xc2f60000,
+        "input vector immutable");
 }
 } // namespace
 
@@ -292,6 +304,26 @@ int main(int argc, char **argv) {
 #endif
       }
     }
+  }
+  for (unsigned non_java = 0; non_java != 2; ++non_java) {
+    auto context = setup();
+    context.vscr = non_java ? PPU_VSCR_NJ : 0;
+    vm_write32(0x4000, 1); // Smallest subnormal, amplified by the first row.
+    vm_write32(0x4004, 0);
+    vm_write32(0x4008, 0);
+    for (unsigned word = 0; word != 8; ++word)
+      vm_write32(0x2400 + word * 4, 0);
+    vm_write32(0x2400, 0x7f7fffff);
+    vm_write32(0x241c, 0x3f000000);
+    const std::uint32_t addresses[] = {0xb000, 0xb001, 0xb100, 0xb101};
+    std::copy(std::begin(addresses), std::end(addresses), expected_addresses);
+    memory[0xb001] = memory[0xb101] = 255;
+    const auto csr = _mm_getcsr();
+    run_query(&context);
+    const auto expected = std::bit_cast<float>(non_java ? 0u : 0x38ffffffu);
+    check(context.fpr[1] == double(expected), "guest NJ controls native projection");
+    check(_mm_getcsr() == csr && context.vscr == (non_java ? PPU_VSCR_NJ : 0),
+          "projection preserves caller and guest FP state");
   }
   for (unsigned scenario = 0; scenario != 8; ++scenario) {
     auto context = setup();

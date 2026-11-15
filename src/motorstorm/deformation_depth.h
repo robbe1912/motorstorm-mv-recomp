@@ -6,6 +6,15 @@
 
 namespace motorstorm::game {
 
+struct DeformationProjection {
+    std::array<float, 4> point;
+    std::array<std::array<float, 4>, 2> rows;
+    bool non_java{};
+};
+
+// The caller supplies the original homogeneous coordinate and matrix rows.
+std::array<float, 2> project_deformation_point(const DeformationProjection& input);
+
 enum class DepthSampleMode { point, bilinear };
 
 struct DepthPatch {
