@@ -168,8 +168,42 @@ material combinations and address wrapping. Original writes stay within its
 local result and stack. TransformPoint consumes only that result's matrix field.
 The other material outputs remain unused by this native query. This isolated
 comparison preserves the retained pixel-ownership and GPU-lifetime requirements.
-The native matrix lookup still requires a current owned game run after this
-isolated and private-reference validation.
+The integrated source `82de9745488f6d50cd38d74e827ec8a2eb493aba` completed
+owned normal PLAY in `20261116T150333.476773Z`, using EXE
+`5c3a7c7476aaeb31b0482baf58d9c34285b65b9a757831765963d9bb65b4bab2`.
+Seven required menu inputs and one observed SONY skip were acknowledged. The
+240-second post-target observation closed through the owned guard after
+464.187 seconds, with no resource breach. Last logged counters were
+`completed=48128 sampled=10856 snapshots=10856 scalar=0 projected=10856`.
+This establishes current native matrix selection, projection and successful
+snapshot execution. The inspected final image shows timer 01:54.28, LAP 0/2,
+POS 15/15, rider near the start and AI traffic ahead. Ground, banner and vehicle
+shading defects remain visible.
+
+All 64 captured inputs matched the pinned original/native coordinate and result
+bits and original corner addresses. A corrupted-result control failed. The
+records contain 64 distinct world points but only zero matrix rows, coordinates
+and sample bytes. Property tables in the private comparison are reconstructed.
+Broad live numeric diversity and actual property-record pairing remain open.
+
+The final durable CSV window contained 168 successful Presents over 60.190749
+seconds, averaging 2.791127 Presents/s, with interval p50/p95/p99/max
+360.696/402.068/416.299/428.820 ms. Conditions were checked optimized Debug,
+general O1 with renderer-specific O2, API validation disabled, prompt byte-read
+service enabled, internal captures, CPU-surface diagnostics and required PM
+interpretation. This is one instrumented observation. Matched speedup evidence,
+minimum 30 FPS, graphics parity and interpreter removal remain open.
+
+The first 64 successful snapshot result records join one-to-one with request
+profiles through client/renderer IDs and absolute queued/started/finished QPC
+timestamps. Their 5.252211-second span contains 2.021320 seconds of request
+latency, including 1.878526 seconds queued and 0.142248 seconds of renderer
+service. These measure snapshot request waits and service. Total GetDepth
+operation timing and exclusive critical-path attribution remain open. The
+private pinned packet at
+`temp/depth-projection-evidence/20261116T150333.476773Z/` retains the launch,
+build identity, numeric comparison, request timing, unsuspended per-thread CPU
+observations and artifact hashes.
 
 Integration with prompt CPU byte-read service preserves queued snapshot
 requests and their suffix until the owned FIFO boundary. A regression with a
