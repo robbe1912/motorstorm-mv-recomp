@@ -11,8 +11,6 @@
 #include <stdexcept>
 #include <string>
 
-// SurfaceQuery retains ownership of the title's surface-to-matrix lookup.
-void func_006CCF6C(ppu_context *);
 extern "C" void ps3_indirect_call(ppu_context *);
 extern "C" thread_local void (*g_trampoline_fn)(void *);
 
@@ -27,6 +25,24 @@ void complete_retained_calls(ppu_context *context) {
 
 float read_float(std::uint64_t address) {
   return std::bit_cast<float>(vm_read32(address));
+}
+
+// GetDepth consumes only SurfaceQuery's complex-record matrix output.
+std::uint32_t projection_matrix(std::uint32_t properties, std::uint32_t flags,
+                                std::uint32_t selector) {
+  if ((flags & 6u) == 0)
+    return 0;
+  const auto sector = (selector >> 20) & 0x7ffu;
+  const auto element = selector & 0xfffffu;
+  const auto receiver = properties + 0x38u;
+  const auto table = vm_read32(receiver + 0x14u);
+  const auto entry = vm_read32(table + sector * 4u);
+  if (!entry)
+    return 0;
+  const auto count = std::bit_cast<std::int32_t>(vm_read32(entry + 0x1cu));
+  if (count <= static_cast<std::int32_t>(element) || !vm_read8(entry + 0x20u))
+    return 0;
+  return vm_read32(entry + 0x24u) + element * 0x50u + 0x10u;
 }
 
 struct QueryFrame {
@@ -163,14 +179,8 @@ void motorstorm_native_deformation_depth(ppu_context *context) {
   const auto query_argument = context->gpr[5];
   const auto properties = vm_read32(std::uint64_t(manager) + 0x14);
   QueryFrame frame(context);
-  context->gpr[3] = static_cast<std::uint32_t>(properties + 0x38u);
-  context->gpr[4] = query_argument;
-  context->gpr[5] = selector;
-  context->gpr[6] = context->gpr[1] + 0x90;
-  context->lr = 0x0029be8c;
-  func_006CCF6C(context);
-  complete_retained_calls(context);
-  const auto matrix = vm_read32(context->gpr[1] + 0xcc);
+  const auto matrix = projection_matrix(
+      properties, static_cast<std::uint32_t>(query_argument), selector);
   if (!matrix) {
     context->fpr[1] = default_depth;
     report(false, false);

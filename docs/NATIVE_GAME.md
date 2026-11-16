@@ -138,9 +138,9 @@ The native path performs manager readiness, cached or scanned surface selection,
 original virtual Lock, typed coordinate planning, transactional corner acquisition,
 point or bilinear evaluation, virtual Unlock and cache cleanup. It constructs the
 homogeneous point, reads both matrix rows and executes the
-typed native projection. The retained SurfaceProperties::SurfaceQuery supplies
-the matrix pointer, and original virtual Lock/Unlock callbacks acquire and release
-the pixel view. Queued PPU trampolines complete at those retained call boundaries.
+typed native projection. Its native surface-table lookup selects the matrix,
+and original virtual Lock/Unlock callbacks acquire and release the pixel view.
+Queued PPU trampolines complete at those virtual call boundaries.
 Unavailable bulk acquisition uses the normal scalar services in
 original corner order. Invalid or failed acquisition raises a visible error with
 Lock, cache, stack and TOC cleanup. The original default-depth constant is 0.25.
@@ -151,6 +151,25 @@ calls, cache paths, early returns, nonzero samples and twelve rejected mutants.
 Controls reject retained projection dispatch,
 a wrong homogeneous coordinate, matrix alignment/stride changes and ignored guest
 VSCR[NJ], alongside acquisition, fallback and cleanup failures.
+
+The matrix lookup decodes the sector and element selector, request bits, nullable
+sector entry, signed entry count and simple versus complex representation.
+Complex entries use an 80-byte record with its matrix at offset 16, retaining
+the original 32-bit address arithmetic. Sixteen table-selection cases and eight
+additional compiled mutants cover those boundaries and reject retained
+SurfaceQuery dispatch. The authored query fixture now supplies actual property
+tables and record-request flags instead of forcing a matrix through a stub.
+
+Private verification matches all 207 SurfaceQuery instructions and its 13-instruction
+pure interpolation helper against the selected original ELF. A 6,912-case
+comparison checks the native matrix selection against the pinned original,
+including query flags, sector/element boundaries, signed counts, representation,
+material combinations and address wrapping. Original writes stay within its
+local result and stack. TransformPoint consumes only that result's matrix field.
+The other material outputs remain unused by this native query. This isolated
+comparison preserves the retained pixel-ownership and GPU-lifetime requirements.
+The native matrix lookup still requires a current owned game run after this
+isolated and private-reference validation.
 
 With `MS_DEPTH_OBSERVER=1`, the first 64 successful native samples additionally
 record owned point/matrix bits, projected coordinates, dimensions, byte offsets,
@@ -167,7 +186,7 @@ historical differences remain recorded in the private comparison. Diverse live
 inputs, producer lifetime and matched gameplay timing
 remain acceptance gates for issue 302 and the stable-30 goal.
 
-The retained projection also exposes a fused-rounding dependency. A byte-verified
+The original projection also exposes a fused-rounding dependency. A byte-verified
 144-instruction TransformPoint case wraps a cancellation result to 0.0 under the
 preserved emitted arithmetic and to the expected 1.0 using the canonical VMX
 fused helper. `scripts/check_ppu_vmx_fused.py` exercises the corrected lifter
@@ -235,7 +254,8 @@ but every matrix row, coordinate and sample byte is zero. Authored nonzero and
 NJ controls also pass. This live set therefore leaves broader numeric diversity
 and live GPU producer/lifetime acceptance open. The final durable instrumented
 window averages 2.376 successful Presents/s under the same checked optimized
-Debug, unoptimized renderer, capture/diagnostic and required-interpreter settings.
+Debug, general O1 with renderer-specific optimization disabled, API validation,
+capture/diagnostic and required-interpreter settings.
 No matched comparison or minimum-30 acceptance follows from this run. Its pinned
 packet includes input records, comparison receipt, build identity and analysis.
 

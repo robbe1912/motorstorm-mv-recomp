@@ -62,6 +62,8 @@ std::uint32_t vm_read32(std::uint64_t);
 std::uint64_t vm_read64(std::uint64_t);
 void vm_write32(std::uint64_t, std::uint32_t);
 void vm_write64(std::uint64_t, std::uint64_t);
+void func_0029BE08(ppu_context *);
+void func_006CCF6C(ppu_context *);
 """)
     compiler = (
         os.environ.get("MV_CLANG")
@@ -156,6 +158,7 @@ void vm_write64(std::uint64_t, std::uint64_t);
     captured_samples(run([str(exe), "0", "0", "capture-cap"], 30).stderr, cap=True)
     quiet = run([str(exe), "0", "0"], 30, capture=False)
     assert "[native-depth-input]" not in quiet.stderr, "capture disabled control"
+    run([str(exe), "0", "1", "matrix-lookup"], 30, capture=False)
     original = source.read_text()
     mutants = {
         "missing retained completion": original.replace(
@@ -181,7 +184,7 @@ void vm_write64(std::uint64_t, std::uint64_t);
             "status == VM_READ_SNAPSHOT_UNAVAILABLE || status == VM_READ_SNAPSHOT_FAILED)",
             1,
         ),
-        "retained projection": original.replace("func_006CCF6C", "func_0029BE08"),
+        "retained projection": original.replace("  const auto matrix = projection_matrix(", "  func_0029BE08(context);\n  const auto matrix = projection_matrix(", 1),
         "wrong homogeneous coordinate": original.replace(
             "projection.point[3] = read_float(vm_read32(toc - 0x2c90) & ~std::uint32_t(15));",
             "projection.point[3] = 0.0f;", 1,
@@ -194,6 +197,23 @@ void vm_write64(std::uint64_t, std::uint64_t);
             "(context->vscr & (1u << 16)) != 0", "false", 1,
         ),
     }
+    lookup_mutants = {
+        "retained SurfaceQuery": original.replace(
+            "  const auto matrix = projection_matrix(",
+            "  func_006CCF6C(context);\n  const auto matrix = projection_matrix(", 1),
+        "missing matrix request gate": original.replace("(flags & 6u) == 0", "flags == UINT32_MAX", 1),
+        "wrong surface sector": original.replace("(selector >> 20) & 0x7ffu", "(selector >> 19) & 0x7ffu", 1),
+        "negative surface count accepted": original.replace(
+            "std::bit_cast<std::int32_t>(vm_read32(entry + 0x1cu))",
+            "static_cast<std::int32_t>(vm_read32(entry + 0x1cu) & 0x7fffffffu)", 1),
+        "surface end accepted": original.replace(
+            "count <= static_cast<std::int32_t>(element)",
+            "count < static_cast<std::int32_t>(element)", 1),
+        "simple surface has matrix": original.replace("!vm_read8(entry + 0x20u)", "vm_read8(entry + 0x20u) == 0xffu", 1),
+        "wrong record stride": original.replace("element * 0x50u", "element * 0x40u", 1),
+        "wrong matrix member": original.replace("element * 0x50u + 0x10u", "element * 0x50u + 0x14u", 1),
+    }
+    mutants.update(lookup_mutants)
     capture_mutants = {
         "captured point differs": original.replace("bits(projection.point[0])", "bits(0.0f)", 1),
         "capture cap exceeded": original.replace("sample_number <= 64", "sample_number <= 128", 1),
@@ -224,7 +244,10 @@ void vm_write64(std::uint64_t, std::uint64_t);
         ]
         run(candidate_command, 120)
         if label not in capture_mutants:
-            run([str(candidate_exe), "0", "1"], 30, succeeds=False)
+            args = [str(candidate_exe), "0", "1"]
+            if label in lookup_mutants:
+                args.append("matrix-lookup")
+            run(args, 30, succeeds=False)
         else:
             args = [str(candidate_exe), "0", "1"]
             if label == "capture cap exceeded":
@@ -247,11 +270,13 @@ void vm_write64(std::uint64_t, std::uint64_t);
         fixture_sha256=hashlib.sha256(fixture.read_bytes()).hexdigest(),
         fp_modes=16,
         capture_limit=64,
+        matrix_lookup_cases=16,
+        matrix_lookup_mutants=8,
         capture_disabled_checked=True,
     )
     report_path.write_text(json.dumps(report, indent=2))
     print(
-        "PASS typed projection, query control, acquisition/fallback, cleanup and ABI; 16 FP modes, twelve semantic and four capture mutants rejected"
+        "PASS typed projection, query control, acquisition/fallback, cleanup and ABI; 16 FP modes, twelve query, eight matrix-lookup and four capture mutants rejected"
     )
     print(out / "result.json")
 

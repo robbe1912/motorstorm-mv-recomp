@@ -25,7 +25,7 @@ constexpr std::uint32_t toc = 0xe8a6c0, sdk_toc = 0xe9a128;
 std::vector<std::uint8_t> memory(0x1000000);
 std::vector<std::string> events;
 std::vector<std::uint64_t> byte_reads;
-bool transform_success = true, locked, deferred_calls;
+bool locked, deferred_calls;
 int snapshot_status = VM_READ_SNAPSHOT_OK;
 unsigned snapshot_calls;
 std::uint32_t expected_addresses[4] = {0x9040, 0x9041, 0x9140, 0x9141};
@@ -67,30 +67,14 @@ void vm_write64(std::uint64_t address, std::uint64_t value) {
   vm_write32(address + 4, std::uint32_t(value));
 }
 
-void perform_surface_query(ppu_context *context) {
-  events.emplace_back("surface-query");
-  check(context->gpr[3] == 0x1438 && context->gpr[4] == 0x76543210 &&
-            context->gpr[5] == 0x30000f,
-        "surface query arguments");
-  check(context->gpr[6] == stack - 0xe0 + 0x90,
-        "surface query output ownership");
-  vm_write32(context->gpr[6] + 0x3c, transform_success ? 0x2407 : 0);
-  context->gpr[3] = 0xdeadbeef; // The matrix pointer determines success.
-}
-
 void func_0029BE08(ppu_context *context) {
   (void)context;
   check(false, "retained projection called from native query");
 }
 
 void func_006CCF6C(ppu_context *context) {
-  if (deferred_calls) {
-    g_trampoline_fn = [](void *opaque) {
-      perform_surface_query(static_cast<ppu_context *>(opaque));
-    };
-  } else {
-    perform_surface_query(context);
-  }
+  (void)context;
+  check(false, "retained SurfaceQuery called from native query");
 }
 
 void func_00754348(ppu_context *context) {
@@ -156,13 +140,19 @@ ppu_context setup() {
   byte_reads.clear();
   locked = false;
   g_trampoline_fn = nullptr;
-  transform_success = true;
   snapshot_status = VM_READ_SNAPSHOT_OK;
   snapshot_calls = 0;
   const std::uint32_t addresses[] = {0x9040, 0x9041, 0x9140, 0x9141};
   std::copy(std::begin(addresses), std::end(addresses), expected_addresses);
   vm_write32(manager + 0x14, 0x1400);
   vm_write32(manager + 0x48, 1);
+  // SurfaceProperties receiver, sector table and complex per-element records.
+  vm_write32(0x1438 + 0x14, 0x8000);
+  vm_write32(0x800c, 0x8100);
+  vm_write32(0x811c, 16);
+  memory[0x8120] = 1;
+  // Element 15 resolves to the deliberately unaligned matrix at 0x2407.
+  vm_write32(0x8124, 0x1f47);
   vm_write32(manager + 0x24, 0x2000);
   vm_write32(manager + 0x28, 0x2008);
   vm_write32(manager + 0x44, 0xf);
@@ -212,7 +202,7 @@ ppu_context setup() {
   context.gpr[2] = toc;
   context.gpr[3] = manager;
   context.gpr[4] = 0x4007;
-  context.gpr[5] = 0x76543210;
+  context.gpr[5] = 0x76543216; // Request the per-element surface record.
   context.gpr[6] = 0x30000f;
   context.lr = 0x123456;
   context.cr = 0xabcdef12;
@@ -239,7 +229,7 @@ void completed(const ppu_context &context, const ppu_context &before,
   check(context.fpr[1] == double(expected), "native/reference result");
   check(!g_trampoline_fn,
         "retained calls completed before native continuation");
-  check(!locked && events.front() == "surface-query" && events.back() == "unlock",
+  check(!locked && events.front() == "lock" && events.back() == "unlock",
         "call order and release");
   check(!vm_read32(manager + 0x4c) && vm_read32(manager + 0x44) == UINT32_MAX,
         "cache reset");
@@ -269,6 +259,78 @@ int main(int argc, char **argv) {
   if (fp_mode & 8)
     csr |= 0x8000;
   _mm_setcsr(csr);
+  if (argc >= 4 && std::string(argv[3]) == "matrix-lookup") {
+    for (unsigned scenario = 0; scenario != 8; ++scenario) {
+      auto context = setup();
+      switch (scenario) {
+      case 0:
+        context.gpr[5] = 0;
+        break;
+      case 1:
+        context.gpr[5] = 1;
+        break;
+      case 2:
+        context.gpr[5] = 0x76543210;
+        break;
+      case 3:
+        vm_write32(0x800c, 0);
+        break;
+      case 4:
+        vm_write32(0x811c, 15);
+        break;
+      case 5:
+        vm_write32(0x811c, UINT32_MAX);
+        break;
+      case 6:
+        vm_write32(0x811c, 0x80000000);
+        break;
+      case 7:
+        memory[0x8120] = 0;
+        break;
+      }
+      run_query(&context);
+      check(context.fpr[1] == 0.25 && snapshot_calls == 0 && events.empty(),
+            "surface lookup rejection");
+      check(context.gpr[1] == stack && context.gpr[2] == toc &&
+                vm_read32(manager + 0x4c) == 0x1234,
+            "surface lookup rejection preserves ABI and selection cache");
+    }
+    for (unsigned scenario = 0; scenario != 8; ++scenario) {
+      auto context = setup();
+      switch (scenario) {
+      case 0:
+        context.gpr[5] = 2;
+        break;
+      case 1:
+        context.gpr[5] = 4;
+        break;
+      case 2:
+        context.gpr[5] = 6;
+        break;
+      case 3:
+        context.gpr[5] = 0x80000002;
+        break;
+      case 4:
+        context.gpr[6] |= 0x80000000;
+        break;
+      case 5:
+        memory[0x8120] = 0xff;
+        break;
+      case 6:
+        vm_write32(0x8124, 0x1f4f);
+        break;
+      case 7:
+        context.gpr[6] = 0x3fffff;
+        vm_write32(0x811c, 0x100000);
+        vm_write32(0x8124, 0x2407u - 0xfffffu * 0x50u - 0x10u);
+        break;
+      }
+      const auto before = context;
+      run_query(&context);
+      completed(context, before, false);
+    }
+    return 0;
+  }
   if (argc >= 4 && std::string(argv[3]) == "capture-cap") {
     for (unsigned index = 0; index != 80; ++index) {
       auto context = setup();
@@ -305,9 +367,9 @@ int main(int argc, char **argv) {
 #ifndef PRIVATE_DEPTH_REFERENCE
         check(snapshot_calls == 1, "one bulk request");
         const std::vector<std::uint64_t> expected =
-            fallback ? std::vector<std::uint64_t>{0x5000, 0x9040, 0x9041,
+            fallback ? std::vector<std::uint64_t>{0x8120, 0x5000, 0x9040, 0x9041,
                                                   0x9141, 0x9140}
-                     : std::vector<std::uint64_t>{0x5000};
+                     : std::vector<std::uint64_t>{0x8120, 0x5000};
         check(byte_reads == expected,
               "scalar fallback order and bulk read removal");
 #endif
@@ -353,7 +415,7 @@ int main(int argc, char **argv) {
       context.gpr[6] = UINT32_MAX;
       break;
     case 5:
-      transform_success = false;
+      vm_write32(0x800c, 0);
       break;
     case 6:
       vm_write32(0x2210, 4);
