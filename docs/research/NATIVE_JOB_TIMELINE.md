@@ -316,3 +316,24 @@ five specific negative controls. A second fixture links the actual execution and
 scheduler observer implementations; the atomic installers there are authored
 test dependencies. No game startup, durable capture, game-specific job identity,
 overhead measurement or native run is provided by this owner yet.
+
+
+### Queue-call binding checkpoint
+
+The provisional game adapter captures reset, initialization and AddJob call
+arguments around the unchanged original functions. Selected original-US body
+identities are pinned for `0xC5BF38`, `0xC5D1C0` and `0xC5C6A0`. The three
+functions share a generated translation unit. Binding preparation composes
+verified recipes for that unit, keeps legacy observer recipes mutually exclusive,
+and replaces the unit once in CMake. Unknown copied edits fail before writes.
+
+The authored adapter checks disabled behavior, entry-captured arguments and
+headers, exception exits, eight simultaneous callers, unique call IDs and ID
+exhaustion. Seven compiled mutants must fail. The binding checker exercises
+multiple functions and alternate recipes in one unit, compiled direct/table
+callers, preserved originals and the actual CMake source-selection block.
+
+These events identify host wrapper calls. Queue generations, inline publishers,
+genuine completion and the live capture controller remain integration work for
+issue #219. The process owner must install and remove observers with producers
+quiescent, and account for zero exhausted IDs and missing return events.

@@ -1,5 +1,7 @@
 """Authored binding fixtures; never load original game inputs in CI."""
 import hashlib
+import json
+from dataclasses import replace
 import os
 import shutil
 import subprocess
@@ -145,6 +147,71 @@ def main():
         rejects(lambda:prepare(source,multi,elf,base/'multi.json',contracts=catalog),'changed or stale')
         assert (multi/'ppu/authored.cpp').read_bytes()==code,'Rejected copy must not partially enable another binding'
         assert tu.read_bytes()==code
+        # Both queue candidates are in the same generated translation unit.
+        # Toggle each combination without accepting unknown edits or touching inputs.
+        (source/'ppu/second.cpp').unlink()
+        same_code = code + b'\n' + second_body + b'\nauto second_table=&func_00111110;\n'
+        tu.write_bytes(same_code)
+        same = base/'same'
+        both = prepare(source,same,elf,base/'same.json',contracts=catalog)
+        combined = (same/'ppu/authored.cpp').read_bytes()
+        assert len(both['bindings']) == 2 and len({b['copied_tu_sha256'] for b in both['bindings']}) == 1
+        command=[compiler,str(same/'ppu/authored.cpp'),str(caller)]
+        command += ['/nologo','/std:c++17','/O2','/UNDEBUG','/I'+str(same/'ppu'),'/Fo'+str(base)+os.sep,'/Fe'+str(multi_exe)] if os.name=='nt' else ['-std=c++17','-O2','-UNDEBUG','-I'+str(same/'ppu'),'-o',str(multi_exe)]
+        built=subprocess.run(command,cwd=base,capture_output=True,text=True)
+        assert built.returncode==0,built.stdout+built.stderr
+        assert subprocess.run([str(multi_exe)]).returncode==0
+        prepare(source,same,elf,base/'same.json',contracts=(contract,),known_contracts=catalog)
+        assert b'original_second' not in (same/'ppu/authored.cpp').read_bytes()
+        prepare(source,same,elf,base/'same.json',contracts=(second,),known_contracts=catalog)
+        assert b'game_original_scene_list_evaluate' not in (same/'ppu/authored.cpp').read_bytes()
+        prepare(source,same,elf,base/'same.json',contracts=catalog)
+        assert (same/'ppu/authored.cpp').read_bytes()==combined and tu.read_bytes()==same_code
+        # A legacy byte-observer recipe is an alternative for the same symbol.
+        observer = replace(contract, byte_observer='authored_read8')
+        variants = (contract, observer, second)
+        alternative = base/'alternative'
+        prepare(source, alternative, elf, base/'alternative.json',
+                contracts=(observer, second), known_contracts=variants)
+        observed = (alternative/'ppu/authored.cpp').read_bytes()
+        assert b'authored_read8' in observed and b'original_second' in observed
+        prepare(source, alternative, elf, base/'alternative.json',
+                contracts=(contract, second), known_contracts=variants)
+        assert (alternative/'ppu/authored.cpp').read_bytes() == combined
+        prepare(source, alternative, elf, base/'alternative.json',
+                contracts=(second,), known_contracts=variants)
+        restored = (alternative/'ppu/authored.cpp').read_bytes()
+        assert b'authored_read8' not in restored
+        assert b'game_original_scene_list_evaluate' not in restored
+        reversed_result=prepare(source,same,elf,base/'same.json',contracts=(second,contract),known_contracts=catalog)
+        assert [item['symbol'] for item in reversed_result['bindings']]==[second.symbol,contract.symbol]
+        tu.write_bytes(same_code.replace(b'ctx->value+=2',b'ctx->value+=3'))
+        rejects(lambda:prepare(source,same,elf,base/'same.json',contracts=catalog),'body identity')
+        assert (same/'ppu/authored.cpp').read_bytes()==combined, 'failed validation must not write the copy'
+        tu.write_bytes(same_code)
+        (same/'ppu/authored.cpp').write_bytes(combined+b'// unauthorized\n')
+        rejects(lambda:prepare(source,same,elf,base/'same.json',contracts=(contract,),known_contracts=catalog),'changed or stale')
+        assert tu.read_bytes()==same_code
+        # The actual CMake consumer must replace a shared TU exactly once.
+        cmake = (Path(__file__).resolve().parents[1]/'src/motorstorm/native_world.cmake').read_text()
+        start = cmake.index('    foreach(number RANGE 0 ${last})')
+        prefix = cmake.rfind('    set(replaced_originals)', 0, start)
+        if prefix != -1:
+            start = prefix
+        end = cmake.index('    set(RECOMP_SOURCES', start)
+        replacement = cmake[start:end]
+        entries = [{'original_tu': 'original.cpp', 'copied_tu': 'copied.cpp',
+                    'context': 'ppu_context'}] * 2
+        script = base/'source-replacement.cmake'
+        script.write_text('cmake_minimum_required(VERSION 3.20)\nset(last 1)\n'
+            + 'set(binding [==[' + json.dumps({'bindings': entries}) + ']==])\n'
+            + 'foreach(pass RANGE 1 2)\nset(RECOMP_SOURCES keep.cpp original.cpp)\n'
+            + replacement
+            + 'if(NOT RECOMP_SOURCES STREQUAL "keep.cpp;copied.cpp")\n'
+            + 'message(FATAL_ERROR "shared TU replacement lost or duplicated a source")\n'
+            + 'endif()\nendforeach()\n', encoding='utf-8')
+        configured = subprocess.run(['cmake', '-P', str(script)], capture_output=True, text=True)
+        assert configured.returncode == 0, configured.stdout + configured.stderr
     print('PASS native binding: exact identities, direct/table callers, unchanged originals, stable copy, duplicate/stale/junction rejection')
 
 

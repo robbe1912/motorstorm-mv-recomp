@@ -2,6 +2,7 @@
 import argparse
 from dataclasses import dataclass, replace
 import hashlib
+import itertools
 import json
 from pathlib import Path
 import re
@@ -31,6 +32,15 @@ PRODUCTION = Contract(
 JOB_WAIT = Contract(PRODUCTION.elf_sha256,
     'ab53a9f3f0d538a07d6333eb2b45d78a2dd40e2a3dcbe317e08109f96fad5fca',
     'func_00C5C424', 'game_original_job_marker_wait', 'motorstorm_job_marker_wait')
+QUEUE_RESET = Contract(PRODUCTION.elf_sha256,
+    '71b5a619bc898c6c0feca5256696075311122ee31439896da4e4dc395aaf16c9',
+    'func_00C5BF38', 'game_original_queue_reset', 'motorstorm_observe_queue_reset')
+QUEUE_INIT = Contract(PRODUCTION.elf_sha256,
+    'fe86f9867d35717633192c4208b308d59f6910d3673572d3f5d8b5f8a1790c63',
+    'func_00C5D1C0', 'game_original_queue_init', 'motorstorm_observe_queue_init')
+QUEUE_ADD_JOB = Contract(PRODUCTION.elf_sha256,
+    'f072ed2dccd0c49c7124e3274ad16be055ce487c965f761e5ec09aeb16b324c2',
+    'func_00C5C6A0', 'game_original_add_job', 'motorstorm_observe_add_job')
 # Direct lifted callers bypass registry-only observation.
 DEPTH_OBSERVER = Contract(PRODUCTION.elf_sha256,
     'c1569b155b7ff33025877349e330a5a8c8b9c2adc0f62b946d2bcbd5408f6064',
@@ -161,7 +171,7 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
     if any(elf_sha != c.elf_sha256 for c in selected):
         raise ValueError('Unsupported original ELF identity for native game binding')
     known = tuple(known_contracts) if known_contracts is not None else (
-        (PRODUCTION, JOB_WAIT, VISIBILITY, PCM_CUBIC, DEPTH_OBSERVER) if elf_sha == PRODUCTION.elf_sha256 else selected)
+        (PRODUCTION, JOB_WAIT, VISIBILITY, PCM_CUBIC, DEPTH_OBSERVER, QUEUE_RESET, QUEUE_INIT, QUEUE_ADD_JOB) if elf_sha == PRODUCTION.elf_sha256 else selected)
     # Older observer copies used the same verified body without byte tracing.
     # Admit only that exact legacy recipe when enabling/disabling this feature.
     known = tuple(dict.fromkeys((*known, *selected,
@@ -186,7 +196,7 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
             for entry in known:
                 if relative.parent == Path(entry.directory) and re.search(rb'\bvoid\s+' + entry.symbol.encode() + rb'\s*\(\s*' + re.escape(entry.context.encode()) + rb'\s*\*\s*ctx\s*\)\s*\{', source):
                     definitions.setdefault(entry, []).append((relative, source))
-    changes, allowed, bindings = {}, {}, []
+    changes, allowed, bindings, grouped = {}, {}, [], {}
     for entry in known:
         candidates = definitions.get(entry, [])
         if len(candidates) != 1:
@@ -200,17 +210,38 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
             if entry in selected:
                 raise
             continue
-        sha = hashlib.sha256(changed).hexdigest()
-        allowed.setdefault(relative, set()).add(sha)
-        if entry in selected:
-            if relative in changes:
-                raise ValueError('Multiple bindings in one TU require a combined verified transform')
-            changes[relative] = changed
-            bindings.append(dict(symbol=entry.symbol, original_tu=(generated/relative).as_posix(),
-                copied_tu=(output/relative).as_posix(), reference_body_sha256=entry.body_sha256,
-                copied_tu_sha256=sha, context=entry.context))
-            if entry.byte_observer:
-                bindings[-1]['byte_observer'] = entry.byte_observer
+        grouped.setdefault(relative, {}).setdefault(entry.symbol, []).append(entry)
+    selected_symbols = {entry.symbol: entry for entry in selected}
+    for relative, symbols in grouped.items():
+        if len(symbols) > 8:
+            raise ValueError('Too many bindings in one translation unit')
+        source = (generated/relative).read_bytes()
+        # Legacy and current recipes for the same symbol are alternatives.
+        # Each combination applies at most one verified recipe per function.
+        choices = [(None, *recipes) for recipes in symbols.values()]
+        wanted = tuple(selected_symbols.get(symbol) for symbol in symbols)
+        for combination in itertools.product(*choices):
+            changed = source
+            for entry in combination:
+                if entry is not None:
+                    changed = transform(changed, entry, read_windows(elf, entry))
+            sha = hashlib.sha256(changed).hexdigest()
+            allowed.setdefault(relative, set()).add(sha)
+            if combination == wanted and any(wanted):
+                changes[relative] = changed
+                for entry in combination:
+                    if entry is None:
+                        continue
+                    binding = dict(symbol=entry.symbol,
+                        original_tu=(generated/relative).as_posix(),
+                        copied_tu=(output/relative).as_posix(),
+                        reference_body_sha256=entry.body_sha256,
+                        copied_tu_sha256=sha, context=entry.context)
+                    if entry.byte_observer:
+                        binding['byte_observer'] = entry.byte_observer
+                    bindings.append(binding)
+    order = {entry.symbol: index for index, entry in enumerate(selected)}
+    bindings.sort(key=lambda binding: order[binding['symbol']])
     if not output.exists():
         shutil.copytree(generated, output, ignore=shutil.ignore_patterns(*IGNORED_CACHES))
     for path in output.rglob('*'):
@@ -251,10 +282,14 @@ def main():
     parser.add_argument('--visibility', action='store_true')
     parser.add_argument('--pcm-cubic', action='store_true')
     parser.add_argument('--depth-observer', action='store_true')
+    parser.add_argument('--queue-call-observation', action='store_true',
+                        help='Observe verified queue reset/init/publication calls')
     args = parser.parse_args()
     selected = ([] if args.without_world_transforms else [PRODUCTION]) + ([JOB_WAIT] if args.job_wait else []) + ([VISIBILITY] if args.visibility else []) + ([PCM_CUBIC] if args.pcm_cubic else [])
     if args.depth_observer:
         selected.append(DEPTH_OBSERVER)
+    if args.queue_call_observation:
+        selected.extend((QUEUE_RESET, QUEUE_INIT, QUEUE_ADD_JOB))
     result = prepare(args.generated, args.output, args.elf, args.manifest, contracts=selected)
     print('Verified native game bindings:', ', '.join(b['symbol'] for b in result['bindings']))
 
