@@ -51,6 +51,7 @@ def main():
              ('stale-tail','    s_cpu_surface_tail=kept;\n','    (void)kept;\n'),
              ('serves-during-replay','    if(s_cpu_surface_recording)return;',''),
              ('ignores-overflow','    if(s_cpu_surface_pending_overflow)return 1;\n','')]
+    mutants.append(('bypasses-snapshot-barrier','        if(request->snapshot_ranges){kept=s_cpu_surface_tail;break;}',''))
     for name,before,after in mutants:
         assert prompt.count(before)==1,(name,before)
         bad=build(name,prompt.replace(before,after))

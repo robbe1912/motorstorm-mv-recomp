@@ -44,6 +44,13 @@ static void reset(void){
     current_thread=2;s_cpu_surface_thread=2;s_cpu_surface_prompt=1;cpu_surface_batch_submitted();
 }
 int main(void){
+    reset();
+    queue(0,0x20000,2);queue(1,0x21000,2);queue(2,0x22000,2);
+    static VmReadSnapshotRange snapshot_range;
+    requests[1].snapshot_ranges=&snapshot_range;
+    cpu_surface_service_ready();
+    REQUIRE(reads==1 && s_cpu_surface_head==&requests[1] && s_cpu_surface_tail==&requests[2] && !events[1].signaled && !events[2].signaled,"snapshot barrier retains queued suffix");
+
     /* 1. Only the read overlapping a recorded draw's target stays queued, in order. */
     reset();
     cpu_surface_pending_add(0x10000,0x100,4);              /* pending write [0x10000,0x10400) */

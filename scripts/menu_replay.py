@@ -118,7 +118,7 @@ def replay(run, profile_path, timeout=480):
                         if n not in optional_done and index >= action['after_step'] and matches(frame, action):
                             reference = matching_reference(frame, action)
                             event = send(run, reference, action['roi'], action['mask'], action['polls'],
-                                         action['label'], mode=action.get('mode', 'text'))
+                                         action['label'], mode=action.get('mode', 'text'), expected_frame=frame)
                             last_input_frame = Path(event['observed_frame'])
                             optional_done.add(n)
                             result['optional_inputs'].append(event)
@@ -130,7 +130,7 @@ def replay(run, profile_path, timeout=480):
                         step = profile['steps'][index]
                         reference = matching_reference(frame, step)
                         event = send(run, reference, step['roi'], step['mask'], step['polls'],
-                                     step['label'], mode=step.get('mode', 'text'))
+                                     step['label'], mode=step.get('mode', 'text'), expected_frame=frame)
                         last_input_frame = Path(event['observed_frame'])
                         index += 1
                 except ValueError as exc:

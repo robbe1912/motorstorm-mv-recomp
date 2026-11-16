@@ -1,5 +1,355 @@
 # Native game operations
 
+## Deformation depth sampling prototype (#302)
+
+The [typed depth sampler](../src/motorstorm/deformation_depth.h) accepts four
+byte-valued depth samples, two fractional coordinates and a point/bilinear mode.
+It uses ordinary sample data rather than guest registers, memory or GPU handles.
+Its arithmetic retains the original single-precision rounding boundaries and
+three double fused multiply-add operations. Inputs outside the admitted finite
+unit interval are rejected before calculation; caller FP rounding, exception
+flags and x86 DAZ/FTZ state are restored.
+
+`python scripts/check_deformation_depth.py` compares 1,317 authored cases across
+16 caller FP settings against an independent exact-rational rounding oracle. It
+rejects four actual-source mutants: omitted single rounding, a wrong corner,
+ignored filtering and lost caller MXCSR. A separate private check extracts the
+actual emitted arithmetic and its real generated helpers: all 1,302 admitted
+cases agree. That fixture uses authored storage and does not exercise the
+texture callbacks, coordinate transformation, borders or GPU synchronization.
+
+Original ELF instruction bytes match all 346 GetDepth, 144 TransformPoint and
+six pixel-size instructions exported from an isolated copy of the saved Ghidra
+project. Original project hashes remain unchanged. The recovered plan maps a
+successful normalized coordinate to `x * width` and `(1 - y) * height`, clamps
+only that top-left coordinate, calculates byte offsets with `NumBytes(format)`,
+then reads right/below neighbours without clamping them. It also caches the
+surface selected from `(arg >> 20) & 0x7ff` at manager offsets `0x44/0x4c`.
+`python scripts/check_deformation_depth_plan.py` independently checks this pure
+plan over 1,038 cases and 16 caller FP modes, rejecting lost V inversion,
+incorrect X clamping, an aliased right neighbour and lost caller MXCSR. It is
+still not a provider or a game binding: concrete
+live callback ownership, FIFO/GPU visibility, border allocation and the query
+ABI require proof. No readback wait is skipped and no frame-time improvement or
+stable 30 FPS is claimed; the full native query and coherent view remain open
+under [issue 302](https://github.com/robbe1912/motorstorm-mv-recomp/issues/302).
+
+Read-only Ghidra export now identifies the calls as `PixelBuffer::Lock` at
+`0x799db4` and `PixelBuffer::UnlockInternal` at `0x799728`. The former marks
+the buffer locked at object offset `0x38`, records the requested lock mode at
+`0x3c`, selects/retains a backing object from `0x8c` according to `0x70`, then
+writes that backing object's word-4 value to the output pointer and returns a
+masked status. Its two import thunks resolve to
+`GcTexture::GenericGetMipLevel` (`0xc84620`, 249 instructions) and
+`IntrusivePtrRelease(GcResource*)` (`0xc8107c`, 33 instructions), with the
+thunks changing the verified TOC from `0xe8a6c0` to `0xe9a128` first. Thus the
+callback acquires a retained mip-level resource view and releases temporary
+resource references; its return remains a status, not an allocation extent.
+`UnlockInternal` clears only the lock marker at `0x38`. `GetDepth` does not
+test that status before dereferencing the output pointer; a previous probe
+incorrectly treated it as an allocation extent and rejected all 32 numeric
+pairs. This is static ownership evidence, not live arithmetic-replay evidence:
+neighbour sampling can cross the logical image edge, and backing allocation
+extent, aliasing, FIFO/GPU visibility and lifetime proof remain necessary
+before binding.
+
+Eight complete original DWARF declarations agree on the 28-byte `GcResource`
+layout. Its allocation pointer, size, CPU address, RSX offset and parent handle
+occupy offsets `0x08/0x0c/0x10/0x14/0x18`. The byte-verified 27-instruction
+`SetEverythingFromParent` at `0xc81100` retains the parent and copies its size
+unchanged while adding the selected view offset to its CPU address and RSX
+offset. Complete byte-verified `SetUserSize` (`0xc80e64`), `SetUserAddress`
+(`0xc80ea8`) and `AllocateLinear` (`0xc816b4`) establish separate size assignment,
+address mapping and allocation paths. In particular, `SetUserSize` assigns the
+size word directly. An inherited size therefore needs its actual allocation
+and view-offset provenance before it can bound neighbour samples. Live alias,
+FIFO/GPU visibility and usable view lifetime remain required for admission.
+
+An observation-only next step is available only in an explicitly flagged build
+(`PORT_DEFORMATION_DEPTH_OBSERVER=ON`) and when its separate runtime switch
+`MS_DEPTH_OBSERVER=1` is set. Immediately after generated PPU registration and
+before guest dispatch, it enables observation for original-US `GetDepth`
+(`0x0029c684`) and shadows the registered `PixelBuffer::Lock` (`0x00799db4`)
+entry. The verified generated-input binding renames the exact GetDepth body in
+a worktree-local copy and routes both direct and registered callers through the
+observer. Disabled observation invokes that retained original directly. Enabled
+observation also invokes both retained originals and preserves their returned
+register state. The copied GetDepth body temporarily redirects its byte reads
+through a wrapper that calls the TU's original fast/slow reader exactly once,
+retaining synchronization, errors and returned bytes. The original memory macro
+is restored outside that verified function. Exact older prepared copies can
+upgrade to this recipe without changing the shared generated tree.
+
+Independent 64-call budgets cover completions with and without nested Lock,
+retaining at most 128 raw sample lines and announcing each exhausted class.
+The first 64 nested Lock attempts additionally retain format, dimensions, the
+written output pointer, transformed coordinate bits and root/parent resource
+headers through the normal VM metadata API. The root's remaining 13 words
+retain its complete 80-byte `GcTexture` layout, including type, hardware
+descriptor and face size. Original DWARF establishes this extent; the generic
+parent remains limited to its 28-byte resource header. Pinned instructions bind Lock's
+output to SP+0x70 and coordinates to SP+0x74/+0x78. Five original byte reads
+retain their actual addresses/results, including the interpolation-mode byte.
+Each metadata line carries its completing query sequence. Additional metadata
+reads and logging perturb timing. Resource headers are sequential observations;
+allocation suffix bounds, aliases and FIFO/GPU lifetime still require admission.
+The retained Lock status remains distinct from an allocation extent.
+
+Immediately after the fifth original byte read, while the original PixelBuffer
+Lock remains active, the observer submits the four corner addresses to the
+transactional renderer snapshot API. The same 64-query metadata budget bounds
+acquisition. A query sequence joins status and acquired bytes to original reads.
+Successful acquisition executes the typed native plan, checks all four addresses,
+and evaluates the native point or bilinear sampler. Completion logs compare
+acquired bytes and native result bits with the original query. The original
+Unlock completes normally. Incomplete captures skip acquisition, and wide
+addresses report invalid without truncation.
+
+The snapshot observes a subsequent renderer boundary within the original Lock
+interval. Input diversity, view identity, allocation ownership and producer
+ordering still require live validation before full native query admission.
+
+`scripts/check_deformation_depth_observer.py` compiles the actual observer
+against an authored generated-input binding and registry fixture. It checks
+disabled/missing-entry installation, direct/table fallback results, exact original
+byte-read counts and order, metadata/parent fields, legacy-copy upgrade, memory
+macro restoration and independent budgets. Sixty-five calls without Lock precede
+65 with Lock. Snapshot controls cover exact corner order, disabled/incomplete
+queries, 64-bit address rejection, successful differing bytes and unchanged
+fallback results for unavailable, invalid and failed requests. Nonzero point and
+bilinear controls check native results and sixteen caller FP environments.
+Ten mutants
+exercise bypassed entry, global-budget starvation, corrupted captured bytes,
+wrong coordinate offset, excess metadata reads, corrupted texture words and
+truncated probe addresses, acquisition after Unlock, corrupted native results
+and swapped interpolation corners.
+The earlier registry-only observer missed direct GetDepth calls; zero samples
+from that build leave operation presence unproven. Live numeric pairing,
+coherent-view admission and performance acceptance remain separate gates.
+
+### Experimental native GetDepth query
+
+An observer build also includes a handwritten GetDepth control path. Select
+`--depth-observer --native-depth 1` through the supported launcher. The launcher
+checks its native-query build marker and executable hash before creating the
+owned process. Mode `0` selects the original query and its observer.
+
+The native path performs manager readiness, cached or scanned surface selection,
+original virtual Lock, typed coordinate planning, transactional corner acquisition,
+point or bilinear evaluation, virtual Unlock and cache cleanup. It constructs the
+homogeneous point, reads both matrix rows and executes the
+typed native projection. Its native surface-table lookup selects the matrix,
+and original virtual Lock/Unlock callbacks acquire and release the pixel view.
+Queued PPU trampolines complete at those virtual call boundaries.
+Unavailable bulk acquisition uses the normal scalar services in
+original corner order. Invalid or failed acquisition raises a visible error with
+Lock, cache, stack and TOC cleanup. The original default-depth constant is 0.25.
+
+`scripts/check_deformation_query.py` exercises the actual adapter with authored
+objects and callbacks across sixteen caller FP environments, direct and deferred
+calls, cache paths, early returns, nonzero samples and twelve rejected mutants.
+Controls reject retained projection dispatch,
+a wrong homogeneous coordinate, matrix alignment/stride changes and ignored guest
+VSCR[NJ], alongside acquisition, fallback and cleanup failures.
+
+The matrix lookup decodes the sector and element selector, request bits, nullable
+sector entry, signed entry count and simple versus complex representation.
+Complex entries use an 80-byte record with its matrix at offset 16, retaining
+the original 32-bit address arithmetic. Sixteen table-selection cases and eight
+additional compiled mutants cover those boundaries and reject retained
+SurfaceQuery dispatch. The authored query fixture now supplies actual property
+tables and record-request flags instead of forcing a matrix through a stub.
+
+Private verification matches all 207 SurfaceQuery instructions and its 13-instruction
+pure interpolation helper against the selected original ELF. A 6,912-case
+comparison checks the native matrix selection against the pinned original,
+including query flags, sector/element boundaries, signed counts, representation,
+material combinations and address wrapping. Original writes stay within its
+local result and stack. TransformPoint consumes only that result's matrix field.
+The other material outputs remain unused by this native query. This isolated
+comparison preserves the retained pixel-ownership and GPU-lifetime requirements.
+The integrated source `82de9745488f6d50cd38d74e827ec8a2eb493aba` completed
+owned normal PLAY in `20261116T150333.476773Z`, using EXE
+`5c3a7c7476aaeb31b0482baf58d9c34285b65b9a757831765963d9bb65b4bab2`.
+Seven required menu inputs and one observed SONY skip were acknowledged. The
+240-second post-target observation closed through the owned guard after
+464.187 seconds, with no resource breach. Last logged counters were
+`completed=48128 sampled=10856 snapshots=10856 scalar=0 projected=10856`.
+This establishes current native matrix selection, projection and successful
+snapshot execution. The inspected final image shows timer 01:54.28, LAP 0/2,
+POS 15/15, rider near the start and AI traffic ahead. Ground, banner and vehicle
+shading defects remain visible.
+
+All 64 captured inputs matched the pinned original/native coordinate and result
+bits and original corner addresses. A corrupted-result control failed. The
+records contain 64 distinct world points but only zero matrix rows, coordinates
+and sample bytes. Property tables in the private comparison are reconstructed.
+Broad live numeric diversity and actual property-record pairing remain open.
+
+The final durable CSV window contained 168 successful Presents over 60.190749
+seconds, averaging 2.791127 Presents/s, with interval p50/p95/p99/max
+360.696/402.068/416.299/428.820 ms. Conditions were checked optimized Debug,
+general O1 with renderer-specific O2, API validation disabled, prompt byte-read
+service enabled, internal captures, CPU-surface diagnostics and required PM
+interpretation. This is one instrumented observation. Matched speedup evidence,
+minimum 30 FPS, graphics parity and interpreter removal remain open.
+
+The first 64 successful snapshot result records join one-to-one with request
+profiles through client/renderer IDs and absolute queued/started/finished QPC
+timestamps. Their 5.252211-second span contains 2.021320 seconds of request
+latency, including 1.878526 seconds queued and 0.142248 seconds of renderer
+service. These measure snapshot request waits and service. Total GetDepth
+operation timing and exclusive critical-path attribution remain open. The
+private pinned packet at
+`temp/depth-projection-evidence/20261116T150333.476773Z/` retains the launch,
+build identity, numeric comparison, request timing, unsuspended per-thread CPU
+observations and artifact hashes.
+
+Integration with prompt CPU byte-read service preserves queued snapshot
+requests and their suffix until the owned FIFO boundary. A regression with a
+snapshot between byte reads failed before applying the validated toolkit
+barrier and now rejects its omission. The GPU fixture includes the recorded
+draw height used to track pending colour ranges.
+
+With `MS_DEPTH_OBSERVER=1`, the first 64 successful native samples additionally
+record owned point/matrix bits, projected coordinates, dimensions, byte offsets,
+fractions, interpolation mode, four sample bytes and returned result bits.
+Records retain snapshot versus scalar-fallback status and an atomic sample
+sequence. Logging occurs after Unlock and adds no guest or GPU reads. Capture
+disabled and 80-call cap controls, authentic authored fields, fallback records
+and four additional capture mutants run in the query checker. These bounded
+records support private original/native numeric pairing from actual live inputs.
+An earlier private comparison with the pinned emitted original passed the control,
+output and ABI cases under nearest-even host rounding and four DAZ/FTZ settings.
+The emitted original changes results under non-nearest host rounding. These
+historical differences remain recorded in the private comparison. Diverse live
+inputs, producer lifetime and matched gameplay timing
+remain acceptance gates for issue 302 and the stable-30 goal.
+
+The original projection also exposes a fused-rounding dependency. A byte-verified
+144-instruction TransformPoint case wraps a cancellation result to 0.0 under the
+preserved emitted arithmetic and to the expected 1.0 using the canonical VMX
+fused helper. `scripts/check_ppu_vmx_fused.py` exercises the corrected lifter
+against an independent binary32 oracle. The correction applies to newly
+generated code. The typed projection below carries the fused contract into the
+native query without regenerating the preserved input tree.
+
+The experimental native query now binds the typed projection directly. It retains
+binary32 fused multiply-add boundaries, the pairwise row reduction, VSCR[NJ]
+subnormal handling and signed fractional wrapping. The original caller's aligned
+point load supplies XYZ, and the verified homogeneous constant supplies W. Matrix
+views retain the original aligned vector loads. The query counter additionally
+records `projected`, and the launcher marker identifies typed projection.
+
+`python scripts/check_deformation_projection.py` checks 544 authored projections
+against an independent exact-rational binary32 oracle across sixteen host FP
+settings. Five source mutants reject unfused arithmetic, a wrong point lane,
+missing negative wrapping, ignored NJ and caller FP leakage. A private comparison
+passes the same cases against the byte-verified 144-instruction original using
+canonical VMX FMA/add helpers. This preserves the distinction between the original
+instruction contract and the saved generated arithmetic's cancellation error.
+The comparison requires exact finite output bits and matching NaN classification.
+
+Owned muted DX12 run `20261113T123822.614497Z`, EXE `147d0f56...6fc2`, used
+the proven v4 normal-PLAY profile with seven acknowledged required inputs and
+exactly one screen-gated SONY intro skip. It observed race HUD frame 35, whose
+timer reads 00:18.06, LAP 0/2 and POS 10/15. The last logged query counters were
+`completed=31744 sampled=28 snapshots=28 scalar=0 projected=28`, establishing
+at least 28 typed projections with successful transactional samples. The guard
+closed after 386.593 seconds, including 120 seconds after target observation,
+with no resource breach. The packet and local analysis are pinned. Dark ground
+patches remain visible. This binary predates the fragment-program bound fix in
+PR 317. Diverse live numeric pairing, graphics parity, matched operation timing,
+interpreter removal and minimum 30 FPS remain open.
+
+Integrated muted DX12 run `20261115T180150.936696Z`, EXE `8de408f2...9fbe`,
+reached the race HUD through normal PLAY with seven acknowledged required inputs
+and exactly one observed SONY skip. Its final logged checkpoint was
+`completed=52224 sampled=383 snapshots=383 scalar=0 projected=383`.
+Frame 44 shows timer 01:43.95, LAP 0/2 and POS 15/15, with the rider at the start
+and AI vehicles ahead. Ground, banner and vehicle shading defects remain.
+The guard closed after 428.031 seconds with no resource breach. The pinned
+packet includes its build identity and local analysis.
+
+The final acknowledged durable CSV window contains 142 successful Presents in
+60.089014 seconds, or 2.363 Presents/s. Median and p95 intervals are 430.928 and
+490.355 ms. This single instrumented window used checked optimized Debug with
+renderer optimization disabled, internal captures, CPU-surface diagnostics and
+required PM interpretation enabled. Native-query counters increased inside the
+window. Matched repetitions, separate operation timing, graphics acceptance,
+interpreter removal and minimum 30 FPS remain outstanding.
+
+Bounded-input run `20261115T185410.152811Z`, EXE `738eadc9...bd7d`,
+reached the race HUD through seven acknowledged required inputs and exactly one
+observed SONY skip. Its last logged counters were
+`completed=34816 sampled=1523 snapshots=1523 scalar=0 projected=1523`.
+The guard closed after 323.453 seconds without a resource breach. Frame 36 shows
+timer 01:51.94, LAP 0/2 and POS 15/15 with the rider near the start. Ground,
+banner and vehicle shading defects remain visible.
+
+A private replay of all 64 authentic input records matches original, native and
+logged coordinate/result bits, original scalar corner order and lease cleanup.
+A corrupted-result control fails. The records contain 64 distinct world points,
+but every matrix row, coordinate and sample byte is zero. Authored nonzero and
+NJ controls also pass. This live set therefore leaves broader numeric diversity
+and live GPU producer/lifetime acceptance open. The final durable instrumented
+window averages 2.376 successful Presents/s under the same checked optimized
+Debug, general O1 with renderer-specific optimization disabled, API validation,
+capture/diagnostic and required-interpreter settings.
+No matched comparison or minimum-30 acceptance follows from this run. Its pinned
+packet includes input records, comparison receipt, build identity and analysis.
+
+Owned DX12 run `20261109T094927.873395Z`, EXE `56fe9332...e909b`, reached
+race HUD frame 35 through seven acknowledged required inputs and one observed
+intro skip. The inspected HUD reads 00:28.44, LAP 0/2 and POS 12/15. Its original
+global budget retained 64 completed GetDepth entries, all with `lock-seen=0`;
+later Lock presence remains unknown. The post-target guard closed at 439.969 s
+with no resource breach. Service-failure and repeated-DMA diagnostics remain
+retained. Rectangular shading is visible; graphics, stable 30 FPS, successful
+numeric inputs and the coherent native query remain unaccepted.
+
+Owned run `20261109T102813.736399Z`, EXE `c3cacc3a...6af7`, reached the race
+through seven required inputs and one observed intro skip. Its post-target guard
+closed at 402.406 seconds without a resource breach. Fifty-nine complete queries
+join metadata, original byte addresses/results and original return values. The
+native plan matched all four sample addresses; plan and arithmetic controls
+retained exact results across 16 caller FP environments. This capture contains
+one distinct input: coordinates (0, 0), four zero bytes and zero return. Broader
+live numeric coverage remains required.
+
+Observed dimensions were 4096 by 4096 with one-byte samples. The unclamped
+neighbour row crosses the logical image edge while remaining inside the root's
+declared allocation span. Allocation/view provenance, aliases, target generation
+and renderer-managed FIFO/GPU visibility/lifetime remain admission gates.
+Metadata reads and captures perturb timing. The retained stderr includes 1,248
+service-failure and 229 repeated-DMA halt diagnostics. Race captures still show
+rectangular shading defects. Full native-query and stable-30 acceptance remain
+open.
+
+The existing CPU-surface readback wait now rechecks its own target fence after
+every event notification, retains the 30-second bound, and rejects device loss,
+the removed-fence sentinel and counter overflow. Older notifications cannot
+authorize mapping unfinished GPU work. `check_rsx_surface_fence.py` exercises
+nine authored wait/error outcomes and rejects three source mutants. Its optional
+`--gpu` test passes on an RTX 3080 with the D3D12 debug layer, a real blocked queue,
+stale notification and repeated fence reuse; the actual previous wait fails the
+target-completion assertion. This proves the fence protocol, not full snapshot
+pixels, native GetDepth admission or a frame-rate improvement.
+
+The next native trial (EXE `bd46a24c...59abdb`) reached original menu/bike/race
+through seven normal inputs and one observed intro skip, then stopped making
+logged presents. The process remained alive until its configured 432.813-second
+guard. Exact-symbol diagnostic stacks place main in Havok's
+`waitForStepWorldFinished`/`hkSemaphore::acquire` condition wait; renderer is
+mostly waiting and no readback-fence wait appears in that sample. The late
+GetDepth probe saw zero entries, not accepted live numeric pairs. This is the
+condition family tracked by issue 71; its current producer, object and release
+are not yet paired. One unmatched trial does not establish a causal regression
+or fix. Last available FPS groups ended well before termination and are not a
+final-minute benchmark. Sustained gameplay and the full native query are still
+unaccepted; graphics defects remain.
+
+
 ## PCM cubic DSP prototype (#288)
 
 The [typed PCM resampler](../src/motorstorm/pcm_cubic.h) accepts signed PCM16,
