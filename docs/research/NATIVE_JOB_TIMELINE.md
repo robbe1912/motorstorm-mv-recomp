@@ -422,7 +422,7 @@ compiled dispatch/return observations from raw image 1.
 
 Zero queue-call records were stored. Loss prevents inferring absent queue calls
 or a complete PVS span. Queue generations and the critical producer remain
-unqualified. Execution selection is the next diagnostic change, with its
+unqualified. This saturation motivated the execution PC selection below, with
 selected PCs and exclusions retained for interpretation. End-to-end capture
 cost, graphics acceptance, interpreter removal and minimum 30 FPS remain open.
 
@@ -430,3 +430,25 @@ Private snapshot, validated JSONL, summary, queue-call analysis, replay timing,
 selected build identity and hashes are pinned under
 `temp/runs/20261116T170918.944029Z/job-capture/`. The coverage receipt is
 `temp/job-timeline-evidence/20261116T170918.944029Z/analysis.json`.
+
+
+### Execution PC selection
+
+The capture controller can freeze up to 32 explicitly selected raw source/target
+PC values before installing producers. Its immutable filter performs bounded
+comparisons without allocation, formatting, guest reads or runtime reentry.
+The existing window rejects closed-startup events before invoking that filter.
+Atomic, scheduler and queue streams retain their existing admission. Execution
+rejections remain visible in the sharded exclusion totals. The snapshot schema
+is unchanged; retain the launch PC list, armed count and selected build identity.
+
+The launcher sanitizes inherited selection, rejects unsupported selected builds
+and invalid/alignment/length/capture combinations before launch, and records
+both numeric PCs and the canonical child environment. The build identity marks
+filter support explicitly. Authored controls cover source/target/default paths,
+maximum length, strict numeric parsing and unchanged state after invalid input.
+Seven compiled filter mutants must fail. Actual Windows controller tests reject
+invalid configuration, preserve a frozen filter after environment changes, and
+expose rejected execution counts. Existing owner, queue, snapshot, binding,
+launcher and SIMD controls continue to run. A current filtered title trace and
+filter-inclusive overhead qualification remain pending.

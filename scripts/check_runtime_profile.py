@@ -99,10 +99,38 @@ class ExecutionProfileTests(unittest.TestCase):
         return launch, self.calls[0][1]['env']
 
     def test_capture_disabled_clears_inherited_directory(self):
-        with patch.dict(os.environ, {'MS_JOB_CAPTURE_DIR': 'unowned-directory'}):
+        with patch.dict(os.environ, {'MS_JOB_CAPTURE_DIR': 'unowned-directory',
+                                     'MS_JOB_CAPTURE_EXECUTION_PCS': '0x30b0'}):
             launch, env = self.launch()
         self.assertNotIn('MS_JOB_CAPTURE_DIR', env)
+        self.assertNotIn('MS_JOB_CAPTURE_EXECUTION_PCS', env)
         self.assertFalse(launch['capture_jobs'])
+
+    def test_capture_execution_filter_records_selected_pcs(self):
+        self.record.update(job_capture=True, queue_call_observation=True,
+                           job_capture_execution_filter=True)
+        self.save_record()
+        with patch.dict(os.environ, {'MS_JOB_CAPTURE_EXECUTION_PCS': '0x4'}):
+            launch, env = self.launch('--capture-jobs', '--job-capture-execution-pc', '0x30b0',
+                                      '--job-capture-execution-pc', '0x3180')
+        expected = '0x30b0,0x3180'
+        self.assertEqual(env['MS_JOB_CAPTURE_EXECUTION_PCS'], expected)
+        self.assertEqual(launch['environment']['MS_JOB_CAPTURE_EXECUTION_PCS'], expected)
+        self.assertEqual(launch['job_capture_execution_pcs'], [0x30b0, 0x3180])
+
+    def test_capture_execution_filter_requires_capability(self):
+        self.record.update(job_capture=True, queue_call_observation=True)
+        self.save_record()
+        self.rejected('Execution PC filter requires', '--capture-jobs',
+                      '--job-capture-execution-pc', '0x3180')
+
+    def test_capture_execution_filter_rejects_invalid_selection(self):
+        for pc in ('-4', '3', '0x40000'):
+            self.rejected('Execution PC selection requires', '--capture-jobs',
+                          '--job-capture-execution-pc', pc)
+        self.rejected('Execution PC selection requires', '--job-capture-execution-pc', '4')
+        self.rejected('Execution PC selection requires', '--capture-jobs',
+                      *['--job-capture-execution-pc=4'] * 33)
 
     def test_capture_requires_selected_build(self):
         self.rejected('Job capture requires a matching', '--capture-jobs')
@@ -323,6 +351,7 @@ class ExecutionProfileTests(unittest.TestCase):
         self.assertTrue(record['native_world_transforms'])
         self.assertTrue(record['native_job_wait'])
         self.assertFalse(record['job_capture'])
+        self.assertFalse(record['job_capture_execution_filter'])
         self.assertIn('-DPORT_ENABLE_JOB_CAPTURE=OFF', commands[0])
         self.assertIn('-DPORT_QUEUE_CALL_OBSERVATION=OFF', commands[0])
 
@@ -335,6 +364,7 @@ class ExecutionProfileTests(unittest.TestCase):
         self.assertIn('-DPORT_CAPTURE_ALLOW_UNLIFTED=OFF', commands[0])
         self.assertTrue(record['job_capture'])
         self.assertTrue(record['queue_call_observation'])
+        self.assertTrue(record['job_capture_execution_filter'])
 
     def test_build_wrapper_records_selected_unsupported_source(self):
         other = self.root / 'selected toolkit'

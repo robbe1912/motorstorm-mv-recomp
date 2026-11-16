@@ -121,6 +121,41 @@ assert result.returncode == 0, result.stdout + result.stderr
 result = command([str(exe)], 'integration-run')
 assert result.returncode == 0, result.stdout + result.stderr
 print('PASS execution, scheduler and queue-call observer integration')
+filter_source = root / 'src/motorstorm/job_capture_execution_filter.h'
+filter_fixture = root / 'scripts/fixtures/job_capture_execution_filter.cpp'
+
+def run_filter(text, name):
+    directory = out / name
+    directory.mkdir(exist_ok=True)
+    (directory / filter_source.name).write_text(text, encoding='utf-8')
+    filter_exe = directory / ('fixture.exe' if os.name == 'nt' else 'fixture')
+    cmd = [compiler, str(filter_fixture)]
+    cmd += (['/nologo', '/std:c++17', '/EHsc', '/O2', '/UNDEBUG', '/I'+str(directory), '/Fe'+str(filter_exe)]
+            if msvc else ['-std=c++17', '-O2', '-UNDEBUG', '-I'+str(directory), '-o', str(filter_exe)])
+    built = command(cmd, name+'-build')
+    assert built.returncode == 0, built.stdout + built.stderr
+    return command([str(filter_exe)], name+'-run')
+
+filter_text = filter_source.read_text(encoding='utf-8')
+filtered = run_filter(filter_text, 'execution-filter')
+assert filtered.returncode == 0, filtered.stdout + filtered.stderr
+if args.mutants:
+    filter_mutants = {
+        'filter-admits-all': ('if (!count) return true;', 'if (count <= maximum_pcs) return true;'),
+        'filter-source-only': ('pcs[i] == source_pc || pcs[i] == target_pc', 'pcs[i] == source_pc'),
+        'filter-target-only': ('pcs[i] == source_pc || pcs[i] == target_pc', 'pcs[i] == target_pc'),
+        'filter-outside-store': ('pc > 0x3fffcu || (pc & 3u)', '(pc & 3u)'),
+        'filter-trailing-token': ('specification.remove_prefix(separator + 1);',
+                                  'specification.remove_prefix(separator + 1); if (specification.empty()) { *this = parsed; return true; }'),
+        'filter-over-limit': ('if (parsed.count == maximum_pcs) return false;',
+                             'if (parsed.count == maximum_pcs) { *this = parsed; return true; }'),
+        'filter-rejects-full': ('if (!count) return true;', 'if (!count) return false;'),
+    }
+    for name, (old, new) in filter_mutants.items():
+        assert filter_text.count(old) == 1, name
+        result = run_filter(filter_text.replace(old, new), name)
+        assert result.returncode != 0, name+' survived'
+print('PASS execution PC filtering and parser controls')
 if args.mutants:
     original = source.read_text()
     old = 'exclude(c, c->excluded_queue_call); return;'
@@ -197,6 +232,11 @@ static void fixture_real_store(ppu_context* ctx) {
     result = command(queue_cmd, 'queue-control-build')
     assert result.returncode == 0, result.stdout + result.stderr
     with tempfile.TemporaryDirectory(dir=out) as directory:
+        with tempfile.TemporaryDirectory(dir=out) as filtered_directory:
+            result = command([str(queue_control), filtered_directory, 'filtered'], 'queue-control-filtered')
+            assert result.returncode == 0, result.stdout + result.stderr
+        result = command([str(queue_control), directory, 'invalid-filter'], 'queue-control-invalid-filter')
+        assert result.returncode == 0, result.stdout + result.stderr
         result = command([str(queue_control), directory, 'conflict'], 'queue-control-conflict')
         assert result.returncode == 0, result.stdout + result.stderr
         with tempfile.TemporaryDirectory(dir=out) as queue_directory:

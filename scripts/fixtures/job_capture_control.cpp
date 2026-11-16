@@ -32,6 +32,13 @@ int main(int argc, char** argv) {
         return 0;
     }
     assert(_putenv_s("MS_JOB_CAPTURE_DIR", argv[1]) == 0);
+    const bool filtered = !strcmp(argv[2], "filtered");
+    assert(_putenv_s("MS_JOB_CAPTURE_EXECUTION_PCS", filtered ? "0x1c8,0x3180" : "") == 0);
+    if (!strcmp(argv[2], "invalid-filter")) {
+        assert(_putenv_s("MS_JOB_CAPTURE_EXECUTION_PCS", "0x1c8,junk") == 0);
+        assert(!job_capture_control_start() && !ppu && !spu && !execution && !scheduler);
+        return 0;
+    }
 #ifdef PORT_QUEUE_CALL_OBSERVATION
     if (!strcmp(argv[2], "conflict")) {
         job_queue_observer existing{nullptr, ignored_queue};
@@ -46,7 +53,7 @@ int main(int argc, char** argv) {
         assert(!job_capture_control_start() && !ppu && !spu);
         return 0;
     }
-    assert(!strcmp(argv[2], "run"));
+    assert(!strcmp(argv[2], "run") || filtered);
     assert(job_capture_control_start());
     assert(ppu && spu && execution && scheduler);
     assert(!ppu->accept(ppu->user, PS3_ATOMIC_PPU32, 1, 42, 4));
@@ -57,6 +64,12 @@ int main(int argc, char** argv) {
         Sleep(10); admitted = ppu->accept(ppu->user, PS3_ATOMIC_PPU32, 1, 42, 4) != 0;
     }
     assert(admitted);
+    if (filtered) {
+        assert(_putenv_s("MS_JOB_CAPTURE_EXECUTION_PCS", "0x4") == 0);
+        assert(!execution->accept(execution->user, PS3_SPU_COMPILED_DISPATCH, 123, 460, 464));
+        assert(execution->accept(execution->user, PS3_SPU_COMPILED_DISPATCH, 123, 0, 456));
+        assert(execution->accept(execution->user, PS3_SPU_INTERPRETED_CONTROL, 123, 0x3180, 464));
+    }
 #ifdef PORT_QUEUE_CALL_OBSERVATION
     ppu_context ctx{}; ctx.gpr[3] = 0x42;
     motorstorm_observe_queue_reset(&ctx);
@@ -93,5 +106,6 @@ int main(int argc, char** argv) {
 #endif
         && snapshot.before.run_id && snapshot.before.ticks_per_second);
     assert(snapshot.before.excluded_atomic >= 1 && snapshot.before.storage.dropped == 0);
+    if (filtered) assert(snapshot.before.excluded_execution >= 1);
     return 0;
 }

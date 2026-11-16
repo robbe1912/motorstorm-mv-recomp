@@ -420,8 +420,8 @@ turns those capture options off.
 
 Run with `--capture-jobs --job-capture-seconds 0.1 --menu-replay <private-profile>`
 and the selected native-depth, diagnostic and resource settings. The inherited
-`MS_JOB_CAPTURE_DIR` is cleared. The launcher creates its own `job-capture`
-directory, waits for `[job-capture] armed`, then performs the normal screen-gated
+`MS_JOB_CAPTURE_DIR` and `MS_JOB_CAPTURE_EXECUTION_PCS` are cleared. The launcher
+creates its own `job-capture` directory, waits for `[job-capture] armed`, then performs the normal screen-gated
 menu route and observed intro skip. After the target, exclusive `open` and
 `snapshot` signals produce `timing.json` and `snapshot.bin`. Explicit stop,
 resource, replay, acknowledgment and timeout failures retain their actual outcome.
@@ -433,3 +433,19 @@ counts. Check clock validity, exclusions, pending records, loss, call-ID exhaust
 and inline-path gaps before interpreting a queue generation. Measure observer
 overhead before a coordinated title capture. Wrapper return and marker progress
 require separate evidence to establish genuine job completion.
+
+
+Add `--job-capture-execution-pc <PC>` for each selected raw source or target PC
+to retain execution observations touching those values. Up to 32 aligned SPU
+PCs in `0..0x3fffc` are accepted. Omitting selection keeps full execution
+capture. Selection requires the admitted build identity's
+`job_capture_execution_filter` capability. The launcher records the canonical
+PC list and `MS_JOB_CAPTURE_EXECUTION_PCS`; the controller freezes it before
+installing producers and reports the count in its armed acknowledgment.
+
+Selection affects execution events while atomic, scheduler and queue-call
+capture retain their existing gates. Rejected execution events contribute to
+the saturating exclusion counters. Unknown raw zero PCs may match selected zero;
+retain event validity flags when interpreting that match. Keep launch metadata
+with the snapshot because selected PCs describe intentional coverage exclusions.
+All existing loss, partial-window, ownership and completion qualifications apply.

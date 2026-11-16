@@ -41,6 +41,7 @@ def main():
     ap.add_argument('--menu-replay',type=Path,help='Private observed-screen profile; normal PAD_FILE input, not a scene jump')
     ap.add_argument('--capture-jobs',action='store_true',help='Arm bounded job capture in an owned run-local directory; requires matching build')
     ap.add_argument('--job-capture-seconds',type=float,help='Open capture for 0.05..5 seconds after the independently observed replay target')
+    ap.add_argument('--job-capture-execution-pc',type=lambda value:int(value,0),action='append',default=[],help='Retain execution events matching a raw source or target SPU PC; repeat up to 32 times')
     ap.add_argument('--native-pcm-cubic',choices=('0','shadow','1'),default='0',help='Explicit verified PCM DSP mode; requires matching native-enabled build')
     ap.add_argument('--native-visibility',choices=('0','shadow','1'),default='0',help='Explicit verified visibility mode; requires matching native-enabled build')
     ap.add_argument('--depth-observer',action='store_true',help='Enable the bounded raw depth observer; requires a matching observer build')
@@ -59,6 +60,10 @@ def main():
     ap.add_argument('--jobmod-header-fnv',action='store_true',help='Also identify staged job images by their declared C0DEC0DE span, ignoring load padding')
     ap.add_argument('--min-free-physical-gib',type=physical_reserve,default=4,help='Host free physical RAM reserve, 1..4 GiB (default 4); lower explicitly for concurrent host work')
     args=ap.parse_args()
+    if args.job_capture_execution_pc and (not args.capture_jobs or
+            len(args.job_capture_execution_pc) > 32 or
+            any(pc < 0 or pc > 0x3fffc or pc % 4 for pc in args.job_capture_execution_pc)):
+        raise SystemExit('Execution PC selection requires --capture-jobs and up to 32 aligned SPU PCs in 0..0x3fffc')
     if not 0<=args.texture_cache_mib<=4096: ap.error("Texture cache target must be 0..4096 MiB")
     if args.job_capture_seconds is not None and (
             not args.capture_jobs or not args.menu_replay or
@@ -107,6 +112,8 @@ def main():
         identity = admitted['build_identity']
         if not identity.get('job_capture') or not identity.get('queue_call_observation'):
             raise SystemExit('Job capture requires a matching --capture-jobs build with queue bindings; no process launched')
+        if args.job_capture_execution_pc and not identity.get('job_capture_execution_filter'):
+            raise SystemExit('Execution PC filter requires a matching filter-enabled capture build; no process launched')
     # User-approved storage policy, before any native process or PAD replay.
     # Referenced/failed/evidence runs and the supplied profile are protected.
     from prune_runs import automatic
@@ -124,7 +131,7 @@ def main():
     if args.d3d12_debug != 'default':env['D3D12_DBG']=args.d3d12_debug
     # Clear inherited diagnostics before applying the documented booting configuration.
     for key in list(env):
-        if key.startswith(('SPU_','FLOW_','RSX_','GCM_','PAD_','FPS_','PM_','CAP_HAVOK','CAP_BIKE','LOADTIME_','AUDIO_','TEX_')) or key in ('FP_PICK','SCREEN_AS_TEX','RD_WWSJOB_SHIM','VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG','MS_JOB_CAPTURE_DIR'):env.pop(key)
+        if key.startswith(('SPU_','FLOW_','RSX_','GCM_','PAD_','FPS_','PM_','CAP_HAVOK','CAP_BIKE','LOADTIME_','AUDIO_','TEX_')) or key in ('FP_PICK','SCREEN_AS_TEX','RD_WWSJOB_SHIM','VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG','MS_JOB_CAPTURE_DIR','MS_JOB_CAPTURE_EXECUTION_PCS'):env.pop(key)
     env.update(PATH=str(c['ffmpeg']/'bin')+os.pathsep+env.get('PATH',''),PS3_VFS_ROOT=str(c['disc']),PS3_HDD0_ROOT=str(c['userdata']),PS3_SAVEDATA_ROOT=str(c['userdata']/'home/00000001/savedata'),AUDIO_MUTE='1',SCREEN_AS_TEX='0',PAD_FILE=str(out/'pad.txt'),FPS_STATS='1',FPS_STATS_CSV=str(out/'frames.csv'),RECOMP_TITLE='MotorStorm MV native')
     env.update(admitted['execution_environment'])
     if args.native_owned_jobs:env['SPU_NATIVE_OWNED_JOBS']='1'
@@ -146,6 +153,8 @@ def main():
     if args.capture_jobs:
         (out/'job-capture').mkdir()
         env['MS_JOB_CAPTURE_DIR'] = str(out/'job-capture')
+        if args.job_capture_execution_pc:
+            env['MS_JOB_CAPTURE_EXECUTION_PCS'] = ','.join(f'0x{pc:x}' for pc in args.job_capture_execution_pc)
     if args.capture_textures:
         (out/'textures').mkdir(); env.update(TEX_RAWDBG='1',TEX_RAWDBG_DIR=str(out/'textures'))
     if args.trace_video:
@@ -183,8 +192,11 @@ def main():
     record['resource_guard_sha256']=hashlib.sha256(Path(__file__).with_name('native_resource_guard.py').read_bytes()).hexdigest()
     record['capture_jobs'] = args.capture_jobs
     record['job_capture_seconds'] = args.job_capture_seconds
+    record['job_capture_execution_pcs'] = args.job_capture_execution_pc
     if args.capture_jobs:
         record['environment']['MS_JOB_CAPTURE_DIR'] = env['MS_JOB_CAPTURE_DIR']
+        if args.job_capture_execution_pc:
+            record['environment']['MS_JOB_CAPTURE_EXECUTION_PCS'] = env['MS_JOB_CAPTURE_EXECUTION_PCS']
     record['capture_burst_frames']=args.capture_burst_frames
     record['capture_on_pad']=args.capture_on_pad
     record.update(admitted)

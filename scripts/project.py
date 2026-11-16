@@ -154,6 +154,7 @@ def main():
         identity['native_particle_thresholds']=args.native_particle_thresholds
         identity['job_capture']=args.capture_jobs
         identity['queue_call_observation']=args.capture_jobs
+        identity['job_capture_execution_filter']=args.capture_jobs
         identity['depth_observer']=args.depth_observer
         identity['native_depth_query']=args.depth_observer
         identity['renderer_optimization']=json.loads((binary/'renderer-optimization.json').read_text())
