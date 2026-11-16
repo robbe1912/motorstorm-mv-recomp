@@ -4,14 +4,15 @@
 #include "ps3emu/spu_execution_observer.h"
 #include "ps3emu/spurs_scheduler_observer.h"
 #include "ps3emu/sized_trace.h"
+#include "job_queue_lifecycle.h"
 
 /* Process-local, versioned data. The raw pointer fields are observations, not
  * lifetime-qualified guest identities. The owner defines the output format. */
-enum { JOB_CAPTURE_SCHEMA_VERSION = 2 };
-enum { JOB_CAPTURE_ATOMIC = 1, JOB_CAPTURE_EXECUTION, JOB_CAPTURE_SCHEDULER };
+enum { JOB_CAPTURE_SCHEMA_VERSION = 5 };
+enum { JOB_CAPTURE_ATOMIC = 1, JOB_CAPTURE_EXECUTION, JOB_CAPTURE_SCHEDULER, JOB_CAPTURE_QUEUE_CALL };
 enum { JOB_CAPTURE_THREAD_UNKNOWN = 1, JOB_CAPTURE_HOST_ASSIGNMENT = 2 };
 enum { JOB_CAPTURE_FILTER_ATOMIC = 1, JOB_CAPTURE_FILTER_EXECUTION = 2,
-       JOB_CAPTURE_FILTER_SCHEDULER = 4 };
+       JOB_CAPTURE_FILTER_SCHEDULER = 4, JOB_CAPTURE_FILTER_QUEUE_CALL = 8 };
 struct job_capture_record {
     uint64_t thread;
     uint32_t kind, flags;
@@ -21,6 +22,7 @@ struct job_capture_record {
         ps3_atomic_observation atomic;
         ps3_spu_execution_event execution;
         ps3_spurs_scheduler_event scheduler;
+        struct { job_queue_event event; uint64_t tick; } queue_call;
     } value;
 };
 struct job_capture;
@@ -36,11 +38,12 @@ struct job_capture_config {
     int (*accept_atomic)(void*, uint32_t, uintptr_t, uint64_t, uint32_t);
     int (*accept_execution)(void*, uint32_t, uintptr_t, uint32_t, uint32_t);
     int (*accept_scheduler)(void*, const ps3_spurs_scheduler_event*);
+    int (*accept_queue_call)(void*, const job_queue_event*);
 };
 struct job_capture_info {
     uint64_t run_id, ticks_per_second;
     uint64_t unexpected_append_failures;
-    uint64_t excluded_atomic, excluded_execution, excluded_scheduler;
+    uint64_t excluded_atomic, excluded_execution, excluded_scheduler, excluded_queue_call;
     uint32_t filter_mask;
     uint32_t schema_version, record_size, pointer_size;
     ps3_sized_trace_info storage;
@@ -64,3 +67,6 @@ int job_capture_visit(const job_capture*, int (*consumer)(void*, uint64_t,
                       const job_capture_record*), void*, job_capture_snapshot*);
 /* Only after all producers and readers are quiescent and synchronized. */
 void job_capture_stop(job_capture*);
+/* A queue observer may forward events here while the capture is alive. Its
+ * installation and removal must be synchronized with producers and stop. */
+void job_capture_queue_call(void*, const job_queue_event&) noexcept;

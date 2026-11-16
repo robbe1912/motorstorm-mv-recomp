@@ -9,7 +9,7 @@ struct job_capture {
     ps3_spu_execution_observer execution;
     ps3_spurs_scheduler_observer scheduler;
     std::atomic<uint64_t> unexpected_failures;
-    std::atomic<uint64_t> excluded_atomic, excluded_execution, excluded_scheduler;
+    std::atomic<uint64_t> excluded_atomic, excluded_execution, excluded_scheduler, excluded_queue_call;
 };
 /* Setup/teardown are serialized while producers are quiescent. */
 static job_capture* active;
@@ -69,6 +69,17 @@ static void scheduler_event(void* p, const ps3_spurs_scheduler_event* e) {
     r.value.scheduler = *e;
     append(c, r);
 }
+void job_capture_queue_call(void* p, const job_queue_event& e) noexcept {
+    auto* c = static_cast<job_capture*>(p);
+    if (!c) return;
+    if (c->config.accept_queue_call && !c->config.accept_queue_call(c->config.user, &e)) {
+        increment(c->excluded_queue_call); return;
+    }
+    auto r = record_for(c, JOB_CAPTURE_QUEUE_CALL);
+    r.value.queue_call.event = e;
+    r.value.queue_call.tick = clock_now(c);
+    append(c, r);
+}
 job_capture* job_capture_start(const job_capture_config* config) {
     if (active || !config || !config->run_id || !config->ticks_per_second ||
         !config->clock || !config->thread_id) return nullptr;
@@ -78,8 +89,10 @@ job_capture* job_capture_start(const job_capture_config* config) {
     c->excluded_atomic.store(0, std::memory_order_relaxed);
     c->excluded_execution.store(0, std::memory_order_relaxed);
     c->excluded_scheduler.store(0, std::memory_order_relaxed);
+    c->excluded_queue_call.store(0, std::memory_order_relaxed);
     if (!c->unexpected_failures.is_lock_free() || !c->excluded_atomic.is_lock_free() ||
-        !c->excluded_execution.is_lock_free() || !c->excluded_scheduler.is_lock_free()) { delete c; return nullptr; }
+        !c->excluded_execution.is_lock_free() || !c->excluded_scheduler.is_lock_free() ||
+        !c->excluded_queue_call.is_lock_free()) { delete c; return nullptr; }
     c->config = *config;
     c->trace = ps3_sized_trace_create(config->capacity, sizeof(job_capture_record));
     if (!c->trace) { delete c; return nullptr; }
@@ -112,9 +125,11 @@ int job_capture_describe(const job_capture* c, job_capture_info* out) {
     info.excluded_atomic = c->excluded_atomic.load(std::memory_order_relaxed);
     info.excluded_execution = c->excluded_execution.load(std::memory_order_relaxed);
     info.excluded_scheduler = c->excluded_scheduler.load(std::memory_order_relaxed);
+    info.excluded_queue_call = c->excluded_queue_call.load(std::memory_order_relaxed);
     info.filter_mask = (c->config.accept_atomic ? uint32_t(JOB_CAPTURE_FILTER_ATOMIC) : 0u) |
         (c->config.accept_execution ? uint32_t(JOB_CAPTURE_FILTER_EXECUTION) : 0u) |
-        (c->config.accept_scheduler ? uint32_t(JOB_CAPTURE_FILTER_SCHEDULER) : 0u);
+        (c->config.accept_scheduler ? uint32_t(JOB_CAPTURE_FILTER_SCHEDULER) : 0u) |
+        (c->config.accept_queue_call ? uint32_t(JOB_CAPTURE_FILTER_QUEUE_CALL) : 0u);
     info.schema_version = JOB_CAPTURE_SCHEMA_VERSION;
     info.record_size = sizeof(job_capture_record);
     info.pointer_size = sizeof(uintptr_t);

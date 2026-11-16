@@ -50,6 +50,7 @@ int main() {
             for (unsigned iteration = 0; iteration < iterations; ++iteration) {
                 ctx.gpr[3] = 0x1000 + worker * 0x100 + iteration;
                 ctx.gpr[4] = iteration;
+                ctx.lr = 0x87b800 + worker * 0x100 + iteration;
                 ctx.gpr[5] = 0x1234567800000000ULL + worker * iterations + iteration;
                 const auto object = ctx.gpr[3];
                 const auto header = ctx.gpr[5];
@@ -83,7 +84,7 @@ int main() {
             const auto& entered = found->second;
             assert(event.context == entered.context && event.object == entered.object);
             assert(event.argument == entered.argument && event.operation == entered.operation);
-            assert(event.header == entered.header);
+            assert(event.header == entered.header && event.entry_lr == entered.entry_lr);
             pending.erase(found);
         }
     }

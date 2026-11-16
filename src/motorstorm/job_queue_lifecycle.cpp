@@ -25,7 +25,7 @@ void invoke(ppu_context* ctx, job_queue_operation operation, void (*original)(pp
     }
     job_queue_event event{reserve_id(), reinterpret_cast<std::uintptr_t>(ctx),
         static_cast<std::uint32_t>(ctx->gpr[3]), static_cast<std::uint32_t>(ctx->gpr[4]),
-        operation, job_queue_phase::enter, operation == job_queue_operation::add_job ? ctx->gpr[5] : 0};
+        operation, job_queue_phase::enter, operation == job_queue_operation::add_job ? ctx->gpr[5] : 0, ctx->lr};
     target->event(target->user, event);
     original(ctx);
     event.phase = job_queue_phase::returned;

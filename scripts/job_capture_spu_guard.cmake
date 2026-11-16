@@ -1,0 +1,18 @@
+# Check capture inputs during configuration, before compiling generated code.
+function(job_capture_check_spu capture allow_unlifted spu_enabled spu_dir)
+    if(NOT capture)
+        return()
+    endif()
+    if(allow_unlifted)
+        message(WARNING "Unlifted SPU capture override enabled; verify the actual SPU inputs before comparing performance")
+        return()
+    endif()
+    if(NOT spu_enabled)
+        message(FATAL_ERROR "Job capture requires lifted SPU workloads enabled")
+    endif()
+    file(GLOB images "${spu_dir}/*/spu_recomp.c")
+    if(NOT images OR NOT EXISTS "${spu_dir}/spu_workloads.c" OR
+       NOT EXISTS "${spu_dir}/jobmods_register.c")
+        message(FATAL_ERROR "Job capture requires lifted SPU images and workload/job-module registration in SPU_DIR: ${spu_dir}")
+    endif()
+endfunction()

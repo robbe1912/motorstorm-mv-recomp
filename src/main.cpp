@@ -39,6 +39,9 @@
 #include "win32_compat.h"
 #include "thread_name.h"   /* ps3_thread_setname */
 #include "ps3emu/loadtime_trace.h"   /* #11 load-stage timing (observer) */
+#ifdef PORT_ENABLE_JOB_CAPTURE
+#include "motorstorm/job_capture_control.h"
+#endif
 #if defined(MOTORSTORM_DEFORMATION_DEPTH_OBSERVER)
 #include "motorstorm/deformation_depth_observer.h"
 #endif
@@ -391,6 +394,13 @@ int main(int argc, char** argv)
 #endif
 
     printf("=== ps3recomp game runner ===\n");
+
+#ifdef PORT_ENABLE_JOB_CAPTURE
+    if (!job_capture_control_start()) {
+        fprintf(stderr, "ERROR: job capture setup failed\n");
+        return 1;
+    }
+#endif
 
     if (!alloc_guest_vm()) {
         fprintf(stderr, "ERROR: could not allocate the guest address space\n");

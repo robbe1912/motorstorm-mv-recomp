@@ -1,5 +1,5 @@
 """Muted native run with unique output ownership and resource guards."""
-import argparse, ctypes, datetime, hashlib, json, os, subprocess, threading, time
+import argparse, ctypes, datetime, hashlib, json, math, os, subprocess, threading, time
 from pathlib import Path
 import psutil
 from project import ROOT, config
@@ -39,6 +39,8 @@ def main():
     ap.add_argument('--capture-burst-frames',type=int,default=0,help='Opt-in once-only consecutive presented-frame burst, 1..120; arm via run-local capture-burst.arm')
     ap.add_argument('--capture-on-pad',type=lambda value:int(value,0),default=0,help='Arm capture burst in native code when PAD_FILE consumes a matching button mask')
     ap.add_argument('--menu-replay',type=Path,help='Private observed-screen profile; normal PAD_FILE input, not a scene jump')
+    ap.add_argument('--capture-jobs',action='store_true',help='Arm bounded job capture in an owned run-local directory; requires matching build')
+    ap.add_argument('--job-capture-seconds',type=float,help='Open capture for 0.05..5 seconds after the independently observed replay target')
     ap.add_argument('--native-pcm-cubic',choices=('0','shadow','1'),default='0',help='Explicit verified PCM DSP mode; requires matching native-enabled build')
     ap.add_argument('--native-visibility',choices=('0','shadow','1'),default='0',help='Explicit verified visibility mode; requires matching native-enabled build')
     ap.add_argument('--depth-observer',action='store_true',help='Enable the bounded raw depth observer; requires a matching observer build')
@@ -58,6 +60,10 @@ def main():
     ap.add_argument('--min-free-physical-gib',type=physical_reserve,default=4,help='Host free physical RAM reserve, 1..4 GiB (default 4); lower explicitly for concurrent host work')
     args=ap.parse_args()
     if not 0<=args.texture_cache_mib<=4096: ap.error("Texture cache target must be 0..4096 MiB")
+    if args.job_capture_seconds is not None and (
+            not args.capture_jobs or not args.menu_replay or
+            not math.isfinite(args.job_capture_seconds) or not .05 <= args.job_capture_seconds <= 5):
+        raise SystemExit('--job-capture-seconds requires --capture-jobs, --menu-replay and a duration of 0.05..5 seconds')
     resource_policy=limits(args.min_free_commit_gib, args.min_free_physical_gib)
     if not 0<=args.capture_burst_frames<=120: raise SystemExit('Capture burst must be 0 (disabled) or 1..120 frames')
     if not 0<=args.capture_on_pad<=0xffff: raise SystemExit('Capture event mask must be 0 (disabled) or 1..0xffff')
@@ -97,6 +103,10 @@ def main():
         identity=json.loads((ROOT/'build/native/build_identity.json').read_text())
         if not identity.get('native_depth_query') or identity.get('sha256') != hashlib.sha256(exe.read_bytes()).hexdigest():
             raise SystemExit('Native depth requires a matching native-query build; no process launched')
+    if args.capture_jobs:
+        identity = admitted['build_identity']
+        if not identity.get('job_capture') or not identity.get('queue_call_observation'):
+            raise SystemExit('Job capture requires a matching --capture-jobs build with queue bindings; no process launched')
     # User-approved storage policy, before any native process or PAD replay.
     # Referenced/failed/evidence runs and the supplied profile are protected.
     from prune_runs import automatic
@@ -114,7 +124,7 @@ def main():
     if args.d3d12_debug != 'default':env['D3D12_DBG']=args.d3d12_debug
     # Clear inherited diagnostics before applying the documented booting configuration.
     for key in list(env):
-        if key.startswith(('SPU_','FLOW_','RSX_','GCM_','PAD_','FPS_','PM_','CAP_HAVOK','CAP_BIKE','LOADTIME_','AUDIO_','TEX_')) or key in ('FP_PICK','SCREEN_AS_TEX','RD_WWSJOB_SHIM','VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG'):env.pop(key)
+        if key.startswith(('SPU_','FLOW_','RSX_','GCM_','PAD_','FPS_','PM_','CAP_HAVOK','CAP_BIKE','LOADTIME_','AUDIO_','TEX_')) or key in ('FP_PICK','SCREEN_AS_TEX','RD_WWSJOB_SHIM','VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG','MS_JOB_CAPTURE_DIR'):env.pop(key)
     env.update(PATH=str(c['ffmpeg']/'bin')+os.pathsep+env.get('PATH',''),PS3_VFS_ROOT=str(c['disc']),PS3_HDD0_ROOT=str(c['userdata']),PS3_SAVEDATA_ROOT=str(c['userdata']/'home/00000001/savedata'),AUDIO_MUTE='1',SCREEN_AS_TEX='0',PAD_FILE=str(out/'pad.txt'),FPS_STATS='1',FPS_STATS_CSV=str(out/'frames.csv'),RECOMP_TITLE='MotorStorm MV native')
     env.update(admitted['execution_environment'])
     if args.native_owned_jobs:env['SPU_NATIVE_OWNED_JOBS']='1'
@@ -133,6 +143,9 @@ def main():
         env.update(CAP_BIKE_DIR=str(out/'bike'),CAP_BIKE_ARM_FILE=str(out/'bike/arm.txt'),PS3_FSLOG='1')
     if args.loadtime_trace:
         env.update(LOADTIME_TRACE='1',LOADTIME_TRACE_FILE=str(out/'loadtime.jsonl'))
+    if args.capture_jobs:
+        (out/'job-capture').mkdir()
+        env['MS_JOB_CAPTURE_DIR'] = str(out/'job-capture')
     if args.capture_textures:
         (out/'textures').mkdir(); env.update(TEX_RAWDBG='1',TEX_RAWDBG_DIR=str(out/'textures'))
     if args.trace_video:
@@ -168,6 +181,10 @@ def main():
     record['resource_breach']=None
     record['launcher_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     record['resource_guard_sha256']=hashlib.sha256(Path(__file__).with_name('native_resource_guard.py').read_bytes()).hexdigest()
+    record['capture_jobs'] = args.capture_jobs
+    record['job_capture_seconds'] = args.job_capture_seconds
+    if args.capture_jobs:
+        record['environment']['MS_JOB_CAPTURE_DIR'] = env['MS_JOB_CAPTURE_DIR']
     record['capture_burst_frames']=args.capture_burst_frames
     record['capture_on_pad']=args.capture_on_pad
     record.update(admitted)
@@ -180,24 +197,38 @@ def main():
     record['environment'].update({k:env[k] for k in ('SPU_TASK_LIFECYCLE_TRACE','SPU_TASK_LIFECYCLE_IMAGE') if k in env})
     (out/'launch.json').write_text(json.dumps(record,indent=2)); print('Owned native PID',p.pid,'output',out,flush=True)
     window_ready=False
+    job_capture_armed = not args.capture_jobs
     replay_thread=None; replay_result=[]
     def replay_worker():
         from menu_replay import replay
-        try: replay_result.append((True,replay(out,args.menu_replay),time.monotonic()))
+        try:
+            result = replay(out,args.menu_replay)
+            if args.job_capture_seconds is not None:
+                from job_capture_replay import capture_after_target
+                from native_pad import owned
+                timing = capture_after_target(out,args.job_capture_seconds,owned)
+                (out/'job-capture/timing.json').write_text(json.dumps(timing,indent=2),encoding='utf-8')
+            replay_result.append((True,result,time.monotonic()))
         except Exception as exc: replay_result.append((False,str(exc),time.monotonic()))
     try:
         while p.poll() is None:
             elapsed=time.monotonic()-start; m=Memory();m.length=ctypes.sizeof(m)
+            if not job_capture_armed:
+                with (out/'native.err').open('rb') as capture_log:
+                    job_capture_armed = b'[job-capture] armed ' in capture_log.read(65536)
+                if not job_capture_armed and elapsed >= 10:
+                    reason = 'job capture did not arm within 10 seconds; inspect build and native.err'
+                    break
             if not window_ready:
                 window=visible_native_window(p.pid)
-                if window:
+                if window and job_capture_armed:
                     window_ready=True
                     (out/'window.json').write_text(json.dumps(dict(window,elapsed=elapsed,create_time=record['create_time']),indent=2))
                     print('Visible owned native window verified; ready for screen-gated runtime input' if args.capture_menu or args.menu_replay else 'Visible owned native window verified; ready for manual navigation',flush=True)
                     if args.menu_replay:
                         replay_thread=threading.Thread(target=replay_worker,daemon=True)
                         replay_thread.start()
-                elif elapsed>=30:
+                elif not window and elapsed>=30:
                     reason='no visible owned game window within 30 seconds';break
             if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m)):raise OSError('Memory guard unavailable')
             private=proc.memory_info().private
@@ -228,7 +259,13 @@ def main():
             except subprocess.TimeoutExpired:p.kill();p.wait(timeout=10)
         if replay_thread:replay_thread.join(timeout=2)
         record.update(reason=reason,elapsed=time.monotonic()-start,returncode=p.returncode,terminated_by_guard=terminated,window_ready=window_ready)
-        (out/'final.json').write_text(json.dumps(record,indent=2));log.close();err.close();print('Closed:',reason,flush=True)
+        log.close()
+        err.close()
+        if args.capture_jobs:
+            capture_log = (out/'native.err').read_text(encoding='utf-8',errors='replace')
+            record['job_capture_armed'] = '[job-capture] armed ' in capture_log
+            record['job_capture_snapshot_written'] = '[job-capture] snapshot written ' in capture_log
+        (out/'final.json').write_text(json.dumps(record,indent=2));print('Closed:',reason,flush=True)
         from prune_latest_runs import automatic as trim_latest
         trim_latest(ROOT)
 

@@ -16,6 +16,7 @@ struct job_queue_event {
     job_queue_operation operation;
     job_queue_phase phase;
     std::uint64_t header;
+    std::uint64_t entry_lr; // raw guest LR at wrapper entry
 };
 struct job_queue_observer {
     void* user;

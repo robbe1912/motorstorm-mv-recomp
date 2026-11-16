@@ -72,6 +72,7 @@ def main():
                    help='Bind the verified particle scan (default off; runtime reference/shadow/native policy remains explicit)')
     b.add_argument('--depth-observer',action='store_true',
                    help='Build the opt-in raw GetDepth/PixelBuffer Lock observer (default off)')
+    b.add_argument('--capture-jobs',action='store_true',help='Build bounded atomic, SPU execution, scheduler and verified queue-call capture')
     g=sub.add_parser('generate'); g.add_argument('--stage',choices=['ppu','spu'],required=True); g.add_argument('--jobs',type=int,default=8)
     sub.add_parser('check')
     args=ap.parse_args()
@@ -125,6 +126,11 @@ def main():
         command.append(f'-DPS3RECOMP_DIR={source_root}')
         command.append(f'-DPORT_OPTIMIZE_NATIVE={"ON" if args.optimize else "OFF"}')
         command.append(f'-DPORT_OPTIMIZE_RENDERER={"ON" if args.optimize_renderer else "OFF"}')
+        capture_options = ('PORT_ENABLE_JOB_CAPTURE', 'PORT_QUEUE_CALL_OBSERVATION',
+                           'PS3RECOMP_ATOMIC_OBSERVATION', 'PS3RECOMP_EXECUTION_OBSERVATION',
+                           'PS3RECOMP_SPURS_SCHEDULER_OBSERVATION')
+        command.extend(f'-D{option}={"ON" if args.capture_jobs else "OFF"}' for option in capture_options)
+        command.append('-DPORT_CAPTURE_ALLOW_UNLIFTED=OFF')
         command.extend([f'-DPORT_NATIVE_WORLD_TRANSFORMS={"ON" if args.native_world_transforms else "OFF"}',
                         f'-DPORT_NATIVE_JOB_WAIT={"ON" if args.native_job_wait else "OFF"}',
                         f'-DPORT_NATIVE_VISIBILITY={"ON" if args.native_visibility else "OFF"}',
@@ -146,6 +152,8 @@ def main():
         identity['native_visibility']=args.native_visibility
         identity['native_pcm_cubic']=args.native_pcm_cubic
         identity['native_particle_thresholds']=args.native_particle_thresholds
+        identity['job_capture']=args.capture_jobs
+        identity['queue_call_observation']=args.capture_jobs
         identity['depth_observer']=args.depth_observer
         identity['native_depth_query']=args.depth_observer
         identity['renderer_optimization']=json.loads((binary/'renderer-optimization.json').read_text())
@@ -155,7 +163,7 @@ def main():
         if args.native_particle_thresholds:
             identity['native_particle_binding']=json.loads((binary/'native-particle-input/identity.json').read_text())
             identity['native_particle_binding_generator_sha256']=hashlib.sha256((ROOT/'scripts/native_particle_binding.py').read_bytes()).hexdigest()
-        if args.native_world_transforms or args.native_job_wait or args.native_visibility or args.native_pcm_cubic or args.depth_observer:
+        if args.native_world_transforms or args.native_job_wait or args.native_visibility or args.native_pcm_cubic or args.depth_observer or args.capture_jobs:
             identity['native_world_binding']=json.loads((binary/'native-world-binding.json').read_text())
             identity['native_world_sources_sha256']={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in sorted((ROOT/'src/motorstorm').glob('*')) if p.is_file()}

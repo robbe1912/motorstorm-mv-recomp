@@ -98,6 +98,34 @@ class ExecutionProfileTests(unittest.TestCase):
             self.assertEqual(launch[key], final[key])
         return launch, self.calls[0][1]['env']
 
+    def test_capture_disabled_clears_inherited_directory(self):
+        with patch.dict(os.environ, {'MS_JOB_CAPTURE_DIR': 'unowned-directory'}):
+            launch, env = self.launch()
+        self.assertNotIn('MS_JOB_CAPTURE_DIR', env)
+        self.assertFalse(launch['capture_jobs'])
+
+    def test_capture_requires_selected_build(self):
+        self.rejected('Job capture requires a matching', '--capture-jobs')
+
+    def test_capture_records_owned_directory(self):
+        self.record.update(job_capture=True, queue_call_observation=True)
+        self.save_record()
+        with patch.dict(os.environ, {'MS_JOB_CAPTURE_DIR': 'unowned-directory'}):
+            launch, env = self.launch('--capture-jobs')
+        expected = str(Path(launch['output']) / 'job-capture')
+        self.assertEqual(env['MS_JOB_CAPTURE_DIR'], expected)
+        self.assertEqual(launch['environment']['MS_JOB_CAPTURE_DIR'], expected)
+        self.assertTrue(launch['capture_jobs'])
+        self.assertTrue(Path(expected).is_dir())
+
+    def test_capture_requires_queue_binding(self):
+        self.record['job_capture'] = True
+        self.save_record()
+        self.rejected('Job capture requires a matching', '--capture-jobs')
+
+    def test_capture_duration_requires_replay(self):
+        self.rejected('job-capture-seconds requires', '--capture-jobs', '--job-capture-seconds', '0.1')
+
     def rejected(self, message, *options):
         with self.assertRaisesRegex(SystemExit, message):
             self.launch(*options)
@@ -294,6 +322,19 @@ class ExecutionProfileTests(unittest.TestCase):
         self.assertEqual(record['runtime_capabilities_source_sha256'], self.record['runtime_capabilities_source_sha256'])
         self.assertTrue(record['native_world_transforms'])
         self.assertTrue(record['native_job_wait'])
+        self.assertFalse(record['job_capture'])
+        self.assertIn('-DPORT_ENABLE_JOB_CAPTURE=OFF', commands[0])
+        self.assertIn('-DPORT_QUEUE_CALL_OBSERVATION=OFF', commands[0])
+
+    def test_capture_build_records_all_observers(self):
+        commands, record = self.build(['--capture-jobs'])
+        for option in ('PORT_ENABLE_JOB_CAPTURE', 'PORT_QUEUE_CALL_OBSERVATION',
+                       'PS3RECOMP_ATOMIC_OBSERVATION', 'PS3RECOMP_EXECUTION_OBSERVATION',
+                       'PS3RECOMP_SPURS_SCHEDULER_OBSERVATION'):
+            self.assertIn('-D' + option + '=ON', commands[0])
+        self.assertIn('-DPORT_CAPTURE_ALLOW_UNLIFTED=OFF', commands[0])
+        self.assertTrue(record['job_capture'])
+        self.assertTrue(record['queue_call_observation'])
 
     def test_build_wrapper_records_selected_unsupported_source(self):
         other = self.root / 'selected toolkit'

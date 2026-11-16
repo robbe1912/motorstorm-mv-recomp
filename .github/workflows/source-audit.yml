@@ -204,6 +204,10 @@ jobs:
           path: build/self-tests/spurs-attribute-hle/*.log
       - name: Game job capture owner controls
         run: python scripts/check_job_capture.py --mutants
+      - name: Job capture replay and build guards
+        run: |
+          python scripts/check_job_capture_replay.py
+          python scripts/check_job_capture_spu_guard.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -512,6 +516,10 @@ jobs:
           path: build/self-tests/spurs-attribute-hle/*.log
       - name: Game job capture owner controls
         run: python scripts/check_job_capture.py --mutants
+      - name: Job capture replay and build guards
+        run: |
+          python scripts/check_job_capture_replay.py
+          python scripts/check_job_capture_spu_guard.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

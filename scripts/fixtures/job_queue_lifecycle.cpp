@@ -11,11 +11,11 @@ static unsigned count;
 static bool abort_original;
 static void event(void*, const job_queue_event& value) noexcept { events[count++] = value; }
 void game_original_queue_reset(ppu_context* ctx) { ctx->gpr[3] += 10; if (abort_original) throw 1; }
-void game_original_queue_init(ppu_context* ctx) { ctx->gpr[3] += 20; ctx->gpr[4] += 30; }
+void game_original_queue_init(ppu_context* ctx) { ctx->gpr[3] += 20; ctx->gpr[4] += 30; ctx->lr += 16; }
 void game_original_add_job(ppu_context* ctx) { ctx->gpr[5]++; }
 
 int main() {
-    ppu_context ctx{}; ctx.gpr[3] = 0x1234; ctx.gpr[4] = 0x5678;
+    ppu_context ctx{}; ctx.lr = 0x87b83c; ctx.gpr[3] = 0x1234; ctx.gpr[4] = 0x5678;
     motorstorm_observe_queue_reset(&ctx);
     assert(ctx.gpr[3] == 0x123e && count == 0);
     job_queue_observer invalid{nullptr, nullptr};
@@ -27,6 +27,7 @@ int main() {
     assert(count == 2 && ctx.gpr[3] == 0x1252 && ctx.gpr[4] == 0x5696);
     assert(events[0].phase == job_queue_phase::enter && events[1].phase == job_queue_phase::returned);
     assert(events[0].operation == job_queue_operation::init && events[0].call_id && events[0].call_id == events[1].call_id);
+    assert(events[0].entry_lr == 0x87b83c && events[1].entry_lr == events[0].entry_lr);
     assert(events[0].object == 0x123e && events[0].argument == 0x5678 && events[1].object == 0x123e);
     assert(events[0].context == reinterpret_cast<std::uintptr_t>(&ctx));
     ctx.gpr[5] = 0x123456789abcdef0ULL;

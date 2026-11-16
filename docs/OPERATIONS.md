@@ -407,3 +407,29 @@ button/target screen; independent text matching and owned completed-frame
 checks remain required. Validate real loaded/unloaded/distant/wrong-screen
 cases, preserve reference provenance, and inspect graphics separately: a
 readiness predicate is not graphics acceptance.
+
+
+## Bounded job timeline capture
+
+Issue #219 uses the opt-in capture build and an independently observed replay
+profile. Configure with `python scripts/project.py build --optimize
+--optimize-renderer --depth-observer --capture-jobs`. The selected executable must
+record capture and queue-wrapper capabilities. Lifted SPU inputs and all three
+toolkit observation options are required. A subsequent ordinary build explicitly
+turns those capture options off.
+
+Run with `--capture-jobs --job-capture-seconds 0.1 --menu-replay <private-profile>`
+and the selected native-depth, diagnostic and resource settings. The inherited
+`MS_JOB_CAPTURE_DIR` is cleared. The launcher creates its own `job-capture`
+directory, waits for `[job-capture] armed`, then performs the normal screen-gated
+menu route and observed intro skip. After the target, exclusive `open` and
+`snapshot` signals produce `timing.json` and `snapshot.bin`. Explicit stop,
+resource, replay, acknowledgment and timeout failures retain their actual outcome.
+
+Retain launch/final metadata, original logs, selected build identity, timing,
+snapshot and offline summary together. The snapshot uses native ABI/schema 5,
+raw context/entry-LR values, a partial reservation horizon and explicit coverage
+counts. Check clock validity, exclusions, pending records, loss, call-ID exhaustion
+and inline-path gaps before interpreting a queue generation. Measure observer
+overhead before a coordinated title capture. Wrapper return and marker progress
+require separate evidence to establish genuine job completion.

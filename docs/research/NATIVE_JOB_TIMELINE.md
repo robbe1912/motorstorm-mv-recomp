@@ -277,8 +277,8 @@ each payload in one release-published slot, without fragments, allocation or
 I/O on append. It exposes pending slots and saturating loss counters, never
 reuses a slot, and requires producer and consumer quiescence before destruction.
 The owner must define the schema, clocks, run and lifetime identities, and
-interpret losses; this store does not supply any of those. It is not yet
-connected to a game capture. The actual store fixture tests full authored atomic
+interpret losses. The game-side controller below connects this store to the
+startup and replay paths. The actual store fixture tests full authored atomic
 snapshots, concurrent writers, pending publication, loss, counter saturation,
 and odd-sized records; four compiled controls must fail specific assertions.
 
@@ -288,7 +288,7 @@ thread ID and, when available, the current host-worker assignment. The latter
 is not proof that an arbitrary observed context belongs to that worker. Failed
 installation rolls back earlier installations; startup and shutdown require all
 producers to be quiescent and no other observer owner. Optional owner-provided
-atomic, execution and scheduler filters execute before event capture. The owner
+atomic, execution, scheduler and queue-call filters execute before event capture. The owner
 reports which filters were configured and saturating per-source exclusion counts;
 excluded events are missing coverage, not proof of absent work. Filters must be
 concurrent-safe and obey the observer callback restrictions. Null accepts all.
@@ -300,8 +300,8 @@ pending slots, filters and losses. The reader checks the format, record indices
 and total extent before delivering records. Truncated files and consumer errors
 are rejected. The format uses the native ABI, has no payload checksum, and
 `fflush` is not a durability guarantee. The caller owns the stream and must
-close and independently preserve it; game startup and a live trigger before
-guard termination are still required. The view remains non-atomic and cannot
+close and independently preserve it. Capture-enabled startup and the owned replay
+trigger now provide those integration points. The view remains non-atomic and cannot
 establish missing job dependencies or a causal order.
 
 An explicit visit API scans the initial reservation horizon and records pending
@@ -314,8 +314,8 @@ portable file format. The actual owner fixture checks concurrent complete
 payloads, installation rollback, identity flags, loss and partial visits, with
 five specific negative controls. A second fixture links the actual execution and
 scheduler observer implementations; the atomic installers there are authored
-test dependencies. No game startup, durable capture, game-specific job identity,
-overhead measurement or native run is provided by this owner yet.
+test dependencies. A current capture-enabled game build, qualified game identities, overhead
+measurements and a title trace remain required.
 
 
 ### Queue-call binding checkpoint
@@ -328,12 +328,44 @@ verified recipes for that unit, keeps legacy observer recipes mutually exclusive
 and replaces the unit once in CMake. Unknown copied edits fail before writes.
 
 The authored adapter checks disabled behavior, entry-captured arguments and
-headers, exception exits, eight simultaneous callers, unique call IDs and ID
-exhaustion. Seven compiled mutants must fail. The binding checker exercises
+headers and raw entry LR, exception exits, eight simultaneous callers, unique call
+IDs and ID exhaustion. Eight compiled mutants must fail. The binding checker exercises
 multiple functions and alternate recipes in one unit, compiled direct/table
 callers, preserved originals and the actual CMake source-selection block.
 
 These events identify host wrapper calls. Queue generations, inline publishers,
-genuine completion and the live capture controller remain integration work for
+genuine completion and current live evidence remain integration work for
 issue #219. The process owner must install and remove observers with producers
 quiescent, and account for zero exhausted IDs and missing return events.
+
+
+### Startup and replay capture wiring
+
+`--capture-jobs` builds the three toolkit observation sources, the process owner
+and all three verified queue wrappers. The build records those capabilities and
+requires lifted SPU workloads. The launcher checks the selected executable's
+record, clears inherited capture-directory state, creates a private run-local
+directory and waits for the owner to arm before normal menu replay proceeds.
+Setup failures and missing acknowledgments end the owned run visibly.
+
+The owner starts before guest producers, uses QPC and host thread IDs, and gates
+all four event streams until the exclusive `open` trigger. Schema 5 retains raw
+queue entry LR for later callsite qualification. The `snapshot` trigger writes a
+create-new native-ABI file with record indices and before/after coverage counts.
+The process-lifetime owner remains installed through producer lifetime.
+
+`--job-capture-seconds` requests a finite 0.05..5-second window after an
+independently observed replay target. Acknowledgments require complete lines.
+Clock-valid opening bounds must be positive and ordered; their raw QPC values and
+host request/acknowledgment times are retained in `job-capture/timing.json`.
+Those bounds describe the host transition. Snapshot visitation remains partial,
+and filters, pending slots, drops and append failures remain interpretation inputs.
+
+Authored tests exercise actual owner/observer storage, concurrent calls,
+installation rollback, exclusions, trigger failures, snapshots, reader truncation
+and the actual PPU64 compare/exchange path. Launcher tests check selected-build
+admission, inherited-directory sanitization, local output and recorded options.
+CMake tests execute every observer-option combination and missing-SPU controls.
+Offline summary and candidate analyzers preserve raw identities and incomplete
+edges. Capture overhead, a current title trace and producer attribution remain
+required before selecting an admission change or a complete native PVS operation.

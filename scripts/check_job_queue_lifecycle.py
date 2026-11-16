@@ -24,7 +24,7 @@ report = {'mutants': [], 'commands': [], 'source_sha256': hashlib.sha256((root/'
                              for name in ('job_queue_lifecycle.cpp', 'job_queue_lifecycle_threads.cpp')}}
 with tempfile.TemporaryDirectory(dir=out) as directory:
     base = Path(directory)
-    (base/'ppu_recomp.h').write_text('#pragma once\n#include <stdint.h>\nstruct ppu_context { uint64_t gpr[32]; };\nvoid guest_reset(ppu_context*);\nvoid guest_init(ppu_context*);\nvoid guest_add(ppu_context*);\n')
+    (base/'ppu_recomp.h').write_text('#pragma once\n#include <stdint.h>\nstruct ppu_context { uint64_t gpr[32]; uint64_t lr; };\nvoid guest_reset(ppu_context*);\nvoid guest_init(ppu_context*);\nvoid guest_add(ppu_context*);\n')
     fixture = base/'queue_fixture.cpp'
     shutil.copyfile(root/'scripts/fixtures/job_queue_lifecycle.cpp', fixture)
     exe = base/('test.exe' if os.name == 'nt' else 'test')
@@ -51,6 +51,7 @@ with tempfile.TemporaryDirectory(dir=out) as directory:
     if args.mutants:
         variants = {
             'wrong-object': ('static_cast<std::uint32_t>(ctx->gpr[3])', 'static_cast<std::uint32_t>(ctx->gpr[4])'),
+            'wrong-entry-lr': ('0, ctx->lr};', '0, (ctx->lr ^ UINT64_C(1))};'),
             'wrong-header': ('? ctx->gpr[5] : 0', '? UINT64_C(1) : 0'),
             'reused-call-id': ('return current;', 'return 1;'),
             'post-call-arguments': ('event.phase = job_queue_phase::returned;',
