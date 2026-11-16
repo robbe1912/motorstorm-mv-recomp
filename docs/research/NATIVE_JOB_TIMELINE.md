@@ -367,9 +367,9 @@ and the actual PPU64 compare/exchange path. Launcher tests check selected-build
 admission, inherited-directory sanitization, local output and recorded options.
 CMake tests execute every observer-option combination and missing-SPU controls.
 Offline summary and candidate analyzers preserve raw identities and incomplete
-edges. Capture-enabled title overhead, a current title trace and producer
-attribution remain required before selecting an admission change or a complete
-native PVS operation.
+edges. Capture-enabled title overhead and a qualified publication-to-completion
+span remain required before selecting an admission change or a complete native
+PVS operation.
 
 ### Recorder-only overhead checkpoint
 
@@ -399,3 +399,34 @@ Eight simultaneous clients check all four totals with distinct and colliding
 IDs. Four compiled controls reject one hot counter, omitted shards, wrapped
 totals and wrapped increments. Existing owner, rollback, loss, partial-visit and
 snapshot controls continue to run on both platforms.
+
+
+### First owned title capture
+
+Source `352db8c01521d47499864545ea5f576b6ba49fae` built capture-enabled checked
+Debug with general O1 and renderer-specific O2. Executable SHA-256 was
+`30d55111eaccaaf99692ca1902b3807d083e5fad806720b9f2598060e5b0daae`.
+Run `20261116T170918.944029Z` reached the normal PLAY target through seven
+acknowledged required inputs and one observed SONY skip. API validation was
+disabled and required PM interpretation retained. The owned guard closed after
+303.625 seconds with capture armed and snapshot written.
+
+The 0.05-second capture request produced 65,536 complete stored records with
+zero pending slots and zero unexpected append failures. Stored records comprised
+65,524 execution, nine scheduler and three atomic observations. Their earliest
+and latest observed ticks span 14.2641 ms. Snapshot metadata reported 425,393
+drops before visitation and 486,834 afterward, with 490,929 and 552,370 attempted
+records respectively. All stored record clock-validity checks passed. The
+execution budget was dominated by interpreted controls from raw image 3 and
+compiled dispatch/return observations from raw image 1.
+
+Zero queue-call records were stored. Loss prevents inferring absent queue calls
+or a complete PVS span. Queue generations and the critical producer remain
+unqualified. Execution selection is the next diagnostic change, with its
+selected PCs and exclusions retained for interpretation. End-to-end capture
+cost, graphics acceptance, interpreter removal and minimum 30 FPS remain open.
+
+Private snapshot, validated JSONL, summary, queue-call analysis, replay timing,
+selected build identity and hashes are pinned under
+`temp/runs/20261116T170918.944029Z/job-capture/`. The coverage receipt is
+`temp/job-timeline-evidence/20261116T170918.944029Z/analysis.json`.
