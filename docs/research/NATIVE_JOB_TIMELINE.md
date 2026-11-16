@@ -367,5 +367,35 @@ and the actual PPU64 compare/exchange path. Launcher tests check selected-build
 admission, inherited-directory sanitization, local output and recorded options.
 CMake tests execute every observer-option combination and missing-SPU controls.
 Offline summary and candidate analyzers preserve raw identities and incomplete
-edges. Capture overhead, a current title trace and producer attribution remain
-required before selecting an admission change or a complete native PVS operation.
+edges. Capture-enabled title overhead, a current title trace and producer
+attribution remain required before selecting an admission change or a complete
+native PVS operation.
+
+### Recorder-only overhead checkpoint
+
+A private authored producer fixture exercises the actual owner/window, SDK
+execution and scheduler notifications, atomic observation helpers and queue
+wrappers. Atomic installation and memory producers are authored dependencies.
+Each group offers six events and checks the original counter outputs. Checked
+general O1 builds retain assertions. Closed, cold open, saturated and owner-absent
+states check exclusions, delivered counts and intentional full-buffer drops.
+
+Five alternating baseline/sharded executable pairs contain 600 checked trials.
+The closed-state measurements contain 25 samples per variant and worker count.
+For eight workers and 9,600 groups, observed elapsed median/range changed from
+1.848 ms / 1.353..2.2934 ms to 0.3867 ms / 0.3563..0.6799 ms. For one worker
+and 10,000 groups, it changed from 0.4911 ms / 0.3876..0.7786 ms to
+0.6404 ms / 0.5175..0.8862 ms. The host had 12 logical processors and sampled
+17% CPU use before the initial pass. Per-trial shard collisions were unrecorded.
+The receipt and exact input/binary hashes are local at
+`temp/capture-overhead/paired-result.json` and adjacent before/after reports.
+These timings measure the authored recorder load. End-to-end game impact and
+the production critical path remain unmeasured by this fixture.
+
+Each exclusion source now has 64 cache-line-aligned atomic shards selected by
+stable thread ID. Unknown IDs and collisions retain saturating atomic updates.
+Metadata sums shards with saturating addition as a partial sequential view.
+Eight simultaneous clients check all four totals with distinct and colliding
+IDs. Four compiled controls reject one hot counter, omitted shards, wrapped
+totals and wrapped increments. Existing owner, rollback, loss, partial-visit and
+snapshot controls continue to run on both platforms.

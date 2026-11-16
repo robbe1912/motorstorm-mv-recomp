@@ -31,6 +31,7 @@ struct job_capture_config {
     uint32_t capacity;
     void* user;
     uint64_t (*clock)(void*);
+    /* Also queried for rejected events to select an exclusion-counter shard. */
     uint64_t (*thread_id)(void*);
     /* Optional immutable, concurrent-safe filters. They obey the same callback
      * restrictions below. Rejected events are counted as coverage gaps, not
@@ -57,7 +58,8 @@ struct job_capture_snapshot {
  * Callbacks must be concurrent-safe and perform no allocation, I/O, guest
  * mutation, runtime reentry or application locking. Zero IDs are invalid. */
 job_capture* job_capture_start(const job_capture_config*);
-/* Live reads can encounter pending records. Info is not an atomic snapshot. */
+/* Live reads can encounter pending records. Info is not an atomic snapshot.
+ * Exclusions are saturating totals of independently read atomic shards. */
 int job_capture_describe(const job_capture*, job_capture_info*);
 int job_capture_read(const job_capture*, uint64_t index, job_capture_record*);
 /* Scans the initial reservation horizon; a concurrent writer can complete a

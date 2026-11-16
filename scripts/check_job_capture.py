@@ -52,6 +52,53 @@ def run(src, name, snapshot=snapshot_source):
 result = run(source, 'actual')
 assert result.returncode == 0, result.stdout + result.stderr
 print('PASS capture owner, concurrent records, rollback, loss and partial visits')
+# Test-only seeding exercises counters near saturation without impractical loops.
+exclusion_fixture = root / 'scripts/fixtures/job_capture_exclusions.cpp'
+seed = r"""
+extern "C" void fixture_seed_exclusions(job_capture* c, bool single) {
+    initialize(c->excluded_atomic);
+    if (single) {
+        const auto index = UINT64_C(11400714819323198485) >> 58;
+        c->excluded_atomic.shards[index].value.store(UINT64_MAX, std::memory_order_relaxed);
+    } else {
+        c->excluded_atomic.shards[0].value.store(UINT64_MAX - 1, std::memory_order_relaxed);
+        c->excluded_atomic.shards[1].value.store(3, std::memory_order_relaxed);
+    }
+}
+extern "C" unsigned fixture_used_exclusion_shards(job_capture* c) {
+    unsigned used = 0;
+    for (const auto& shard : c->excluded_atomic.shards)
+        used += shard.value.load(std::memory_order_relaxed) != 0;
+    return used;
+}
+"""
+original_fixture = fixture
+fixture = exclusion_fixture
+exclusion_source = out / 'exclusion-source.cpp'
+exclusion_source.write_text(source.read_text(encoding='utf-8') + seed, encoding='utf-8')
+result = run(exclusion_source, 'exclusions')
+assert result.returncode == 0, result.stdout + result.stderr
+print('PASS concurrent exclusion shards, collisions, unknown IDs and saturation')
+if args.mutants:
+    controls = {
+        'one-hot-counter': ('const auto index = (thread * UINT64_C(11400714819323198485)) >> 58;',
+            'const auto index = thread * UINT64_C(0);'),
+        'missed-shards': ('for (const auto& shard : counter.shards) {',
+            'for (unsigned i = 0; i < 1; ++i) { const auto& shard = counter.shards[i];'),
+        'wrapped-total': ('if (value > UINT64_MAX - result) return UINT64_MAX;', ''),
+        'wrapped-increment': ('previous != UINT64_MAX && !counter.compare_exchange_weak(',
+            '!counter.compare_exchange_weak('),
+    }
+    actual = source.read_text(encoding='utf-8')
+    for name, (old, new) in controls.items():
+        assert actual.count(old) == 1, name
+        changed = out / (name + '.cpp')
+        changed.write_text(actual.replace(old, new) + seed, encoding='utf-8')
+        result = run(changed, name)
+        assert result.returncode != 0, name + ' survived'
+        print('PASS rejected ' + name)
+fixture = original_fixture
+
 defs = ['PS3_EXECUTION_OBSERVATION=1', 'PS3_SPURS_SCHEDULER_OBSERVATION=1']
 objects = []
 for name in ('spu_execution_observer', 'spurs_scheduler_observer'):
@@ -76,7 +123,7 @@ assert result.returncode == 0, result.stdout + result.stderr
 print('PASS execution, scheduler and queue-call observer integration')
 if args.mutants:
     original = source.read_text()
-    old = 'increment(c->excluded_queue_call); return;'
+    old = 'exclude(c, c->excluded_queue_call); return;'
     assert original.count(old) == 1
     mutant = out / 'queue-hidden-exclusion.cpp'
     mutant.write_text(original.replace(old, 'return;'))
@@ -219,7 +266,7 @@ if args.mutants:
                             'visited == 7 && snapshot.consumer_failed && snapshot.examined == 7 && snapshot.delivered == 6'),
         'append-failure': ('int result = ps3_sized_trace_append(c->trace, &r, sizeof(r));',
                            '(void)r; int result = PS3_SIZED_TRACE_INVALID;', 'info.unexpected_append_failures == 0'),
-        'hidden-exclusions': ('increment(c->excluded_atomic); return 0;', 'return 0;',
+        'hidden-exclusions': ('exclude(c, c->excluded_atomic); return 0;', 'return 0;',
                               'info.filter_mask == 7 && info.excluded_atomic == 4001'),
     }
     for name, (old, new, expected) in variants.items():
