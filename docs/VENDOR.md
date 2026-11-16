@@ -1,5 +1,66 @@
 # Vendor provenance and upstream
 
+## Prompt CPU surface reads (#319)
+
+The reusable service was validated first on the existing
+`robbe1912/ps3recomp` branch `codex/cpu-surface-prompt`, commit
+`d5ce79edc73faf108bb21c168e4215df1b551358`, then integrated into `combined`.
+It tracks recorded colour-target guest ranges and admits early CPU reads only
+when every pending range is disjoint. Unknown extents and capacity overflow
+retain the queued request. Submission clears the pending set. Copies and
+completion signals execute outside the request lock, on the renderer owner.
+The queue-head hint uses C11 atomic publication. Both the toolkit and this native-deformation integration preserve a snapshot
+request and its queued suffix until the owned FIFO boundary.
+The serial integration fixture rejects omitting that barrier.
+
+The authored serial fixture checks adjacency, overlap, splice order/tail,
+submission, replay, owner, disabled, overflow and unknown-height behaviour.
+Seven compiled mutants, including the snapshot-barrier omission, must fail. The atomic declaration is checked
+at compile time. Four real clients enqueue 256 requests while the renderer
+services them, checking pending-write admission and exact completion.
+Windows and Linux source fixtures pass. The toolkit snapshot GPU fixture
+also passes on actual D3D12 WARP with thirteen source mutants rejected.
+The toolkit CI fixture follow-ups through
+`933e8e627ce802e29bd21c88c77e18575388c55c` repair retention metadata,
+GPU draw-height and CPU harness dependencies while preserving their checks.
+
+The launcher admits `--cpu-surface-prompt default|0|1` after clearing inherited
+`RSX_` options and records the explicit selection. Three actual-launcher
+fixture cases check default/off/on handling. Default uses backend policy,
+which enables prompt service. Value 0 selects batch-end/idle service.
+
+The author's three-pair timings and driving observations describe the
+original revision stacked on original #318. Corrected-head native visual
+parity, matched performance and minimum 30 FPS remain unverified.
+
+## Prepared vertex declarations and indexed reuse (#318)
+
+The shared vertex reader and two-way indexed strip/fan cache were validated
+first in the existing `robbe1912/ps3recomp` fork on
+`codex/vertex-prepared-declarations`, production commit
+`7bd90b7aebd35bc92f95663b33680bf97d45cc7f` and compiler-selection follow-up
+`aabf3afcb98707e088b37280a45d238a842b2a75`. Windows and Ubuntu modular jobs
+pass before integration into `combined`. The curated vertex reader/header
+are byte-identical to that implementation. The fork retains its older
+scalar D3D12 caller while this backend uses its existing prepared caller.
+
+Preparation decodes supported declarations once for up to eight active
+arrays. Element address resolution and guest-byte reads remain live.
+Full-width unknown attribute types retain the scalar decoder, and the
+immutable `VP_NOFREQ` launch setting has worker-local cache state. The
+callback-local 64-entry, two-way cache retains expanded vertex bytes only
+within one indexed strip/fan upload.
+
+Authored checks cover full-width unknown types, formats, frequency modes,
+defaults, declaration changes, live memory/mapping changes and eight
+simultaneous scalar/prepared callers. Six compiled mutants include the
+historical type truncation and shared selector state. Actual extracted
+indexed uploads preserve strip/fan bytes, restart, split/state changes and
+bounded fetch counts. The old three-entry cache fails that count control.
+Windows and Linux local tests pass. Author-provided three-pair performance
+measurements describe the original revision. No new matched native timing,
+minimum 30 FPS, graphics parity or interpreter-removal acceptance is claimed.
+
 ## D3D12 fragment-program bound (#317)
 
 The fragment-program parser bound is 16 KiB throughout the D3D12 backend.
@@ -8,8 +69,9 @@ The equivalent five-consumer toolkit correction was validated first on
 `ab885a8ac4eb689ac1b3f62a59b502c579ef33ff`, with the self-contained fixture
 follow-up `8d66db96de044deb7502b1970e58d8388f8b46b6`. The final commit is
 integrated into `combined`. Its Windows and Ubuntu program-bound jobs pass.
-The existing combined texture-profile fixture remains failing on its older,
-incompatible extracted lookup model, as it did before these commits.
+The combined texture-profile fixture at that checkpoint used an older lookup
+model. Follow-up `933e8e627ce802e29bd21c88c77e18575388c55c` aligns its
+retention metadata and fingerprint helpers and checks both retention modes.
 
 PR #317 applies the same bound to this curated backend's snapshot storage,
 copy and refresh, live hash, canonical prefetch, ordinary/native-depth HLSL

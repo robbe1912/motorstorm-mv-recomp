@@ -114,6 +114,11 @@ int main(int argc,char** argv)
         reset();indices[0]=1;indices[1]=17;indices[2]=511;CHECK(!check_chunk(0,3,fan));CHECK(fetches==3);
         reset();for(u32 i=0;i<8;++i)indices[i]=i*17+2;CHECK(!check_chunk(0,8,fan));CHECK(fetches==8);
         reset();for(u32 i=0;i<512;++i)indices[i]=i;CHECK(!check_chunk(0,512,fan));CHECK(fetches==512);
+        /* Two grid rows sharing their middle row (8..15): the per-callback
+         * cache keeps it, so each of the 24 distinct vertices is fetched once
+         * (a 3-entry cache refetched the shared row: 32). */
+        reset();for(u32 i=0;i<8;++i){indices[2*i]=i;indices[2*i+1]=i+8;indices[16+2*i]=i+8;indices[17+2*i]=i+16;}
+        CHECK(!check_chunk(0,32,fan));CHECK(fetches==24);
         for(int bits=0;bits<2;++bits){
             state.index_array_dma=bits?16:0;state.restart_index_enable=1;state.restart_index=bits?65535:0xffffffffu;
             const u32 values[]={0,1,2,2,1,7,0xffffffffu,8,9,10,12,0xffffffffu,30,31,32};

@@ -171,6 +171,12 @@ comparison preserves the retained pixel-ownership and GPU-lifetime requirements.
 The native matrix lookup still requires a current owned game run after this
 isolated and private-reference validation.
 
+Integration with prompt CPU byte-read service preserves queued snapshot
+requests and their suffix until the owned FIFO boundary. A regression with a
+snapshot between byte reads failed before applying the validated toolkit
+barrier and now rejects its omission. The GPU fixture includes the recorded
+draw height used to track pending colour ranges.
+
 With `MS_DEPTH_OBSERVER=1`, the first 64 successful native samples additionally
 record owned point/matrix bits, projected coordinates, dimensions, byte offsets,
 fractions, interpolation mode, four sample bytes and returned result bits.

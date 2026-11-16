@@ -43,7 +43,7 @@ typedef struct {
       surface_color_pitch[4];
 } rsx_state;
 typedef struct {
-  u32 cpu_address[4], cpu_pitch[4], rt_fmt;
+  u32 cpu_address[4], cpu_pitch[4], rt_fmt, rt_h;
 } D3D12DrawRecord;
 static rsx_state state;
 static struct {
@@ -129,6 +129,7 @@ static void make_target(void) {
   draw.cpu_address[0] = target_address;
   draw.cpu_pitch[0] = pitch;
   draw.rt_fmt = 9;
+  draw.rt_h = height;
   cpu_surface_bind(0, &draw, 0);
 }
 static void produce(void) {

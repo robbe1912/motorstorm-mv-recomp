@@ -126,6 +126,22 @@ class ExecutionProfileTests(unittest.TestCase):
         for key, value in expected.items():
             self.assertEqual(record['environment'][key], value)
 
+    def check_surface_prompt_selection(self, mode):
+        with patch.dict(os.environ, {'RSX_CPU_SURFACE_PROMPT': 'inherited'}):
+            record, env = self.launch('--cpu-surface-prompt', mode)
+        expected = None if mode == 'default' else mode
+        self.assertEqual(env.get('RSX_CPU_SURFACE_PROMPT'), expected)
+        self.assertEqual(record['environment'].get('RSX_CPU_SURFACE_PROMPT'), expected)
+
+    def test_surface_prompt_default_clears_inherited_selection(self):
+        self.check_surface_prompt_selection('default')
+
+    def test_surface_prompt_disabled_selection_is_recorded(self):
+        self.check_surface_prompt_selection('0')
+
+    def test_surface_prompt_enabled_selection_is_recorded(self):
+        self.check_surface_prompt_selection('1')
+
     def test_unsupported_baseline_rejects_before_pruning_or_launch(self):
         self.record['runtime_capabilities']['policy_interpreter'] = False
         self.save_record()
