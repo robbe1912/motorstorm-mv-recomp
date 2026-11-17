@@ -105,13 +105,13 @@ def main():
             if not identity.get(flag) or identity.get('sha256') != admitted['exe_sha256']:
                 raise SystemExit(f'{description} mode requires a matching --{flag.replace("_","-")} build; no process launched')
     if args.depth_observer:
-        identity=json.loads((ROOT/'build/native/build_identity.json').read_text())
+        identity=admitted['build_identity']
         if not identity.get('depth_observer') or identity.get('sha256') != hashlib.sha256(exe.read_bytes()).hexdigest():
             raise SystemExit('Depth observer requires a matching --depth-observer build; no process launched')
     if args.native_depth != '0':
         if not args.depth_observer:
             raise SystemExit('Native depth requires --depth-observer and a matching native-query build; no process launched')
-        identity=json.loads((ROOT/'build/native/build_identity.json').read_text())
+        identity=admitted['build_identity']
         if not identity.get('native_depth_query') or identity.get('sha256') != hashlib.sha256(exe.read_bytes()).hexdigest():
             raise SystemExit('Native depth requires a matching native-query build; no process launched')
     if args.capture_jobs:

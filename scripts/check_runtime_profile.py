@@ -455,6 +455,34 @@ class ExecutionProfileTests(unittest.TestCase):
 
 
 
+    def test_selected_depth_capability_is_independent_of_default_build(self):
+        default_identity = self.exe.parent / 'build_identity.json'
+        self.exe = self.root / 'selected/ms1_recomp.exe'
+        self.exe.parent.mkdir()
+        self.exe.write_bytes(b'authored inert executable identity; never executed')
+        self.record.update(path=str(self.exe), depth_observer=True, native_depth_query=True)
+        self.save_record()
+        default_identity.write_text(json.dumps(dict(self.record, depth_observer=False,
+                                                    native_depth_query=False)))
+        launch, env = self.launch('--executable', str(self.exe), '--depth-observer',
+                                  '--native-depth', '1')
+        self.assertEqual(launch['build_identity'], self.record)
+        self.assertEqual(env['MS_DEPTH_OBSERVER'], '1')
+        self.assertEqual(env['MS_NATIVE_DEPTH'], '1')
+
+    def test_default_build_cannot_admit_unsupported_selected_depth(self):
+        default_identity = self.exe.parent / 'build_identity.json'
+        self.exe = self.root / 'selected/ms1_recomp.exe'
+        self.exe.parent.mkdir()
+        self.exe.write_bytes(b'authored inert executable identity; never executed')
+        self.record.update(path=str(self.exe), depth_observer=False, native_depth_query=False)
+        self.save_record()
+        default_identity.write_text(json.dumps(dict(self.record, depth_observer=True,
+                                                    native_depth_query=True)))
+        self.rejected('matching --depth-observer build', '--executable', str(self.exe),
+                      '--depth-observer', '--native-depth', '1')
+
+
 HISTORICAL_URL = 'https://github.com/robbe1912/ps3recomp.git'
 HISTORICAL_COMMIT = '39a36296511c445707adabcd312f0b740cfbd694'
 

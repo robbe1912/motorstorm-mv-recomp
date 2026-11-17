@@ -212,6 +212,21 @@ def main():
             + 'endif()\nendforeach()\n', encoding='utf-8')
         configured = subprocess.run(['cmake', '-P', str(script)], capture_output=True, text=True)
         assert configured.returncode == 0, configured.stdout + configured.stderr
+        whole_cmake = (Path(__file__).resolve().parents[1] / 'src/motorstorm/native_world.cmake').read_text()
+        option_start = whole_cmake.index('    set(binding_options)')
+        option_end = whole_cmake.index('    execute_process(', option_start)
+        option_block = whole_cmake[option_start:option_end]
+        for world, menu, expected in ((0, 1, '--without-world-transforms;--menu-boot'),
+                                      (1, 1, '--menu-boot'), (1, 0, '')):
+            option_script = base / 'menu-options.cmake'
+            option_script.write_text(
+                f'set(PORT_NATIVE_WORLD_TRANSFORMS {world})\n'
+                f'set(PORT_NATIVE_MENU_BOOT {menu})\n' + option_block
+                + f'if(NOT "${{binding_options}}" STREQUAL "{expected}")\n'
+                + ' message(FATAL_ERROR "Menu boot changed the world binding selection")\nendif()\n')
+            options = subprocess.run(['cmake', '-P', str(option_script)], capture_output=True, text=True)
+            assert options.returncode == 0, options.stdout + options.stderr
+
     print('PASS native binding: exact identities, direct/table callers, unchanged originals, stable copy, duplicate/stale/junction rejection')
 
 

@@ -120,6 +120,9 @@ def main():
                 ns = dict(argparse=argparse, __doc__=__doc__, ROOT=sandbox, exe=exe,
                           hashlib=hashlib, json=json,
                           os=SimpleNamespace(environ={'MS_DEPTH_OBSERVER':'1'}))
+                ns['admitted'] = dict(
+                    build_identity=json.loads((native/'build_identity.json').read_text()),
+                    exe_sha256=digest)
                 execute([init, depth_argument], ns)
                 ns['args'] = ns['ap'].parse_args(['--depth-observer'] if selected else [])
                 ns['env'] = {}
@@ -142,6 +145,7 @@ def main():
             (native/'build_identity.json').write_text(json.dumps(metadata))
             ns = dict(argparse=argparse, __doc__=__doc__, ROOT=sandbox, exe=exe,
                       hashlib=hashlib, json=json, os=SimpleNamespace(environ={}))
+            ns['admitted'] = dict(build_identity=metadata, exe_sha256=digest)
             execute([init, depth_argument], ns)
             ns['args'] = ns['ap'].parse_args(['--depth-observer'])
             execute([mutant], ns)
@@ -167,6 +171,9 @@ def main():
                             ns = dict(argparse=argparse, __doc__=__doc__, ROOT=sandbox,
                                       exe=exe, hashlib=hashlib, json=json,
                                       env={'MS_NATIVE_DEPTH': '1'})
+                            ns['admitted'] = dict(
+                                build_identity=json.loads((native/'build_identity.json').read_text()),
+                                exe_sha256=digest)
                             execute([init, depth_argument, native_argument], ns)
                             argv = ['--native-depth', mode] + (['--depth-observer'] if observer else [])
                             ns['args'] = ns['ap'].parse_args(argv)
