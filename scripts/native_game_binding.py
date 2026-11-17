@@ -2,6 +2,7 @@
 import argparse
 from dataclasses import dataclass
 import hashlib
+import itertools
 import json
 from pathlib import Path
 import re
@@ -45,6 +46,13 @@ PCM_CUBIC = Contract(PRODUCTION.elf_sha256,
     matcher='game_pcm_cubic_code_matches',
     windows=((0xee535c, 0x9d5c, 1140), (0xeeafc0, 0xf9c0, 368)))
 
+
+MENU_VIDEO = Contract(PRODUCTION.elf_sha256,
+    '851fe7b89535f0309c489318fc5be5756103557363de0f18c73e2ccb0b735d25',
+    'func_0050C9E8', 'game_original_start_video', 'motorstorm_boot_start_video')
+MENU_LANGUAGE = Contract(PRODUCTION.elf_sha256,
+    'a2ec3a9e721fa5f60a201e579af96d2e4405404b50a7ebf352803f9e38cb5d79',
+    'func_00530A88', 'game_original_language_event', 'motorstorm_boot_language_event')
 
 def digest(path):
     hasher = hashlib.sha256()
@@ -143,7 +151,8 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
     if any(elf_sha != c.elf_sha256 for c in selected):
         raise ValueError('Unsupported original ELF identity for native game binding')
     known = tuple(known_contracts) if known_contracts is not None else (
-        (PRODUCTION, JOB_WAIT, VISIBILITY, PCM_CUBIC) if elf_sha == PRODUCTION.elf_sha256 else selected)
+        (PRODUCTION, JOB_WAIT, VISIBILITY, PCM_CUBIC, MENU_VIDEO, MENU_LANGUAGE)
+        if elf_sha == PRODUCTION.elf_sha256 else selected)
     known = tuple(dict.fromkeys((*known, *selected)))
     directories = {Path(entry.directory) for entry in known}
     if any(path.is_absolute() or '..' in path.parts for path in directories):
@@ -165,7 +174,7 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
             for entry in known:
                 if relative.parent == Path(entry.directory) and re.search(rb'\bvoid\s+' + entry.symbol.encode() + rb'\s*\(\s*' + re.escape(entry.context.encode()) + rb'\s*\*\s*ctx\s*\)\s*\{', source):
                     definitions.setdefault(entry, []).append((relative, source))
-    changes, allowed, bindings = {}, {}, []
+    changes, allowed, bindings, grouped = {}, {}, [], {}
     for entry in known:
         candidates = definitions.get(entry, [])
         if len(candidates) != 1:
@@ -179,15 +188,36 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
             if entry in selected:
                 raise
             continue
-        sha = hashlib.sha256(changed).hexdigest()
-        allowed.setdefault(relative, set()).add(sha)
-        if entry in selected:
-            if relative in changes:
-                raise ValueError('Multiple bindings in one TU require a combined verified transform')
-            changes[relative] = changed
-            bindings.append(dict(symbol=entry.symbol, original_tu=(generated/relative).as_posix(),
-                copied_tu=(output/relative).as_posix(), reference_body_sha256=entry.body_sha256,
-                copied_tu_sha256=sha, context=entry.context))
+        grouped.setdefault(relative, {}).setdefault(entry.symbol, []).append(entry)
+    selected_symbols = {entry.symbol: entry for entry in selected}
+    for relative, symbols in grouped.items():
+        if len(symbols) > 8:
+            raise ValueError('Too many bindings in one translation unit')
+        source = (generated/relative).read_bytes()
+        # Legacy and current recipes for the same symbol are alternatives.
+        # Each combination applies at most one verified recipe per function.
+        choices = [(None, *recipes) for recipes in symbols.values()]
+        wanted = tuple(selected_symbols.get(symbol) for symbol in symbols)
+        for combination in itertools.product(*choices):
+            changed = source
+            for entry in combination:
+                if entry is not None:
+                    changed = transform(changed, entry, read_windows(elf, entry))
+            sha = hashlib.sha256(changed).hexdigest()
+            allowed.setdefault(relative, set()).add(sha)
+            if combination == wanted and any(wanted):
+                changes[relative] = changed
+                for entry in combination:
+                    if entry is None:
+                        continue
+                    binding = dict(symbol=entry.symbol,
+                        original_tu=(generated/relative).as_posix(),
+                        copied_tu=(output/relative).as_posix(),
+                        reference_body_sha256=entry.body_sha256,
+                        copied_tu_sha256=sha, context=entry.context)
+                    bindings.append(binding)
+    order = {entry.symbol: index for index, entry in enumerate(selected)}
+    bindings.sort(key=lambda binding: order[binding['symbol']])
     if not output.exists():
         shutil.copytree(generated, output, ignore=shutil.ignore_patterns(*IGNORED_CACHES))
     for path in output.rglob('*'):
@@ -219,6 +249,7 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
     return result
 
 
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('generated', 'output', 'elf', 'manifest'):
@@ -227,8 +258,11 @@ def main():
     parser.add_argument('--job-wait', action='store_true')
     parser.add_argument('--visibility', action='store_true')
     parser.add_argument('--pcm-cubic', action='store_true')
+    parser.add_argument('--menu-boot', action='store_true')
     args = parser.parse_args()
     selected = ([] if args.without_world_transforms else [PRODUCTION]) + ([JOB_WAIT] if args.job_wait else []) + ([VISIBILITY] if args.visibility else []) + ([PCM_CUBIC] if args.pcm_cubic else [])
+    if args.menu_boot:
+        selected.extend((MENU_VIDEO, MENU_LANGUAGE))
     result = prepare(args.generated, args.output, args.elf, args.manifest, contracts=selected)
     print('Verified native game bindings:', ', '.join(b['symbol'] for b in result['bindings']))
 

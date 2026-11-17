@@ -151,7 +151,37 @@ regression in `scripts/check_menu_replay.py` covers transient/permanent sharing,
 revocation during the delay, and a real Windows handle without delete sharing.
 This does not explain the separate historical replay-ownership failure.
 
-Continuation profiles must include screen-gated intro skips in `optional_actions`.
+### Native menu boot
+
+Supported debug-US builds enable the identity-checked startup policy by default.
+The policy accepts the configured selected language through its original handler,
+closes the first opening-video request at verified caller addresses, and lets the
+original finished-video transition perform menu initialization, profile saving,
+background-video start and music setup. Background and later movie requests retain
+the original path. This changes startup workflow under the owner direction in #323.
+
+`--original-intro` selects reference startup. Build `--no-menu-boot` omits the binding.
+Other target identities retain original startup. Launch metadata records the selected
+`MS_BOOT_MENU` value and the selected executable's `menu_boot` capability.
+
+Menu-start replay profiles declare `"startup": "menu"` and begin at PLAY.
+Original-start profiles declare `"startup": "original"` or omit the field.
+The launcher checks profile mode against selected build/runtime mode before launch.
+Continue the subsequent menus through the existing observed-screen gates.
+Authored tests cover caller identity, one-time selection, callback completion,
+original mode, background forwarding and eight compiled negative controls.
+Owned muted run `20261117T040309.228124Z` verified this policy at source
+`6c42e97eac5b8dc4c0b418ba35b8307410614f3b`, EXE
+`20dd52eaee7c66cdf0540f34d43b379f3ac51b9d419a222c1657b068fb0342bd`.
+It reached the inspected PLAY menu with zero required/optional replay inputs and
+no PAD_FILE press receipts. Both native startup markers and the `gui_d.m2v`
+background open were present. The owned target guard closed at 34.406 seconds.
+This verifies startup behavior. Race graphics, interpreter removal and minimum
+30 FPS remain open. Private receipt is
+`temp/menu-boot-evidence/20261117T040309.228124Z/analysis.json`.
+
+Reference runs selected with `--original-intro` use continuation profiles with
+screen-gated intro skips in `optional_actions`.
 Each uses the same observed reference/ROI/label/button/polls as a required step,
 plus `after_step` (the number of required steps already acknowledged). An action
 sends once when observed; an absent intro does not block the route. The target

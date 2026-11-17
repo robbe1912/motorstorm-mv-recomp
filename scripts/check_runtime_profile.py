@@ -346,6 +346,44 @@ class ExecutionProfileTests(unittest.TestCase):
         self.assertFalse(any(k.startswith('SPU_') for k in env))
 
 
+    def test_menu_build_rejects_original_replay_before_launch(self):
+        self.record['menu_boot'] = True
+        self.save_record()
+        with patch('menu_replay.load_profile', return_value={'elf_sha256': self.record['elf_sha256']}):
+            self.rejected('Replay startup differs', '--menu-replay', str(self.root / 'profile.json'))
+
+    def test_menu_build_accepts_menu_replay(self):
+        self.record['menu_boot'] = True
+        self.save_record()
+        profile = {'elf_sha256': self.record['elf_sha256'], 'startup': 'menu'}
+        with patch('menu_replay.load_profile', return_value=profile):
+            record, env = self.launch('--menu-replay', str(self.root / 'profile.json'))
+        self.assertEqual(env['MS_BOOT_MENU'], '1')
+
+    def test_menu_boot_uses_selected_capability(self):
+        self.record['menu_boot'] = True
+        self.save_record()
+        with patch.dict(os.environ, {'MS_BOOT_MENU': '0'}):
+            record, env = self.launch()
+        self.assertEqual(env['MS_BOOT_MENU'], '1')
+        self.assertEqual(record['environment']['MS_BOOT_MENU'], '1')
+
+    def test_original_intro_selection(self):
+        self.record['menu_boot'] = True
+        self.save_record()
+        with patch.dict(os.environ, {'MS_BOOT_MENU': '1'}):
+            record, env = self.launch('--original-intro')
+        self.assertEqual(env['MS_BOOT_MENU'], '0')
+        self.assertEqual(record['environment']['MS_BOOT_MENU'], '0')
+
+    def test_legacy_build_sanitizes_boot_selection(self):
+        with patch.dict(os.environ, {'MS_BOOT_MENU': '1'}):
+            record, env = self.launch()
+        self.assertEqual(env['MS_BOOT_MENU'], '0')
+        self.assertEqual(record['environment']['MS_BOOT_MENU'], '0')
+
+
+
 HISTORICAL_URL = 'https://github.com/robbe1912/ps3recomp.git'
 HISTORICAL_COMMIT = '39a36296511c445707adabcd312f0b740cfbd694'
 
