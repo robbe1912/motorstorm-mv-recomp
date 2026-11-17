@@ -322,14 +322,15 @@ measurements and a title trace remain required.
 
 The provisional game adapter captures reset, initialization and AddJob call
 arguments around the unchanged original functions. Selected original-US body
-identities are pinned for `0xC5BF38`, `0xC5D1C0` and `0xC5C6A0`. The three
-functions share a generated translation unit. Binding preparation composes
+identities are pinned for base reset `0xC5BF38`, derived reset `0xC5D4C0`,
+initialization `0xC5D1C0` and AddJob `0xC5C6A0`. The four functions share a generated translation unit. Binding preparation composes
 verified recipes for that unit, keeps legacy observer recipes mutually exclusive,
 and replaces the unit once in CMake. Unknown copied edits fail before writes.
 
 The authored adapter checks disabled behavior, entry-captured arguments and
 headers and raw entry LR, exception exits, eight simultaneous callers, unique call
-IDs and ID exhaustion. Eight compiled mutants must fail. The binding checker exercises
+IDs and ID exhaustion. Ten compiled mutants must fail, including bypassing the
+derived reset observer and invoking its wrong original. The binding checker exercises
 multiple functions and alternate recipes in one unit, compiled direct/table
 callers, preserved originals and the actual CMake source-selection block.
 
@@ -342,7 +343,7 @@ quiescent, and account for zero exhausted IDs and missing return events.
 ### Startup and replay capture wiring
 
 `--capture-jobs` builds the three toolkit observation sources, the process owner
-and all three verified queue wrappers. The build records those capabilities and
+and all four verified queue wrappers. The build records those capabilities and
 requires lifted SPU workloads. The launcher checks the selected executable's
 record, clears inherited capture-directory state, creates a private run-local
 directory and waits for the owner to arm before normal menu replay proceeds.
@@ -564,3 +565,27 @@ under issues 155/219/282, with the vehicle batch tracked in issue 327.
 
 Private launch/build/clock/decode/original verification and artifact hashes are
 pinned at `temp/job-timeline-evidence/20261117T115751.061159Z/analysis.json`.
+
+### Derived queue reset coverage
+
+Original-code review after the profiled capture found that the selected ELF has
+no direct branches to base `JobListPrivate::ResetList` at `0xC5BF38`. The derived
+`MultiThreadSafeJobList::ResetList` at `0xC5D4C0` has five direct branch references,
+including the TOC thunk at `0x675DF0`. Its 156 original bytes are identical to the
+base reset, and all 39 instructions decode. Both clear descriptors, restore the
+six lane halfwords to `0xFFFF`, and clear the taken/queued halfwords with the
+original barriers.
+
+The earlier capture CLI selected only the base reset, initialization and AddJob.
+An actual selected-input preparation reproduces that omission. Queue observation
+now also binds the independently verified derived body and forwards it to its
+own preserved original. Its normalized generated-body SHA-256 is
+`8018cd6ea22c22adf260a4eae47a1ed2056a9fabb3cac57fe21e16e93a8f0ce1`.
+Authored direct and address-taken calls, disabled mode, concurrent calls, and two
+derived-reset mutants verify the added path. Windows capture/adapter/binding
+controls and the Linux adapter suite pass.
+
+Private identities and preparation receipts are under
+`temp/pvs-derived-reset-binding/`. Earlier live traces have incomplete reset
+coverage. A rebuilt executable and startup lifecycle coverage remain required to
+qualify queue generations and connect a selected PVS job to real completion.

@@ -24,7 +24,7 @@ report = {'mutants': [], 'commands': [], 'source_sha256': hashlib.sha256((root/'
                              for name in ('job_queue_lifecycle.cpp', 'job_queue_lifecycle_threads.cpp')}}
 with tempfile.TemporaryDirectory(dir=out) as directory:
     base = Path(directory)
-    (base/'ppu_recomp.h').write_text('#pragma once\n#include <stdint.h>\nstruct ppu_context { uint64_t gpr[32]; uint64_t lr; };\nvoid guest_reset(ppu_context*);\nvoid guest_init(ppu_context*);\nvoid guest_add(ppu_context*);\n')
+    (base/'ppu_recomp.h').write_text('#pragma once\n#include <stdint.h>\nstruct ppu_context { uint64_t gpr[32]; uint64_t lr; };\nvoid guest_reset(ppu_context*);\nvoid guest_multi_reset(ppu_context*);\nvoid guest_init(ppu_context*);\nvoid guest_add(ppu_context*);\n')
     fixture = base/'queue_fixture.cpp'
     shutil.copyfile(root/'scripts/fixtures/job_queue_lifecycle.cpp', fixture)
     exe = base/('test.exe' if os.name == 'nt' else 'test')
@@ -50,6 +50,10 @@ with tempfile.TemporaryDirectory(dir=out) as directory:
     subprocess.run([str(exe)], check=True)
     if args.mutants:
         variants = {
+            'derived-reset-bypass': ('invoke(ctx, job_queue_operation::reset, game_original_queue_reset_multi);',
+                                     'game_original_queue_reset_multi(ctx);'),
+            'derived-reset-wrong-original': ('invoke(ctx, job_queue_operation::reset, game_original_queue_reset_multi);',
+                                             'invoke(ctx, job_queue_operation::reset, game_original_queue_reset);'),
             'wrong-object': ('static_cast<std::uint32_t>(ctx->gpr[3])', 'static_cast<std::uint32_t>(ctx->gpr[4])'),
             'wrong-entry-lr': ('0, ctx->lr};', '0, (ctx->lr ^ UINT64_C(1))};'),
             'wrong-header': ('? ctx->gpr[5] : 0', '? UINT64_C(1) : 0'),
@@ -82,22 +86,27 @@ with tempfile.TemporaryDirectory(dir=out) as directory:
     reset = b'void guest_reset(ppu_context* ctx) { ctx->gpr[3] += 10; }'
     init = b'void guest_init(ppu_context* ctx) { ctx->gpr[4] += 20; }'
     add = b'void guest_add(ppu_context* ctx) { ctx->gpr[5] += 1; }'
-    source = b'#include "ppu_recomp.h"\n'+reset+b'\n'+init+b'\n'+add+b'\nauto reset_table=&guest_reset;\n'
+    multi = b'void guest_multi_reset(ppu_context* ctx) { ctx->gpr[3] += 40; }'
+    source = b'#include "ppu_recomp.h"\n'+reset+b'\n'+init+b'\n'+add+b'\n'+multi+b'\nauto reset_table=&guest_reset; auto multi_table=&guest_multi_reset;\n'
     a = Contract('authored', hashlib.sha256(reset).hexdigest(), 'guest_reset',
                  'game_original_queue_reset', 'motorstorm_observe_queue_reset')
     b = Contract('authored', hashlib.sha256(init).hexdigest(), 'guest_init',
                  'game_original_queue_init', 'motorstorm_observe_queue_init')
     c = Contract('authored', hashlib.sha256(add).hexdigest(), 'guest_add',
                  'game_original_add_job', 'motorstorm_observe_add_job')
+    d = Contract('authored', hashlib.sha256(multi).hexdigest(), 'guest_multi_reset',
+                 'game_original_queue_reset_multi', 'motorstorm_observe_queue_reset_multi')
     bound = base/'bound.cpp'
-    bound.write_bytes(transform(transform(transform(source, a), b), c))
+    bound.write_bytes(transform(transform(transform(transform(source, a), b), c), d))
     caller = base/'bound_caller.cpp'
     caller.write_text('''#include "ppu_recomp.h"
 #include "job_queue_lifecycle.h"
 #include <cassert>
 void guest_init(ppu_context*);
 extern void (*reset_table)(ppu_context*);
-static job_queue_event events[6]; static int count;
+void guest_multi_reset(ppu_context*);
+extern void (*multi_table)(ppu_context*);
+static job_queue_event events[10]; static int count;
 static void observe(void*, const job_queue_event& e) noexcept { events[count++] = e; }
 int main() { ppu_context c{}; c.gpr[3]=3; c.gpr[4]=4;
   job_queue_observer owner{nullptr,observe}; assert(job_queue_observer_install(&owner));
@@ -107,7 +116,12 @@ int main() { ppu_context c{}; c.gpr[3]=3; c.gpr[4]=4;
   assert(events[0].operation==job_queue_operation::reset && events[0].call_id==events[1].call_id);
   assert(events[2].operation==job_queue_operation::init && events[2].call_id==events[3].call_id);
   assert(events[0].call_id!=events[2].call_id && events[0].phase==job_queue_phase::enter);
-  assert(events[1].phase==job_queue_phase::returned); }
+  assert(events[1].phase==job_queue_phase::returned);
+  guest_multi_reset(&c); multi_table(&c);
+  assert(c.gpr[3]==93 && count==10);
+  assert(events[6].operation==job_queue_operation::reset && events[8].operation==job_queue_operation::reset);
+  assert(events[6].object==13 && events[8].object==53);
+  assert(events[6].call_id==events[7].call_id && events[8].call_id==events[9].call_id); }
 ''')
     combined_cmd = [compiler, str(root/'src/motorstorm/job_queue_lifecycle.cpp'), str(bound), str(caller)] + cmd[3:]
     subprocess.run(combined_cmd, cwd=base, check=True)

@@ -6,6 +6,7 @@
 #include <string>
 #ifdef PORT_QUEUE_CALL_OBSERVATION
 #include "ppu_recomp.h"
+void game_original_queue_reset_multi(ppu_context* ctx) { (void)ctx; }
 void game_original_queue_reset(ppu_context*) {}
 void game_original_queue_init(ppu_context*) {}
 static void fixture_real_store(ppu_context*);

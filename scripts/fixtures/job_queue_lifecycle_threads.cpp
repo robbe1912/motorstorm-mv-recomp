@@ -10,6 +10,7 @@
 #include <unordered_set>
 
 void motorstorm_observe_queue_reset(ppu_context*);
+void motorstorm_observe_queue_reset_multi(ppu_context*);
 void motorstorm_observe_queue_init(ppu_context*);
 void motorstorm_observe_add_job(ppu_context*);
 void queue_fixture_set_id(std::uint64_t);
@@ -31,6 +32,7 @@ void observe(void*, const job_queue_event& event) noexcept {
 }
 }
 
+void game_original_queue_reset_multi(ppu_context* ctx) { ctx->gpr[3] += 10; }
 void game_original_queue_reset(ppu_context* ctx) { ctx->gpr[3] += 10; }
 void game_original_queue_init(ppu_context* ctx) {
     ctx->gpr[3] += 20;
@@ -54,7 +56,10 @@ int main() {
                 ctx.gpr[5] = 0x1234567800000000ULL + worker * iterations + iteration;
                 const auto object = ctx.gpr[3];
                 const auto header = ctx.gpr[5];
-                motorstorm_observe_queue_reset(&ctx);
+                if (iteration & 1)
+                    motorstorm_observe_queue_reset(&ctx);
+                else
+                    motorstorm_observe_queue_reset_multi(&ctx);
                 motorstorm_observe_queue_init(&ctx);
                 motorstorm_observe_add_job(&ctx);
                 assert(ctx.gpr[3] == object + 30);

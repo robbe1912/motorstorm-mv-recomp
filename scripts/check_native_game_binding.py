@@ -227,6 +227,20 @@ def main():
             options = subprocess.run(['cmake', '-P', str(option_script)], capture_output=True, text=True)
             assert options.returncode == 0, options.stdout + options.stderr
 
+    # Exercise the actual CLI selection, including the derived reset used by live callers.
+    import native_game_binding as binding
+    from unittest.mock import patch
+    import sys
+    arguments = ['native_game_binding', '--generated', 'input', '--output', 'output',
+                 '--elf', 'original.elf', '--manifest', 'manifest.json',
+                 '--without-world-transforms', '--queue-call-observation']
+    with patch.object(sys, 'argv', arguments):
+        with patch.object(binding, 'prepare', return_value={'bindings': []}) as prepared:
+            binding.main()
+    selected = prepared.call_args.kwargs['contracts']
+    assert {entry.symbol for entry in selected} == {
+        'func_00C5BF38', 'func_00C5D4C0', 'func_00C5D1C0', 'func_00C5C6A0'}
+
     print('PASS native binding: exact identities, direct/table callers, unchanged originals, stable copy, duplicate/stale/junction rejection')
 
 

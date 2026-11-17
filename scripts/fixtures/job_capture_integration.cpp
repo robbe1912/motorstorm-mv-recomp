@@ -13,6 +13,7 @@ static uint64_t thread(void*) { return 42; }
 static int only_target(void*, uint32_t, uintptr_t, uint32_t, uint32_t target) { return target == 0x30; }
 static int no_scheduler(void*, const ps3_spurs_scheduler_event*) { return 0; }
 static spu_context context;
+void game_original_queue_reset_multi(ppu_context* ctx) { ++ctx->gpr[3]; }
 void game_original_queue_reset(ppu_context* c) { ++c->gpr[3]; }
 void game_original_queue_init(ppu_context* c) { ++c->gpr[4]; }
 void game_original_add_job(ppu_context*) {}

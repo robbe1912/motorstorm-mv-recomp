@@ -4,6 +4,7 @@
 #include <cstdint>
 
 void game_original_queue_reset(ppu_context*);
+void game_original_queue_reset_multi(ppu_context*);
 void game_original_queue_init(ppu_context*);
 void game_original_add_job(ppu_context*);
 
@@ -45,6 +46,9 @@ bool job_queue_observer_install(const job_queue_observer* value) noexcept {
 }
 void motorstorm_observe_queue_reset(ppu_context* ctx) {
     invoke(ctx, job_queue_operation::reset, game_original_queue_reset);
+}
+void motorstorm_observe_queue_reset_multi(ppu_context* ctx) {
+    invoke(ctx, job_queue_operation::reset, game_original_queue_reset_multi);
 }
 void motorstorm_observe_queue_init(ppu_context* ctx) {
     invoke(ctx, job_queue_operation::init, game_original_queue_init);

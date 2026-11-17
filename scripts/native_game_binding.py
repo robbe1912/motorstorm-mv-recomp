@@ -35,6 +35,9 @@ JOB_WAIT = Contract(PRODUCTION.elf_sha256,
 QUEUE_RESET = Contract(PRODUCTION.elf_sha256,
     '71b5a619bc898c6c0feca5256696075311122ee31439896da4e4dc395aaf16c9',
     'func_00C5BF38', 'game_original_queue_reset', 'motorstorm_observe_queue_reset')
+QUEUE_RESET_MULTI = Contract(PRODUCTION.elf_sha256,
+    '8018cd6ea22c22adf260a4eae47a1ed2056a9fabb3cac57fe21e16e93a8f0ce1',
+    'func_00C5D4C0', 'game_original_queue_reset_multi', 'motorstorm_observe_queue_reset_multi')
 QUEUE_INIT = Contract(PRODUCTION.elf_sha256,
     'fe86f9867d35717633192c4208b308d59f6910d3673572d3f5d8b5f8a1790c63',
     'func_00C5D1C0', 'game_original_queue_init', 'motorstorm_observe_queue_init')
@@ -177,7 +180,7 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
     if any(elf_sha != c.elf_sha256 for c in selected):
         raise ValueError('Unsupported original ELF identity for native game binding')
     known = tuple(known_contracts) if known_contracts is not None else (
-        (PRODUCTION, JOB_WAIT, VISIBILITY, PCM_CUBIC, DEPTH_OBSERVER, QUEUE_RESET, QUEUE_INIT, QUEUE_ADD_JOB, MENU_VIDEO, MENU_LANGUAGE) if elf_sha == PRODUCTION.elf_sha256 else selected)
+        (PRODUCTION, JOB_WAIT, VISIBILITY, PCM_CUBIC, DEPTH_OBSERVER, QUEUE_RESET, QUEUE_RESET_MULTI, QUEUE_INIT, QUEUE_ADD_JOB, MENU_VIDEO, MENU_LANGUAGE) if elf_sha == PRODUCTION.elf_sha256 else selected)
     # Older observer copies used the same verified body without byte tracing.
     # Admit only that exact legacy recipe when enabling/disabling this feature.
     known = tuple(dict.fromkeys((*known, *selected,
@@ -298,7 +301,7 @@ def main():
     if args.depth_observer:
         selected.append(DEPTH_OBSERVER)
     if args.queue_call_observation:
-        selected.extend((QUEUE_RESET, QUEUE_INIT, QUEUE_ADD_JOB))
+        selected.extend((QUEUE_RESET, QUEUE_RESET_MULTI, QUEUE_INIT, QUEUE_ADD_JOB))
     result = prepare(args.generated, args.output, args.elf, args.manifest, contracts=selected)
     print('Verified native game bindings:', ', '.join(b['symbol'] for b in result['bindings']))
 
