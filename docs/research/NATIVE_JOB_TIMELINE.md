@@ -669,8 +669,9 @@ register lane, admitted external backing, hidden clock failure and LS mutation.
 Actual owner integration retains the ordinary execution record, checks optional
 supplemental admission, and the Windows controller/decoder exercises the real
 native snapshot and raw byte fields. A controller opt-in omission must fail.
-Current selected-job entry/exit, complete producer attribution and title-overhead
-qualification remain pending a rebuilt capture and evidence join.
+Current module-body ownership, output DMA/final completion, exclusive producer
+cost and title-overhead qualification remain open. The corrected title capture
+below supplies dispatcher-call and publication candidates.
 
 
 The first schema-6 title run, source `3350c26`, stored SDK lane 3 in the four
@@ -681,3 +682,42 @@ copies remain retained with this qualification. The corrected inspector uses the
 SDK accessor. The authored fixture sets the preferred value through the runtime
 constructor and places distinct poison values in lane 3, rejecting the previous
 reader while also checking input preservation.
+
+
+### Corrected selected-policy title capture
+
+Owned muted run `20261117T184107.769729Z` used source `4cf2d9b` and executable
+`87e527e040f925425804cf4f99cf8bc8979704ebcc936b0175046920508c32ad`.
+Native-menu startup and six normal race-menu inputs reached the target. The
+owned target/capture guard closed after 327.860 seconds. Schema 6 delivered
+34,865 records, including 953 supplemental policy observations, with zero buffer
+drops, pending records, unexpected append failures or recorded clock errors.
+Reservation counts advanced to 35,475 during visitation, retaining the partial
+live-view limitation.
+
+All 953 dispatcher copies match the independently verified original 168-byte
+extent. All 236 observed calls at `0x3094` have preferred r0 equal to `0x3098`
+and masked preferred r5 equal to the reported target. The running-slot record
+and initialized physical queue match 235 committed descriptor/publication
+candidates inside their observed reset intervals. One call precedes the captured
+publication boundary. There are 234 matching call/return-continuation candidates,
+with explicit boundary gaps and zero observed reset crossings.
+
+The 68 PVS publisher candidates at `0x87d9a4` select target LS `0x16270` and
+return to `0x3098`. Their largest dispatcher wall interval is 317.2717 ms.
+Thirty constraint-publisher candidates select `0x6100`; 120 vehicle-publisher
+candidates select `0x20d40`. Concurrent interval totals overlap and include
+scheduling and instrumentation. Module-body identity, complete inline-reset
+coverage, output DMA, final marker completion and exclusive CPU cost require
+further qualification before selecting a native replacement.
+
+The confirmed after-open interval spans 1.0700984 seconds. Completed main PVS
+wait union is 566.5768 ms and vehicle wait union is 145.0547 ms. These are one
+instrumented diagnostic's completed waits. Matched performance, minimum 30 FPS
+and interpreter removal remain open.
+
+Private evidence is
+`temp/job-timeline-evidence/20261117T184107.769729Z/analysis.json`, with original
+logs/snapshot hashes, selected binary identity, publication/return candidates,
+scoped waits and the first run's explicit register-field defect retained in its
+separate evidence packet.
