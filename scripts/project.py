@@ -72,6 +72,7 @@ def main():
                    help='Bind the verified particle scan (default off; runtime reference/shadow/native policy remains explicit)')
     b.add_argument('--depth-observer',action='store_true',
                    help='Build the opt-in raw GetDepth/PixelBuffer Lock observer (default off)')
+    b.add_argument('--menu-boot',action=argparse.BooleanOptionalAction,default=True,help='Boot supported original targets directly to PLAY')
     b.add_argument('--capture-jobs',action='store_true',help='Build bounded atomic, SPU execution, scheduler and verified queue-call capture')
     g=sub.add_parser('generate'); g.add_argument('--stage',choices=['ppu','spu'],required=True); g.add_argument('--jobs',type=int,default=8)
     sub.add_parser('check')
@@ -125,6 +126,9 @@ def main():
         if 'MV_CLANG' in env: command.extend([f'-DCMAKE_C_COMPILER={env["MV_CLANG"]}',f'-DCMAKE_CXX_COMPILER={env["MV_CLANG"]}'])
         command.append(f'-DPS3RECOMP_DIR={source_root}')
         command.append(f'-DPORT_OPTIMIZE_NATIVE={"ON" if args.optimize else "OFF"}')
+        from native_game_binding import PRODUCTION
+        menu_boot = args.menu_boot and hashlib.sha256(c['elf'].read_bytes()).hexdigest() == PRODUCTION.elf_sha256
+        command.append(f'-DPORT_NATIVE_MENU_BOOT={"ON" if menu_boot else "OFF"}')
         command.append(f'-DPORT_OPTIMIZE_RENDERER={"ON" if args.optimize_renderer else "OFF"}')
         capture_options = ('PORT_ENABLE_JOB_CAPTURE', 'PORT_QUEUE_CALL_OBSERVATION',
                            'PS3RECOMP_ATOMIC_OBSERVATION', 'PS3RECOMP_EXECUTION_OBSERVATION',
@@ -152,6 +156,7 @@ def main():
         identity['native_visibility']=args.native_visibility
         identity['native_pcm_cubic']=args.native_pcm_cubic
         identity['native_particle_thresholds']=args.native_particle_thresholds
+        identity['menu_boot']=menu_boot
         identity['job_capture']=args.capture_jobs
         identity['queue_call_observation']=args.capture_jobs
         identity['job_capture_execution_filter']=args.capture_jobs
@@ -164,7 +169,7 @@ def main():
         if args.native_particle_thresholds:
             identity['native_particle_binding']=json.loads((binary/'native-particle-input/identity.json').read_text())
             identity['native_particle_binding_generator_sha256']=hashlib.sha256((ROOT/'scripts/native_particle_binding.py').read_bytes()).hexdigest()
-        if args.native_world_transforms or args.native_job_wait or args.native_visibility or args.native_pcm_cubic or args.depth_observer or args.capture_jobs:
+        if menu_boot or args.native_world_transforms or args.native_job_wait or args.native_visibility or args.native_pcm_cubic or args.depth_observer or args.capture_jobs:
             identity['native_world_binding']=json.loads((binary/'native-world-binding.json').read_text())
             identity['native_world_sources_sha256']={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in sorted((ROOT/'src/motorstorm').glob('*')) if p.is_file()}

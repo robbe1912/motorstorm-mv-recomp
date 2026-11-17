@@ -160,7 +160,29 @@ passed. A newer completed presenting frame before selection or PAD_FILE replacem
 requires fresh gate validation. The regression changes a secondary condition while
 preserving the caption and checks that neither route writes a command.
 
-Continuation profiles must include screen-gated intro skips in `optional_actions`.
+### Native menu boot
+
+Supported debug-US builds enable the identity-checked startup policy by default.
+The policy accepts the configured selected language through its original handler,
+closes the first opening-video request at verified caller addresses, and lets the
+original finished-video transition perform menu initialization, profile saving,
+background-video start and music setup. Background and later movie requests retain
+the original path. This changes startup workflow under the owner direction in #323.
+
+`--original-intro` selects reference startup. Build `--no-menu-boot` omits the binding.
+Other target identities retain original startup. Launch metadata records the selected
+`MS_BOOT_MENU` value and the selected executable's `menu_boot` capability.
+
+Menu-start replay profiles declare `"startup": "menu"` and begin at PLAY.
+Original-start profiles declare `"startup": "original"` or omit the field.
+The launcher checks profile mode against selected build/runtime mode before launch.
+Continue the subsequent menus through the existing observed-screen gates.
+Authored tests cover caller identity, one-time selection, callback completion,
+original mode, background forwarding and eight compiled negative controls.
+Current title verification remains pending for this new policy.
+
+Reference runs selected with `--original-intro` use continuation profiles with
+screen-gated intro skips in `optional_actions`.
 Each uses the same observed reference/ROI/label/button/polls as a required step,
 plus `after_step` (the number of required steps already acknowledged). An action
 sends once when observed; an absent intro does not block the route. The target

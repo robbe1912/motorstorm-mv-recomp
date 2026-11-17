@@ -39,6 +39,7 @@ def main():
     ap.add_argument('--capture-burst-frames',type=int,default=0,help='Opt-in once-only consecutive presented-frame burst, 1..120; arm via run-local capture-burst.arm')
     ap.add_argument('--capture-on-pad',type=lambda value:int(value,0),default=0,help='Arm capture burst in native code when PAD_FILE consumes a matching button mask')
     ap.add_argument('--menu-replay',type=Path,help='Private observed-screen profile; normal PAD_FILE input, not a scene jump')
+    ap.add_argument('--original-intro',action='store_true',help='Use original language/video startup for reference diagnostics')
     ap.add_argument('--capture-jobs',action='store_true',help='Arm bounded job capture in an owned run-local directory; requires matching build')
     ap.add_argument('--job-capture-seconds',type=float,help='Open capture for 0.05..5 seconds after the independently observed replay target')
     ap.add_argument('--job-capture-execution-pc',type=lambda value:int(value,0),action='append',default=[],help='Retain execution events matching a raw source or target SPU PC; repeat up to 32 times')
@@ -93,6 +94,9 @@ def main():
     elf_sha256=hashlib.sha256(c['elf'].read_bytes()).hexdigest()
     try: admitted=admit_execution_profile(args.execution_profile,exe,elf_sha256)
     except (OSError,ValueError) as error: raise SystemExit(str(error))
+    menu_boot = admitted['build_identity'].get('menu_boot') is True and not args.original_intro
+    if args.menu_replay and replay_profile.get('startup', 'original') != ('menu' if menu_boot else 'original'):
+        raise SystemExit('Replay startup differs from selected executable mode; select a menu-start profile or --original-intro')
     for selected,flag,description in ((args.native_pcm_cubic,'native_pcm_cubic','PCM DSP'),
                                      (args.native_visibility,'native_visibility','Visibility')):
         if selected != '0':
@@ -133,9 +137,10 @@ def main():
     if args.d3d12_debug != 'default':env['D3D12_DBG']=args.d3d12_debug
     # Clear inherited diagnostics before applying the documented booting configuration.
     for key in list(env):
-        if key.startswith(('SPU_','FLOW_','RSX_','GCM_','PAD_','FPS_','PM_','CAP_HAVOK','CAP_BIKE','LOADTIME_','AUDIO_','TEX_')) or key in ('FP_PICK','SCREEN_AS_TEX','RD_WWSJOB_SHIM','VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG','MS_JOB_CAPTURE_DIR','MS_JOB_CAPTURE_EXECUTION_PCS'):env.pop(key)
+        if key.startswith(('SPU_','FLOW_','RSX_','GCM_','PAD_','FPS_','PM_','CAP_HAVOK','CAP_BIKE','LOADTIME_','AUDIO_','TEX_')) or key in ('FP_PICK','SCREEN_AS_TEX','RD_WWSJOB_SHIM','VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG','MS_JOB_CAPTURE_DIR','MS_JOB_CAPTURE_EXECUTION_PCS','MS_BOOT_MENU'):env.pop(key)
     env.update(PATH=str(c['ffmpeg']/'bin')+os.pathsep+env.get('PATH',''),PS3_VFS_ROOT=str(c['disc']),PS3_HDD0_ROOT=str(c['userdata']),PS3_SAVEDATA_ROOT=str(c['userdata']/'home/00000001/savedata'),AUDIO_MUTE='1',SCREEN_AS_TEX='0',PAD_FILE=str(out/'pad.txt'),FPS_STATS='1',FPS_STATS_CSV=str(out/'frames.csv'),RECOMP_TITLE='MotorStorm MV native')
     env.update(admitted['execution_environment'])
+    env['MS_BOOT_MENU'] = '1' if menu_boot else '0'
     if args.native_owned_jobs:env['SPU_NATIVE_OWNED_JOBS']='1'
     if args.jobmod_header_fnv:env['SPU_JOBMOD_HEADER_FNV']='1'
     env['PS3_KEYS_FILE']=str(c.get('keys',ROOT/'game/private_keys')/'keys.json')
@@ -194,6 +199,7 @@ def main():
     record['resource_breach']=None
     record['launcher_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     record['resource_guard_sha256']=hashlib.sha256(Path(__file__).with_name('native_resource_guard.py').read_bytes()).hexdigest()
+    record['environment']['MS_BOOT_MENU'] = env['MS_BOOT_MENU']
     record['capture_jobs'] = args.capture_jobs
     record['job_capture_seconds'] = args.job_capture_seconds
     record['job_capture_execution_pcs'] = args.job_capture_execution_pc
