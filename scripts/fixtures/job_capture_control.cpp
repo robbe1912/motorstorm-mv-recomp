@@ -14,6 +14,8 @@ void game_original_add_job(ppu_context* ctx) {
     fixture_real_store(ctx);
 }
 void motorstorm_observe_queue_reset(ppu_context*);
+void motorstorm_observe_queue_reset_multi(ppu_context*);
+void motorstorm_observe_queue_init(ppu_context*);
 void motorstorm_observe_add_job(ppu_context*);
 static void ignored_queue(void*, const job_queue_event&) noexcept {}
 #endif
@@ -57,6 +59,15 @@ int main(int argc, char** argv) {
     assert(!strcmp(argv[2], "run") || filtered);
     assert(job_capture_control_start());
     assert(ppu && spu && execution && scheduler);
+#ifdef PORT_QUEUE_CALL_OBSERVATION
+    ppu_context startup{};
+    startup.gpr[3] = 0x1234;
+    motorstorm_observe_queue_reset_multi(&startup);
+    motorstorm_observe_queue_init(&startup);
+    job_capture_info startup_info{};
+    assert(job_capture_describe(static_cast<job_capture*>(ppu->user), &startup_info));
+    assert(startup_info.storage.attempted == 4 && "controller omitted startup lifecycle");
+#endif
     assert(!ppu->accept(ppu->user, PS3_ATOMIC_PPU32, 1, 42, 4));
     std::string open = std::string(argv[1]) + "\\open";
     FILE* f = fopen(open.c_str(), "wb"); assert(f); assert(!fclose(f));
@@ -101,7 +112,7 @@ int main(int argc, char** argv) {
     }
     assert(read && count ==
 #ifdef PORT_QUEUE_CALL_OBSERVATION
-        12
+        16
 #else
         4
 #endif

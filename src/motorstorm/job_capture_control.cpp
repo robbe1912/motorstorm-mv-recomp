@@ -35,7 +35,7 @@ struct control {
     control(std::wstring dir, const job_capture_config& config,
             const job_capture_execution_filter& filter)
         : directory(std::move(dir)), execution_filter(filter),
-          window(select_execution(config, &execution_filter)) {}
+          window(select_execution(config, &execution_filter), true) {}
     std::wstring path(const wchar_t* name) const { return directory + L"\\" + name; }
 };
 uint64_t clock_qpc(void*) {
@@ -116,7 +116,7 @@ int job_capture_control_start() {
     CloseHandle(thread);
     /* Deliberately process-lifetime: guest exit can bypass main and producers
      * are not joined here. The OS reclaims owner and thread on process exit. */
-    fprintf(stderr, "[job-capture] armed run=%llu capacity=%u execution_pcs=%u\n",
+    fprintf(stderr, "[job-capture] armed run=%llu capacity=%u execution_pcs=%u queue_history=1\n",
             (unsigned long long)run_id, config.capacity, filter.count);
     return 1;
 }

@@ -349,8 +349,10 @@ record, clears inherited capture-directory state, creates a private run-local
 directory and waits for the owner to arm before normal menu replay proceeds.
 Setup failures and missing acknowledgments end the owned run visibly.
 
-The owner starts before guest producers, uses QPC and host thread IDs, and gates
-all four event streams until the exclusive `open` trigger. Schema 5 retains raw
+The owner starts before guest producers and uses QPC and host thread IDs.
+Startup reset/init calls are retained in the bounded buffer. Publication,
+atomic, execution and scheduler work wait for the exclusive `open` trigger.
+Schema 5 retains raw
 queue entry LR for later callsite qualification. The `snapshot` trigger writes a
 create-new native-ABI file with record indices and before/after coverage counts.
 The process-lifetime owner remains installed through producer lifetime.
@@ -438,7 +440,7 @@ selected build identity and hashes are pinned under
 The capture controller can freeze up to 32 explicitly selected raw source/target
 PC values before installing producers. Its immutable filter performs bounded
 comparisons without allocation, formatting, guest reads or runtime reentry.
-The existing window rejects closed-startup events before invoking that filter.
+The window rejects closed-startup execution events before invoking that filter.
 Atomic, scheduler and queue streams retain their existing admission. Execution
 rejections remain visible in the sharded exclusion totals. The snapshot schema
 is unchanged; retain the launch PC list, armed count and selected build identity.
@@ -589,3 +591,25 @@ Private identities and preparation receipts are under
 `temp/pvs-derived-reset-binding/`. Earlier live traces have incomplete reset
 coverage. A rebuilt executable and startup lifecycle coverage remain required to
 qualify queue generations and connect a selected PVS job to real completion.
+
+### Startup queue history
+
+The controller now opts into reset/init history before opening the measured
+window. The generic window keeps its default closed behavior for other callers.
+Both modes apply the original downstream queue filter. All records use the same
+bounded owner and QPC clock. History can consume capacity, and its losses remain
+visible through the existing counters. Wire fields and schema 5 stay compatible.
+
+The actual integration fixture first reproduced missing startup reset/init
+records. It now checks retained pairs before the opening bounds, rejected
+publication/atomic/execution/scheduler traffic while closed, normal post-open
+publication, and downstream exclusions in both phases. Three compiled controls
+remove history, admit startup publications, or bypass the queue filter. A fourth
+Windows control disables controller opt-in and must fail its pre-open record
+check. Build identities record `job_capture_queue_history`, and the armed line
+reports `queue_history=1`.
+
+Consumers must retain launch/armed/timing data and scope measurements with the
+opening QPC bounds. The complete record tick envelope includes startup history.
+Queue generations, selected-job ownership and real completion still require
+validated joins and coverage from a current executable.

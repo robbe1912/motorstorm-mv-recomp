@@ -6,11 +6,14 @@
  * original callbacks/user must outlive the capture and its producers. Opening
  * is one-way: a callback racing the transition may fall on either side, and
  * the transition itself is not a guest-event timestamp or a quiescence fence.
+ * Optional queue history retains reset/init calls before opening in the same
+ * bounded record buffer. Use recorded open bounds to scope measured work.
  * Check available() before installation. Existing exclusion counts combine
  * closed-window and downstream-filter exclusions; neither identifies a cause. */
 struct job_capture_window {
     enum open_result { rejected, opened, opened_bad_clock };
-    explicit job_capture_window(const job_capture_config& source) : original(source) {}
+    explicit job_capture_window(const job_capture_config& source, bool queue_history = false)
+        : original(source), retain_queue_history(queue_history) {}
     job_capture_window(const job_capture_window&) = delete;
     job_capture_window& operator=(const job_capture_window&) = delete;
 
@@ -38,6 +41,7 @@ struct job_capture_window {
     }
 private:
     const job_capture_config original;
+    const bool retain_queue_history;
     std::atomic<bool> enabled{false};
     static uint64_t clock(void* p) {
         auto& w = *static_cast<job_capture_window*>(p);
@@ -64,7 +68,12 @@ private:
     }
     static int queue_call_filter(void* p, const job_queue_event* event) {
         auto& w = *static_cast<job_capture_window*>(p);
-        return w.enabled.load(std::memory_order_acquire) && (!w.original.accept_queue_call ||
-            w.original.accept_queue_call(w.original.user, event));
+        if (!w.enabled.load(std::memory_order_acquire)) {
+            if (!w.retain_queue_history || !event ||
+                (event->operation != job_queue_operation::reset &&
+                 event->operation != job_queue_operation::init)) return 0;
+        }
+        return !w.original.accept_queue_call ||
+            w.original.accept_queue_call(w.original.user, event);
     }
 };

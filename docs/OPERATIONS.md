@@ -473,10 +473,20 @@ turns those capture options off.
 Run with `--capture-jobs --job-capture-seconds 0.1 --menu-replay <private-profile>`
 and the selected native-depth, diagnostic and resource settings. The inherited
 `MS_JOB_CAPTURE_DIR` and `MS_JOB_CAPTURE_EXECUTION_PCS` are cleared. The launcher
-creates its own `job-capture` directory, waits for `[job-capture] armed`, then performs the normal screen-gated
-menu route and observed intro skip. After the target, exclusive `open` and
-`snapshot` signals produce `timing.json` and `snapshot.bin`. Explicit stop,
+creates its own `job-capture` directory, waits for `[job-capture] armed`, then
+performs the screen-gated menu-start route. Reference `--original-intro` runs use
+an original-start profile and its observed intro action. After the target,
+exclusive `open` and `snapshot` signals produce `timing.json` and `snapshot.bin`. Explicit stop,
 resource, replay, acknowledgment and timeout failures retain their actual outcome.
+
+Capture builds record `job_capture_queue_history=true`. The controller reports
+`queue_history=1` and retains initialization/reset calls from startup in the same
+bounded buffer. Publication, atomic, execution and scheduler events wait for
+`open`. Downstream queue filters still apply. Earlier capture builds retain their
+recorded scope. Use valid `open_before_qpc`/`open_after_qpc` bounds in
+`timing.json` to distinguish startup lifecycle history from measured-window work.
+The earliest record can precede the requested interval. Retain and check buffer
+loss counters across both phases.
 
 Retain launch/final metadata, original logs, selected build identity, timing,
 snapshot and offline summary together. The snapshot uses native ABI/schema 5,

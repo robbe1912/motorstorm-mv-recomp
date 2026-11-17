@@ -114,13 +114,39 @@ exe = out / ('integration.exe' if os.name == 'nt' else 'integration')
 compiler = args.compiler if msvc else (shutil.which('c++') or args.compiler)
 (out/'ppu_recomp.h').write_text('#pragma once\n#include <stdint.h>\nstruct ppu_context { uint64_t gpr[32]; uint32_t reserve_addr; uint64_t lr; };\n')
 cmd = [compiler, str(source), str(snapshot_source), str(root/'src/motorstorm/job_queue_lifecycle.cpp'), str(root/'scripts/fixtures/job_capture_integration.cpp'), str(obj)] + list(map(str, objects))
-cmd += (['/nologo', '/std:c++17', '/EHsc', '/O2', '/UNDEBUG', '/I'+str(include), '/I'+str(out), '/Fe'+str(exe)] + ['/D'+d for d in defs]
-        if msvc else ['-std=c++17', '-O2', '-UNDEBUG', '-pthread', '-I'+str(include), '-I'+str(out), '-o', str(exe)] + ['-D'+d for d in defs])
+cmd += (['/nologo', '/std:c++17', '/EHsc', '/O2', '/UNDEBUG', '/I'+str(include), '/I'+str(out), '/I'+str(source.parent), '/Fe'+str(exe)] + ['/D'+d for d in defs]
+        if msvc else ['-std=c++17', '-O2', '-UNDEBUG', '-pthread', '-I'+str(include), '-I'+str(out), '-I'+str(source.parent), '-o', str(exe)] + ['-D'+d for d in defs])
 result = command(cmd, 'integration-build')
 assert result.returncode == 0, result.stdout + result.stderr
 result = command([str(exe)], 'integration-run')
 assert result.returncode == 0, result.stdout + result.stderr
 print('PASS execution, scheduler and queue-call observer integration')
+
+if args.mutants:
+    window_source = source.parent / 'job_capture_window.h'
+    window_text = window_source.read_text(encoding='utf-8')
+    window_copy = out / window_source.name
+    history_controls = {
+        'drops-startup-history': ('retain_queue_history(queue_history)', 'retain_queue_history(false)'),
+        'admits-startup-publications': (
+            '(event->operation != job_queue_operation::reset &&\n                 event->operation != job_queue_operation::init)',
+            '(false && event->operation != job_queue_operation::init)'),
+        'history-ignores-filter': (
+            'return !w.original.accept_queue_call ||\n            w.original.accept_queue_call(w.original.user, event);',
+            'return 1;'),
+    }
+    try:
+        for name, (old, new) in history_controls.items():
+            assert window_text.count(old) == 1, name
+            window_copy.write_text(window_text.replace(old, new), encoding='utf-8')
+            built = command(cmd, name + '-build')
+            assert built.returncode == 0, built.stdout + built.stderr
+            ran = command([str(exe)], name + '-run')
+            assert ran.returncode != 0, name + ' survived'
+            print('PASS rejected ' + name)
+    finally:
+        window_copy.unlink(missing_ok=True)
+
 filter_source = root / 'src/motorstorm/job_capture_execution_filter.h'
 filter_fixture = root / 'scripts/fixtures/job_capture_execution_filter.cpp'
 
@@ -228,9 +254,27 @@ static void fixture_real_store(ppu_context* ctx) {
     queue_cmd = [args.compiler, str(source), str(snapshot_source),
                  str(root/'src/motorstorm/job_capture_control.cpp'), str(root/'src/motorstorm/job_queue_lifecycle.cpp'),
                  str(queue_fixture), str(obj), '/nologo', '/std:c++17', '/EHsc', '/O2',
-                 '/UNDEBUG', '/DPORT_QUEUE_CALL_OBSERVATION=1', '/DPS3_ATOMIC_OBSERVATION=1', '/I'+str(include), '/I'+str(out), '/I'+str(root/'scripts/fixtures'), '/Fe'+str(queue_control)]
+                 '/UNDEBUG', '/DPORT_QUEUE_CALL_OBSERVATION=1', '/DPS3_ATOMIC_OBSERVATION=1', '/I'+str(include), '/I'+str(out), '/I'+str(root/'scripts/fixtures'), '/I'+str(source.parent), '/Fe'+str(queue_control)]
     result = command(queue_cmd, 'queue-control-build')
     assert result.returncode == 0, result.stdout + result.stderr
+    if args.mutants:
+        control_source = root / 'src/motorstorm/job_capture_control.cpp'
+        actual_control = control_source.read_text(encoding='utf-8')
+        needle = 'window(select_execution(config, &execution_filter), true)'
+        assert actual_control.count(needle) == 1
+        changed_control = out / 'controller-no-history.cpp'
+        changed_control.write_text(actual_control.replace(needle,
+            'window(select_execution(config, &execution_filter), false)'), encoding='utf-8')
+        changed_command = [str(changed_control) if part == str(control_source) else part
+                           for part in queue_cmd]
+        built = command(changed_command, 'controller-no-history-build')
+        assert built.returncode == 0, built.stdout + built.stderr
+        with tempfile.TemporaryDirectory(dir=out) as mutant_directory:
+            ran = command([str(queue_control), mutant_directory, 'run'], 'controller-no-history-run')
+            assert ran.returncode != 0 and 'controller omitted startup lifecycle' in ran.stdout + ran.stderr
+        print('PASS rejected controller startup-history omission')
+        built = command(queue_cmd, 'queue-control-restored-build')
+        assert built.returncode == 0, built.stdout + built.stderr
     with tempfile.TemporaryDirectory(dir=out) as directory:
         with tempfile.TemporaryDirectory(dir=out) as filtered_directory:
             result = command([str(queue_control), filtered_directory, 'filtered'], 'queue-control-filtered')

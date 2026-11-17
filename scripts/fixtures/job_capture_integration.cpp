@@ -1,5 +1,5 @@
 #include "../../src/motorstorm/job_capture.h"
-#include "../../src/motorstorm/job_capture_window.h"
+#include "job_capture_window.h"
 #include "../../src/motorstorm/job_capture_snapshot.h"
 #include "../../vendor/ps3recomp/runtime/spu/spu_context.h"
 #include "ppu_recomp.h"
@@ -11,6 +11,9 @@ extern "C" int ps3_atomic_observer_install_spu(const ps3_atomic_observer* p) { s
 static uint64_t tick(void*) { static uint64_t value = 10; return ++value; }
 static uint64_t thread(void*) { return 42; }
 static int only_target(void*, uint32_t, uintptr_t, uint32_t, uint32_t target) { return target == 0x30; }
+static int reject_initialization(void*, const job_queue_event* event) {
+    return event->operation != job_queue_operation::init;
+}
 static int no_scheduler(void*, const ps3_spurs_scheduler_event*) { return 0; }
 static spu_context context;
 void game_original_queue_reset_multi(ppu_context* ctx) { ++ctx->gpr[3]; }
@@ -18,6 +21,8 @@ void game_original_queue_reset(ppu_context* c) { ++c->gpr[3]; }
 void game_original_queue_init(ppu_context* c) { ++c->gpr[4]; }
 void game_original_add_job(ppu_context*) {}
 void motorstorm_observe_queue_reset(ppu_context*);
+void motorstorm_observe_queue_reset_multi(ppu_context*);
+void motorstorm_observe_queue_init(ppu_context*);
 void motorstorm_observe_add_job(ppu_context*);
 static int count_queue(void* user, uint64_t, const job_capture_record* r) {
     if (r->kind == JOB_CAPTURE_QUEUE_CALL) {
@@ -90,6 +95,55 @@ int main() {
     assert(job_capture_read_snapshot(file, count_queue, &count, &snapshot));
     assert(count == 4 && snapshot.before.excluded_queue_call == 2 && snapshot.before.schema_version == JOB_CAPTURE_SCHEMA_VERSION);
     fclose(file);
+    assert(job_queue_observer_install(nullptr));
+    job_capture_stop(c);
+
+    // Startup history supplies lifecycle boundaries while the high-volume gate is closed.
+    cfg.capacity = 16;
+    job_capture_window history(cfg, true);
+    gated = history.config();
+    c = job_capture_start(&gated); assert(c);
+    queue_owner.user = c;
+    assert(job_queue_observer_install(&queue_owner));
+    motorstorm_observe_queue_reset_multi(&queue);
+    motorstorm_observe_queue_init(&queue);
+    motorstorm_observe_add_job(&queue);
+    ps3_spurs_scheduler_worker_begin(&info);
+    ps3_spu_execution_notify(PS3_SPU_NATIVE_BEGIN, &context, 0x10, 0x20, 7, 0, 0);
+    ps3_spurs_scheduler_worker_return(0, 4);
+    assert(!ppu->accept(ppu->user, PS3_ATOMIC_PPU32, 1, 42, 4));
+    assert(job_capture_describe(c, &metadata));
+    assert(metadata.storage.attempted == 4 && "startup reset and init records missing");
+    assert(metadata.excluded_queue_call == 2 && metadata.excluded_atomic == 1);
+    assert(metadata.excluded_execution == 1 && metadata.excluded_scheduler == 2);
+    assert(history.open(&before, &after) == job_capture_window::opened);
+    for (unsigned index = 0; index < 4; ++index) {
+        assert(job_capture_read(c, index, &r) == 1 && r.kind == JOB_CAPTURE_QUEUE_CALL);
+        assert(r.value.queue_call.tick < before);
+        const auto expected = index < 2 ? job_queue_operation::reset : job_queue_operation::init;
+        assert(r.value.queue_call.event.operation == expected);
+    }
+    motorstorm_observe_add_job(&queue);
+    motorstorm_observe_queue_reset_multi(&queue);
+    assert(job_capture_describe(c, &metadata) && metadata.storage.attempted == 8);
+    assert(job_capture_read(c, 4, &r) == 1 && r.value.queue_call.tick > after);
+    assert(r.value.queue_call.event.operation == job_queue_operation::add_job);
+    assert(job_queue_observer_install(nullptr));
+    job_capture_stop(c);
+
+    cfg.accept_queue_call = reject_initialization;
+    job_capture_window filtered_history(cfg, true);
+    gated = filtered_history.config();
+    c = job_capture_start(&gated); assert(c);
+    queue_owner.user = c;
+    assert(job_queue_observer_install(&queue_owner));
+    motorstorm_observe_queue_init(&queue);
+    motorstorm_observe_queue_reset_multi(&queue);
+    assert(filtered_history.open(&before, &after) == job_capture_window::opened);
+    motorstorm_observe_queue_init(&queue);
+    motorstorm_observe_add_job(&queue);
+    assert(job_capture_describe(c, &metadata));
+    assert(metadata.storage.attempted == 4 && metadata.excluded_queue_call == 4);
     assert(job_queue_observer_install(nullptr));
     job_capture_stop(c);
     return 0;
