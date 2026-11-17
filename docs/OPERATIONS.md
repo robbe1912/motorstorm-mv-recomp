@@ -439,6 +439,28 @@ cases, preserve reference provenance, and inspect graphics separately: a
 readiness predicate is not graphics acceptance.
 
 
+## Native marker-wait timing
+
+`--profile-job-waits` records each completed native marker wait with its guest
+caller, queue object, physical owner, threshold, actual final minimum, thread,
+polls/cooperations and QPC start/finish/frequency. It selects native wait mode
+and records `MS_NATIVE_JOB_WAIT=1` and `MS_NATIVE_JOB_WAIT_PROFILE=1` in the owned
+launch packet. The launcher clears inherited values for both selectors.
+
+Admission uses the selected executable's adjacent identity. New builds record
+`native_job_wait_profile` alongside `native_job_wait`. Preserved earlier builds
+are admitted when their native wait is enabled and their recorded adapter hash
+matches the reviewed profiling implementation. Explicitly disabled capabilities
+and unknown older implementations require a matching rebuild.
+
+The actual adapter checks clock failures and reports original/reference fallback
+separately. Formatting happens after the measured wait completes. Preserve that
+logging overhead in the measurement conditions. Joining these QPC spans to job
+capture requires equal clock frequency and qualified queue/job lifetimes.
+A completed wrapper span supplies the actual wait interval and threshold;
+selected-job ownership and an exclusive frame-critical producer remain separate
+proof obligations under issue 219.
+
 ## Bounded job timeline capture
 
 Issue #219 uses the opt-in capture build and an independently observed replay

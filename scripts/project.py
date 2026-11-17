@@ -157,6 +157,7 @@ def main():
         identity['native_pcm_cubic']=args.native_pcm_cubic
         identity['native_particle_thresholds']=args.native_particle_thresholds
         identity['menu_boot']=menu_boot
+        identity['native_job_wait_profile']=args.native_job_wait
         identity['job_capture']=args.capture_jobs
         identity['queue_call_observation']=args.capture_jobs
         identity['job_capture_execution_filter']=args.capture_jobs

@@ -4,7 +4,7 @@ from pathlib import Path
 import psutil
 from project import ROOT, config
 from native_window import visible_native_window
-from runtime_profile import PROFILES, admit_execution_profile
+from runtime_profile import PROFILES, admit_execution_profile, supports_job_wait_profile
 from native_resource_guard import commit_reserve, physical_reserve, limits, first_breach
 
 class Memory(ctypes.Structure):
@@ -49,6 +49,7 @@ def main():
     ap.add_argument('--native-depth',choices=('0','1'),default='0',help='Experimental native depth query; requires --depth-observer and a matching native-query build')
     ap.add_argument('--d3d12-debug',choices=('default','0','1'),default='default',help='Explicit API validation selection; default preserves build policy and assertions stay enabled')
     ap.add_argument('--profile-textures',action='store_true',help='Existing aggregate DX12 texture phases and cache outcomes; adds timing overhead')
+    ap.add_argument('--profile-job-waits',action='store_true',help='Record completed native marker waits with owner, caller, threshold and QPC timing; requires selected build support')
     ap.add_argument('--profile-cpu-surfaces',action='store_true',help='Existing per-request CPU surface read queue, match, copy and fence diagnostics; adds timing and logging overhead')
     ap.add_argument('--cpu-surface-prompt',choices=('default','0','1'),default='default',help='Prompt disjoint CPU surface reads; default preserves backend policy, 0 uses batch-end service')
     ap.add_argument('--cpu-surface-flush',choices=('default','0','1'),default='default',help='Submit recorded writes needed by queued CPU reads at the next draw boundary or idle pump')
@@ -120,6 +121,8 @@ def main():
             raise SystemExit('Job capture requires a matching --capture-jobs build with queue bindings; no process launched')
         if args.job_capture_execution_pc and not identity.get('job_capture_execution_filter'):
             raise SystemExit('Execution PC filter requires a matching filter-enabled capture build; no process launched')
+    if args.profile_job_waits and not supports_job_wait_profile(admitted['build_identity']):
+        raise SystemExit('Job wait profiling requires a selected native-job-wait build with profiling capability; no process launched')
     # User-approved storage policy, before any native process or PAD replay.
     # Referenced/failed/evidence runs and the supplied profile are protected.
     from prune_runs import automatic
@@ -137,10 +140,12 @@ def main():
     if args.d3d12_debug != 'default':env['D3D12_DBG']=args.d3d12_debug
     # Clear inherited diagnostics before applying the documented booting configuration.
     for key in list(env):
-        if key.startswith(('SPU_','FLOW_','RSX_','GCM_','PAD_','FPS_','PM_','CAP_HAVOK','CAP_BIKE','LOADTIME_','AUDIO_','TEX_')) or key in ('FP_PICK','SCREEN_AS_TEX','RD_WWSJOB_SHIM','VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG','MS_JOB_CAPTURE_DIR','MS_JOB_CAPTURE_EXECUTION_PCS','MS_BOOT_MENU'):env.pop(key)
+        if key.startswith(('SPU_','FLOW_','RSX_','GCM_','PAD_','FPS_','PM_','CAP_HAVOK','CAP_BIKE','LOADTIME_','AUDIO_','TEX_')) or key in ('FP_PICK','SCREEN_AS_TEX','RD_WWSJOB_SHIM','VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG','MS_JOB_CAPTURE_DIR','MS_JOB_CAPTURE_EXECUTION_PCS','MS_BOOT_MENU','MS_NATIVE_JOB_WAIT','MS_NATIVE_JOB_WAIT_PROFILE'):env.pop(key)
     env.update(PATH=str(c['ffmpeg']/'bin')+os.pathsep+env.get('PATH',''),PS3_VFS_ROOT=str(c['disc']),PS3_HDD0_ROOT=str(c['userdata']),PS3_SAVEDATA_ROOT=str(c['userdata']/'home/00000001/savedata'),AUDIO_MUTE='1',SCREEN_AS_TEX='0',PAD_FILE=str(out/'pad.txt'),FPS_STATS='1',FPS_STATS_CSV=str(out/'frames.csv'),RECOMP_TITLE='MotorStorm MV native')
     env.update(admitted['execution_environment'])
     env['MS_BOOT_MENU'] = '1' if menu_boot else '0'
+    if args.profile_job_waits:
+        env.update(MS_NATIVE_JOB_WAIT='1', MS_NATIVE_JOB_WAIT_PROFILE='1')
     if args.native_owned_jobs:env['SPU_NATIVE_OWNED_JOBS']='1'
     if args.jobmod_header_fnv:env['SPU_JOBMOD_HEADER_FNV']='1'
     env['PS3_KEYS_FILE']=str(c.get('keys',ROOT/'game/private_keys')/'keys.json')
@@ -211,6 +216,7 @@ def main():
     record['capture_on_pad']=args.capture_on_pad
     record.update(admitted)
     record['environment'].update(admitted['execution_environment'])
+    record['profile_job_waits']=args.profile_job_waits
     record['profile_renderer']=args.profile_renderer
     record['profile_textures']=args.profile_textures
     record['d3d12_debug']=args.d3d12_debug

@@ -54,6 +54,22 @@ def execution_environment(profile, capabilities):
     return env
 
 
+def supports_job_wait_profile(identity):
+    """Admit explicit capability or the byte-verified legacy profiling adapter."""
+    if identity.get('native_job_wait') is not True:
+        return False
+    if 'native_job_wait_profile' in identity:
+        return identity['native_job_wait_profile'] is True
+    sources = identity.get('native_world_sources_sha256')
+    if not isinstance(sources, dict):
+        return False
+    # Preserved pre-capability builds recorded this exact reviewed adapter.
+    legacy_adapter = '130a5ecc9913fbdcfce80080643aa403e0c4c86bc2e9e62fc2e7f2c5e32bc1f1'
+    return any(isinstance(name, str) and
+               name.replace('\\', '/') == 'src/motorstorm/job_wait_adapter.cpp' and
+               digest == legacy_adapter for name, digest in sources.items())
+
+
 def admit_execution_profile(profile, exe, elf_sha256):
     """Validate the adjacent build record before pruning, replay or Popen."""
     identity_path = exe.parent / 'build_identity.json'

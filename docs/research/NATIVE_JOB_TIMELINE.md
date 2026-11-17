@@ -525,3 +525,15 @@ associated run's `job-capture/` directory. Required post-native inventory was
 attempted through the delegated worker, then completed read-only by the primary
 agent after the worker hit its usage limit. Four worktrees, source changes,
 shared inputs and protected evidence were retained.
+
+## Main marker-wait span admission
+
+The owned launcher exposes `--profile-job-waits` for issue 219. It admits the
+selected executable's recorded profiling capability or exact reviewed legacy
+adapter hash, clears inherited wait/profile selectors, and records native mode
+and profiling in the launch packet. The existing adapter records completed wait
+caller/object/owner/threshold/minimum and QPC bounds after genuine progress.
+Actual launcher controls cover default sanitization, current/legacy admission,
+unsupported/disabled selection and build capability recording. These spans can
+be joined to the recorder clock once current ownership and queue generation are
+qualified. Runtime evidence from this explicit launcher option remains pending.

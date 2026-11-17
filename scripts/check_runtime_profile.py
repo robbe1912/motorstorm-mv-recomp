@@ -98,6 +98,48 @@ class ExecutionProfileTests(unittest.TestCase):
             self.assertEqual(launch[key], final[key])
         return launch, self.calls[0][1]['env']
 
+    def test_wait_profile_default_clears_inherited_selectors(self):
+        with patch.dict(os.environ, {'MS_NATIVE_JOB_WAIT_PROFILE': '1',
+                                     'MS_NATIVE_JOB_WAIT': '0'}):
+            launch, env = self.launch()
+        self.assertIsNone(env.get('MS_NATIVE_JOB_WAIT_PROFILE'))
+        self.assertIsNone(env.get('MS_NATIVE_JOB_WAIT'))
+        self.assertFalse(launch['profile_job_waits'])
+
+    def test_wait_profile_records_selected_capability(self):
+        self.record.update(native_job_wait=True, native_job_wait_profile=True)
+        self.save_record()
+        launch, env = self.launch('--profile-job-waits')
+        self.assertEqual(env['MS_NATIVE_JOB_WAIT_PROFILE'], '1')
+        self.assertEqual(env['MS_NATIVE_JOB_WAIT'], '1')
+        self.assertEqual(launch['environment']['MS_NATIVE_JOB_WAIT_PROFILE'], '1')
+        self.assertTrue(launch['profile_job_waits'])
+
+    def test_wait_profile_requires_selected_capability(self):
+        self.record.update(native_job_wait=True)
+        self.save_record()
+        self.rejected('Job wait profiling requires', '--profile-job-waits')
+
+    def test_wait_profile_admits_verified_legacy_adapter(self):
+        self.record.update(native_job_wait=True, native_world_sources_sha256={
+            'src\\motorstorm\\job_wait_adapter.cpp':
+                '130a5ecc9913fbdcfce80080643aa403e0c4c86bc2e9e62fc2e7f2c5e32bc1f1'})
+        self.save_record()
+        launch, env = self.launch('--profile-job-waits')
+        self.assertEqual(env['MS_NATIVE_JOB_WAIT_PROFILE'], '1')
+        self.assertTrue(launch['profile_job_waits'])
+
+    def test_wait_profile_rejects_disabled_or_unknown_adapter(self):
+        baseline = self.record.copy()
+        for metadata in (
+                dict(native_job_wait=False, native_job_wait_profile=True),
+                dict(native_job_wait=True, native_job_wait_profile=False),
+                dict(native_job_wait=True, native_world_sources_sha256={
+                    'src/motorstorm/job_wait_adapter.cpp': '0' * 64})):
+            self.record = dict(baseline, **metadata)
+            self.save_record()
+            self.rejected('Job wait profiling requires', '--profile-job-waits')
+
     def test_capture_disabled_clears_inherited_directory(self):
         with patch.dict(os.environ, {'MS_JOB_CAPTURE_DIR': 'unowned-directory',
                                      'MS_JOB_CAPTURE_EXECUTION_PCS': '0x30b0'}):
@@ -374,10 +416,29 @@ class ExecutionProfileTests(unittest.TestCase):
         self.assertEqual(record['runtime_capabilities_source_sha256'], self.record['runtime_capabilities_source_sha256'])
         self.assertTrue(record['native_world_transforms'])
         self.assertTrue(record['native_job_wait'])
+        self.assertTrue(record['native_job_wait_profile'])
         self.assertFalse(record['job_capture'])
         self.assertFalse(record['job_capture_execution_filter'])
         self.assertIn('-DPORT_ENABLE_JOB_CAPTURE=OFF', commands[0])
         self.assertIn('-DPORT_QUEUE_CALL_OBSERVATION=OFF', commands[0])
+
+    def test_build_without_native_wait_has_no_profile_capability(self):
+        commands, record = self.build(['--no-native-job-wait'])
+        self.assertFalse(record['native_job_wait'])
+        self.assertFalse(record['native_job_wait_profile'])
+        self.assertIn('-DPORT_NATIVE_JOB_WAIT=OFF', commands[0])
+
+    def test_wait_profile_legacy_paths_and_strict_capability(self):
+        digest = '130a5ecc9913fbdcfce80080643aa403e0c4c86bc2e9e62fc2e7f2c5e32bc1f1'
+        for path in ('src/motorstorm/job_wait_adapter.cpp',
+                     'src\\motorstorm\\job_wait_adapter.cpp'):
+            identity = dict(native_job_wait=True, native_world_sources_sha256={path: digest})
+            self.assertTrue(profile.supports_job_wait_profile(identity))
+            identity['native_job_wait_profile'] = False
+            self.assertFalse(profile.supports_job_wait_profile(identity))
+        for capability in (False, None, 1, '1'):
+            self.assertFalse(profile.supports_job_wait_profile(dict(
+                native_job_wait=True, native_job_wait_profile=capability)))
 
     def test_capture_build_records_all_observers(self):
         commands, record = self.build(['--capture-jobs'])
