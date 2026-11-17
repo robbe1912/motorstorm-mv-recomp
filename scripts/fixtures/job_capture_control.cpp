@@ -103,9 +103,20 @@ int main(int argc, char** argv) {
         context.policy_mode = 1;
         context.pc = 0x6000;
         context.ls[0x1430] = 0x7a;
+        const auto put_word = [&](unsigned address, uint32_t value) {
+            for (unsigned i = 0; i < 4; ++i)
+                context.ls[address + i] = static_cast<uint8_t>(value >> (24 - 8 * i));
+        };
+        put_word(0x1330, 0x4000);
+        put_word(0x4010, 0x2000);
+        put_word(0x4014, 0x2100);
+        put_word(0x4020, 0xc0dec0de);
+        put_word(0x4028, 0x4000);
         auto policy_event = exec;
         policy_event.context = reinterpret_cast<uintptr_t>(&context);
         policy_event.policy_mode = 1;
+        policy_event.kind = PS3_SPU_INTERPRETED_CONTROL;
+        policy_event.flags = PS3_SPU_SOURCE_INSTRUCTION;
         policy_event.source_pc = 0x3094;
         policy_event.target_pc = 0x6000;
         execution->observe(execution->user, &policy_event);

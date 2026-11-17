@@ -229,6 +229,11 @@ if os.name == 'nt' and msvc:
         assert len(policies) == 1 and policies[0]['records'].startswith('7a')
         assert policies[0]['source_pc'] == 0x3094 and policies[0]['context_pc'] == 0x6000
         assert len(policies[0]['dispatcher']) == 336 and policies[0]['flags'] == 1
+        assert policies[0]['module_flags'] == 1
+        assert policies[0]['module_base'] == 0x4000 and policies[0]['module_span'] == 0x20e0
+        assert policies[0]['module_fingerprint'] == 3550971070091144298
+        assert policies[0]['module_entry_size'] == 64 and policies[0]['module_entry'] == '00' * 64
+        assert len(policies[0]['module_header']) == 96
         assert rows[-1]['policy'] == 1 and rows[-1]['policy_clock_invalid'] == 0
     if args.mutants:
         control_path = root/'src/motorstorm/job_capture_control.cpp'

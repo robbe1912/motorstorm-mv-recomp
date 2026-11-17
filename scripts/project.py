@@ -163,6 +163,7 @@ def main():
         identity['job_capture_execution_filter']=args.capture_jobs
         identity['job_capture_queue_history']=args.capture_jobs
         identity['job_capture_policy_state'] = args.capture_jobs
+        identity['job_capture_module_identity'] = args.capture_jobs
         identity['depth_observer']=args.depth_observer
         identity['native_depth_query']=args.depth_observer
         identity['renderer_optimization']=json.loads((binary/'renderer-optimization.json').read_text())

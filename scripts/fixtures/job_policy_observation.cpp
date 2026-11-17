@@ -46,6 +46,61 @@ int main() {
     assert(context.pc == 0x6000 && context.ls == context.ls_store);
     for (unsigned i = 0; i < SPU_LS_SIZE; ++i)
         assert(context.ls[i] == static_cast<std::uint8_t>(i ^ (i >> 8)));
+    // Synthetic module identity is independently pinned from authored bytes.
+    const unsigned module_base = 0x4000, module_size = 0x900;
+    for (unsigned i = 0; i < module_size; ++i)
+        context.ls[module_base + i] = static_cast<std::uint8_t>(i * 17 + 5);
+    const auto put_word = [](unsigned address, std::uint32_t value) {
+        for (unsigned i = 0; i < 4; ++i)
+            context.ls[address + i] = static_cast<std::uint8_t>(value >> (24 - 8 * i));
+    };
+    put_word(0x1330, module_base);
+    put_word(module_base + 0x10, 0x50);
+    put_word(module_base + 0x14, module_size);
+    put_word(module_base + 0x20, 0xc0dec0de);
+    put_word(module_base + 0x28, module_base);
+    event.kind = PS3_SPU_INTERPRETED_CONTROL;
+    event.flags = PS3_SPU_SOURCE_INSTRUCTION;
+    event.target_pc = context.pc = module_base + 0x50;
+    assert(capture_job_policy_observation(event, result, tick, &now));
+    assert(result.module_flags == JOB_POLICY_MODULE_VALID);
+    assert(result.module_base == module_base && result.module_span == module_size - 32);
+    assert(result.module_fingerprint == UINT64_C(0x9c9aef998ee674b2));
+    assert(!std::memcmp(result.module_header, context.ls + module_base, 48));
+    assert(result.module_entry_size == 64);
+    assert(!std::memcmp(result.module_entry, context.ls + module_base + 0x50, 64));
+    context.ls[module_base + 0x700] ^= 1;
+    assert(capture_job_policy_observation(event, result, tick, &now));
+    assert(result.module_fingerprint != UINT64_C(0x9c9aef998ee674b2));
+    context.ls[module_base + 0x700] ^= 1;
+    put_word(module_base + 0x20, 0);
+    assert(capture_job_policy_observation(event, result, tick, &now));
+    assert(result.module_flags == JOB_POLICY_MODULE_BAD_HEADER && !result.module_fingerprint);
+    put_word(module_base + 0x20, 0xc0dec0de);
+    put_word(module_base + 0x14, 0xffffffff);
+    assert(capture_job_policy_observation(event, result, tick, &now));
+    assert(result.module_flags == JOB_POLICY_MODULE_BAD_HEADER && !result.module_fingerprint);
+    put_word(module_base + 0x14, module_size);
+    event.target_pc += 4;
+    context.pc = event.target_pc;
+    assert(capture_job_policy_observation(event, result, tick, &now));
+    assert(result.module_flags == JOB_POLICY_MODULE_WRONG_ENTRY && !result.module_fingerprint);
+    put_word(module_base + 0x10, module_size - 36);
+    event.target_pc = context.pc = module_base + module_size - 36;
+    assert(capture_job_policy_observation(event, result, tick, &now));
+    assert(result.module_flags == JOB_POLICY_MODULE_VALID && result.module_entry_size == 4);
+    assert(!std::memcmp(result.module_entry, context.ls + module_base + module_size - 36, 4));
+    for (unsigned i = 4; i < sizeof(result.module_entry); ++i) assert(result.module_entry[i] == 0);
+    put_word(0x1330, module_base + 1);
+    assert(capture_job_policy_observation(event, result, tick, &now));
+    assert(result.module_flags == JOB_POLICY_MODULE_BAD_BASE && !result.module_fingerprint);
+    put_word(0x1330, 0xfffffff0);
+    assert(capture_job_policy_observation(event, result, tick, &now));
+    assert(result.module_flags == JOB_POLICY_MODULE_BAD_BASE && !result.module_fingerprint);
+    put_word(0x1330, module_base);
+    event.source_pc = 0x16358;
+    assert(capture_job_policy_observation(event, result, tick, &now));
+    assert(!result.module_flags && !result.module_fingerprint);
     event.policy_mode = 0;
     assert(!capture_job_policy_observation(event, result, tick, &now));
     event.policy_mode = 1;

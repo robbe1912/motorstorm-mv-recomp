@@ -9,6 +9,7 @@
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
+#include "../../vendor/ps3recomp/runtime/spu/spu_jobmod_identity.h"
 #include <cstdint>
 #include <cstring>
 
@@ -17,6 +18,13 @@ enum : std::uint32_t {
     JOB_POLICY_NULL_LS = 2,
     JOB_POLICY_EXTERNAL_LS = 4,
     JOB_POLICY_CLOCK_INVALID = 8
+};
+
+enum : std::uint32_t {
+    JOB_POLICY_MODULE_VALID = 1,
+    JOB_POLICY_MODULE_BAD_BASE = 2,
+    JOB_POLICY_MODULE_BAD_HEADER = 4,
+    JOB_POLICY_MODULE_WRONG_ENTRY = 8
 };
 
 // Sequential owned copies at an execution callback. Original code identity and
@@ -28,8 +36,48 @@ struct job_policy_observation {
     std::uint32_t preferred_registers[4]; // r0, r3, r4, r5
     std::uint8_t running[16], storing[16], lane[16], module[16];
     std::uint8_t records[96]; // Three 32-byte policy records at LS 0x1430.
+    std::uint32_t module_flags, module_base, module_span, module_entry_size;
+    std::uint64_t module_fingerprint;
+    std::uint8_t module_header[48], module_entry[64];
     std::uint8_t dispatcher[168]; // Original dispatcher extent 0x3008..0x30B0.
 };
+
+// Only the original interpreted dispatcher call requests a module fingerprint.
+// The bounded header span and fingerprint basis match the existing SDK registry.
+inline void capture_job_module_identity(const std::uint8_t* ls,
+        job_policy_observation& result) {
+    const auto& event = result.execution;
+    if (event.kind != PS3_SPU_INTERPRETED_CONTROL || event.source_pc != 0x3094 ||
+            (event.flags & (PS3_SPU_SOURCE_INSTRUCTION | PS3_SPU_SOURCE_UNAVAILABLE)) !=
+                PS3_SPU_SOURCE_INSTRUCTION)
+        return;
+    const auto base = stage_be32(result.module);
+    result.module_base = base;
+    if (!base || (base & 15u) || base > 0x3e000u - sizeof(result.module_header)) {
+        result.module_flags = JOB_POLICY_MODULE_BAD_BASE;
+        return;
+    }
+    std::memcpy(result.module_header, ls + base, sizeof(result.module_header));
+    const auto span = stage_header_span(result.module_header, base, sizeof(result.module_header));
+    if (!span) {
+        result.module_flags = JOB_POLICY_MODULE_BAD_HEADER;
+        return;
+    }
+    result.module_span = span;
+    const auto entry = stage_be32(result.module_header + 0x10);
+    if (entry >= span || event.target_pc != base + entry || result.context_pc != event.target_pc) {
+        result.module_flags = JOB_POLICY_MODULE_WRONG_ENTRY;
+        return;
+    }
+    result.module_entry_size = span - entry < sizeof(result.module_entry)
+        ? span - entry : sizeof(result.module_entry);
+    std::memcpy(result.module_entry, ls + base + entry, result.module_entry_size);
+    std::uint64_t fingerprint = UINT64_C(1469598103934665603);
+    for (std::uint32_t i = 0; i < span; ++i)
+        fingerprint = (fingerprint ^ ls[base + i]) * UINT64_C(1099511628211);
+    result.module_fingerprint = fingerprint;
+    result.module_flags = JOB_POLICY_MODULE_VALID;
+}
 
 inline bool capture_job_policy_observation(const ps3_spu_execution_event& event,
         job_policy_observation& result, std::uint64_t (*clock)(void*), void* user) {
@@ -55,6 +103,7 @@ inline bool capture_job_policy_observation(const ps3_spu_execution_event& event,
         std::memcpy(result.module, ls + 0x1330, sizeof(result.module));
         std::memcpy(result.records, ls + 0x1430, sizeof(result.records));
         std::memcpy(result.dispatcher, ls + 0x3008, sizeof(result.dispatcher));
+        capture_job_module_identity(ls, result);
     }
     result.after_tick = clock ? clock(user) : 0;
     if (!result.before_tick || result.after_tick < result.before_tick)

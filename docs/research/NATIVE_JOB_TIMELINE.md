@@ -721,3 +721,43 @@ Private evidence is
 logs/snapshot hashes, selected binary identity, publication/return candidates,
 scoped waits and the first run's explicit register-field defect retained in its
 separate evidence packet.
+
+### Marker commit candidates and module identity
+
+Further offline analysis of corrected run `20261117T184107.769729Z` connects all
+234 call/return candidates to distinct cleanup observations and successful
+128-byte conditional MFC commits at original PC `0x3330`. This includes all 68
+PVS publisher candidates. Each link requires the same context, host assignment,
+thread, initialized physical header, selected record and observed reset epoch.
+The store changes only the publishing lane's halfword. Its value equals the
+minimum remaining matching record index in the post-cleanup observation.
+Authored alterations of context, host assignment, header, commit PC, failed-store
+status and lane minimum reject the corresponding link. Commit and cleanup
+indices are unique across the 234 candidates.
+
+For the 68 PVS candidates, return-to-commit intervals range from 0.0257 to
+0.0923 ms, with median 0.0435 ms. Selected-call wall intervals range from 7.2879
+to 317.2717 ms. Publication-to-selection intervals range from 1.1095 to
+321.4296 ms. These diagnostic intervals include scheduling and capture cost.
+The observed commits narrow the remaining investigation to the selected
+workload and its admission/execution. Output payload equivalence, complete
+inline-reset coverage and exclusive CPU attribution remain open.
+
+Private `completion-analysis.json` and `policy-completion-candidates.json` are
+pinned beside the prior run analysis. Original cleanup bytes at LS
+`0x30B0..0x33A8` were independently read from the selected ELF. Its publication
+instruction is `0x3330`; ordinary claim commits at `0x2388` are excluded from
+these links.
+
+Schema 7 adds a bounded module fingerprint at the actual interpreted dispatcher
+call. It reuses the SDK's pure header-span validation and existing fingerprint
+basis, records the header and entry bytes, and retains clock bounds around the
+whole read. The original PVS image's declared staging span is 75,328 bytes and
+its expected registry fingerprint is `1D912920D52B9FE0`. The inspector checks
+base alignment/range, magic/link base, span and entry correspondence before
+reading that span. Sixteen compiled inspector controls cover the previous
+slot/register/backing/clock invariants plus omitted module capture, wrong base,
+entry bytes, fingerprint basis, truncation, trailer inclusion, invalid header, alignment and bounded short entries.
+Windows controller/decoder tests exercise an authored valid module through the
+actual capture path. The prior schema-6 decoder was preserved before rebuilding.
+A rebuilt native trace and module-hash overhead qualification remain pending.

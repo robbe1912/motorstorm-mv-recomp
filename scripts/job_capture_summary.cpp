@@ -30,6 +30,12 @@ static int count_record(void* p, uint64_t index, const job_capture_record* r) {
             (unsigned long long)state.after_tick, state.flags, state.context_pc,
             state.preferred_registers[0], state.preferred_registers[1],
             state.preferred_registers[2], state.preferred_registers[3]);
+        std::printf(",\"module_flags\":%u,\"module_base\":%u,\"module_span\":%u,\"module_fingerprint\":%llu",
+            state.module_flags, state.module_base, state.module_span,
+            (unsigned long long)state.module_fingerprint);
+        std::printf(",\"module_entry_size\":%u", state.module_entry_size);
+        print_bytes("module_header", state.module_header, sizeof(state.module_header));
+        print_bytes("module_entry", state.module_entry, sizeof(state.module_entry));
         print_bytes("running", state.running, sizeof(state.running));
         print_bytes("storing", state.storing, sizeof(state.storing));
         print_bytes("lane", state.lane, sizeof(state.lane));

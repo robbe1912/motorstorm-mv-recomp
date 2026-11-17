@@ -489,7 +489,7 @@ The earliest record can precede the requested interval. Retain and check buffer
 loss counters across both phases.
 
 Retain launch/final metadata, original logs, selected build identity, timing,
-snapshot and offline summary together. The snapshot uses native ABI/schema 6,
+snapshot and offline summary together. The snapshot uses native ABI/schema 7,
 raw context/entry-LR values, a partial reservation horizon and explicit coverage
 counts. Check clock validity, exclusions, pending records, loss, call-ID exhaustion
 and inline-path gaps before interpreting a queue generation. Measure observer
@@ -524,7 +524,16 @@ invalid clock bounds have explicit flags. Check original dispatcher identity and
 record/lane semantics offline before joining job ownership. Concurrent DMA and
 unobserved inline control paths still require lifetime/coverage qualification.
 
-Schema 6 includes larger policy records and increases bounded recorder memory.
-Retain the matching decoder with each capture. Existing schema-5 evidence uses
-its preserved decoder and decoded artifacts. Filter-inclusive policy-copy cost
-and a current title trace remain to be measured before performance conclusions.
+Schema 7 adds module identity at an interpreted dispatcher call from `0x3094`.
+The inspector validates private backing, aligned module base, the existing SDK
+header span and the exact declared entry before reading the bounded image.
+It records the 48-byte header, up to 64 entry bytes and the SDK registry's existing
+64-bit fingerprint over the declared image minus its 32-byte trailer. Module
+status distinguishes unavailable base, invalid header and wrong entry. Capture
+builds record `job_capture_module_identity`. The copy clock bounds include the
+fingerprint calculation, so this diagnostic cost accompanies each observation.
+
+Larger policy records increase bounded recorder memory. Retain the matching
+decoder with each capture. Existing schema-5 and schema-6 evidence uses preserved
+decoders and decoded artifacts. Current module-fingerprint title validation and
+its overhead measurement remain pending.

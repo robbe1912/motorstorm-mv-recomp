@@ -24,8 +24,8 @@ out = ROOT / 'build/self-tests/job-policy-observation'
 out.mkdir(parents=True, exist_ok=True)
 text = source.read_text(encoding='utf-8')
 # Header overrides keep the actual SDK context definition through an absolute include.
-text = text.replace('../../vendor/ps3recomp/runtime/spu/spu_context.h',
-                    (ROOT / 'vendor/ps3recomp/runtime/spu/spu_context.h').as_posix())
+text = text.replace('../../vendor/ps3recomp/',
+                    (ROOT / 'vendor/ps3recomp').as_posix() + '/')
 report = {'source_sha256': hashlib.sha256(source.read_bytes()).hexdigest(),
           'fixture_sha256': hashlib.sha256(fixture.read_bytes()).hexdigest(),
           'commands': [], 'mutants_rejected': []}
@@ -54,6 +54,15 @@ def run(variant, name):
 
 assert run(text, 'production').returncode == 0
 mutants = {
+    'unaligned-module': ('!base || (base & 15u)', '!base || false'),
+    'overreads-entry': ('span - entry < sizeof(result.module_entry)', 'false'),
+    'missing-module': ('capture_job_module_identity(ls, result);', '(void)context;'),
+    'wrong-module-entry': ('ls + base + entry, result.module_entry_size', 'ls + base + entry + 4, result.module_entry_size'),
+    'wrong-module-base': ('stage_be32(result.module);', 'stage_be32(result.lane);'),
+    'wrong-fingerprint-basis': ('1469598103934665603', '14695981039346656037'),
+    'truncated-module': ('i < span;', 'i < sizeof(result.module_header);'),
+    'hashes-trailer': ('i < span;', 'i < span + 32;'),
+    'unchecked-module-header': ('if (!span)', 'if (false && !span)'),
     'wrong-running-slot': ('ls + 0x12e0', 'ls + 0x1410'),
     'wrong-lane': ('ls + 0x1340', 'ls + 0x1330'),
     'wrong-record-base': ('ls + 0x1430', 'ls + 0x1450'),
@@ -70,4 +79,4 @@ for name, (old, new) in mutants.items():
     report['mutants_rejected'].append(name)
 report['passed'] = True
 (out/'result.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
-print('PASS owned policy observation and seven semantic controls')
+print('PASS owned policy/module identity and', len(mutants), 'semantic controls')
