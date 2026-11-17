@@ -18,6 +18,7 @@ int accept_execution(void* user, uint32_t, uintptr_t, uint32_t pc, uint32_t targ
     return static_cast<const job_capture_execution_filter*>(user)->accepts(pc, target);
 }
 job_capture_config select_execution(job_capture_config config, job_capture_execution_filter* filter) {
+    config.capture_policy_state = true;
     if (filter->count) {
         config.user = filter;
         config.accept_execution = accept_execution;
@@ -116,7 +117,7 @@ int job_capture_control_start() {
     CloseHandle(thread);
     /* Deliberately process-lifetime: guest exit can bypass main and producers
      * are not joined here. The OS reclaims owner and thread on process exit. */
-    fprintf(stderr, "[job-capture] armed run=%llu capacity=%u execution_pcs=%u queue_history=1\n",
+    fprintf(stderr, "[job-capture] armed run=%llu capacity=%u execution_pcs=%u queue_history=1 policy_state=1\n",
             (unsigned long long)run_id, config.capacity, filter.count);
     return 1;
 }

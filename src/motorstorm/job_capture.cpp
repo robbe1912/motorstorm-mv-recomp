@@ -88,6 +88,14 @@ static void execution_event(void* p, const ps3_spu_execution_event* e) {
     auto r = record_for(c, JOB_CAPTURE_EXECUTION);
     r.value.execution = *e;
     append(c, r);
+    if (c->config.capture_policy_state) {
+        job_policy_observation observation{};
+        if (capture_job_policy_observation(*e, observation, c->config.clock, c->config.user)) {
+            auto policy = record_for(c, JOB_CAPTURE_POLICY);
+            policy.value.policy = observation;
+            append(c, policy);
+        }
+    }
 }
 static void scheduler_event(void* p, const ps3_spurs_scheduler_event* e) {
     auto* c = static_cast<job_capture*>(p);

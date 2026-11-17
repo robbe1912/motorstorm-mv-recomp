@@ -146,5 +146,33 @@ int main() {
     assert(metadata.storage.attempted == 4 && metadata.excluded_queue_call == 4);
     assert(job_queue_observer_install(nullptr));
     job_capture_stop(c);
+
+
+    cfg.accept_execution = nullptr;
+    cfg.accept_scheduler = nullptr;
+    cfg.accept_queue_call = nullptr;
+    cfg.capacity = 8;
+    cfg.capture_policy_state = true;
+    context.policy_mode = 1;
+    context.ls = context.ls_store;
+    context.pc = 0x6000;
+    for (unsigned i = 0; i < SPU_LS_SIZE; ++i) context.ls[i] = static_cast<uint8_t>(i);
+    c = job_capture_start(&cfg); assert(c);
+    ps3_spu_execution_notify(PS3_SPU_INTERPRETED_CONTROL, &context, 0x3094, 0x6000, 0,
+                             PS3_SPU_SOURCE_INSTRUCTION, 0);
+    assert(job_capture_describe(c, &metadata));
+    assert(metadata.storage.attempted == 2 && "execution policy state missing");
+    assert(job_capture_read(c, 1, &r) == 1 && r.kind == JOB_CAPTURE_POLICY);
+    assert(r.value.policy.execution.context == reinterpret_cast<uintptr_t>(&context));
+    assert(r.value.policy.flags == JOB_POLICY_PRIVATE_LS);
+    assert(r.value.policy.before_tick > r.value.policy.execution.tick);
+    assert(r.value.policy.after_tick > r.value.policy.before_tick);
+    assert(!std::memcmp(r.value.policy.records, context.ls + 0x1430, 96));
+    job_capture_stop(c);
+    cfg.capture_policy_state = false;
+    c = job_capture_start(&cfg); assert(c);
+    ps3_spu_execution_notify(PS3_SPU_INTERPRETED_CONTROL, &context, 0x3094, 0x6000, 0, 0, 0);
+    assert(job_capture_describe(c, &metadata) && metadata.storage.attempted == 1);
+    job_capture_stop(c);
     return 0;
 }

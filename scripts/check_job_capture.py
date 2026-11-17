@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sys
 import subprocess
 import tempfile
 
@@ -52,6 +53,10 @@ def run(src, name, snapshot=snapshot_source):
 result = run(source, 'actual')
 assert result.returncode == 0, result.stdout + result.stderr
 print('PASS capture owner, concurrent records, rollback, loss and partial visits')
+policy_compiler = args.compiler if msvc else (shutil.which('c++') or args.compiler)
+result = command([sys.executable, str(root/'scripts/check_job_policy_observation.py'),
+                  '--compiler', policy_compiler], 'policy-observation')
+assert result.returncode == 0, result.stdout + result.stderr
 # Test-only seeding exercises counters near saturation without impractical loops.
 exclusion_fixture = root / 'scripts/fixtures/job_capture_exclusions.cpp'
 seed = r"""
@@ -214,6 +219,34 @@ if os.name == 'nt' and msvc:
            '/nologo', '/std:c++17', '/EHsc', '/O2', '/UNDEBUG', '/I'+str(include), '/Fe'+str(exe)]
     result = command(cmd, 'control-build')
     assert result.returncode == 0, result.stdout + result.stderr
+    with tempfile.TemporaryDirectory(prefix='job-policy-control-') as directory:
+        result = command([str(exe), directory, 'policy'], 'control-policy')
+        assert result.returncode == 0, result.stdout + result.stderr
+        result = command([str(summary), str(Path(directory)/'snapshot.bin'), '--events'], 'summary-policy')
+        assert result.returncode == 0, result.stdout + result.stderr
+        rows = [json.loads(line) for line in result.stdout.splitlines()]
+        policies = [row for row in rows if row['type'] == 'policy']
+        assert len(policies) == 1 and policies[0]['records'].startswith('7a')
+        assert policies[0]['source_pc'] == 0x3094 and policies[0]['context_pc'] == 0x6000
+        assert len(policies[0]['dispatcher']) == 336 and policies[0]['flags'] == 1
+        assert rows[-1]['policy'] == 1 and rows[-1]['policy_clock_invalid'] == 0
+    if args.mutants:
+        control_path = root/'src/motorstorm/job_capture_control.cpp'
+        changed_control = out/'no-policy-control.cpp'
+        text = control_path.read_text(encoding='utf-8')
+        assert text.count('config.capture_policy_state = true;') == 1
+        changed_control.write_text(text.replace('config.capture_policy_state = true;',
+                                               'config.capture_policy_state = false;'), encoding='utf-8')
+        changed_command = [str(changed_control) if part == str(control_path) else part for part in cmd]
+        changed_command.append('/I'+str(source.parent))
+        result = command(changed_command, 'no-policy-control-build')
+        assert result.returncode == 0, result.stdout + result.stderr
+        with tempfile.TemporaryDirectory(prefix='no-policy-control-') as directory:
+            result = command([str(exe), directory, 'policy'], 'no-policy-control-run')
+            assert result.returncode != 0, 'controller omitted policy capture'
+        result = command(cmd, 'control-policy-restored-build')
+        assert result.returncode == 0, result.stdout + result.stderr
+    print('PASS actual controller policy capture, native snapshot and decoder fields')
     queue_control = out / 'control-queue.exe'
     ppu_source = (root/'vendor/ps3recomp/runtime/ppu/ppu_loader.cpp').read_text()
     start = ppu_source.index('extern "C" int ppu_stdcx64(')

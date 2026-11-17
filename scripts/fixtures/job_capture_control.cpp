@@ -21,7 +21,7 @@ static void ignored_queue(void*, const job_queue_event&) noexcept {}
 #endif
 
 static int count_record(void* p, uint64_t, const job_capture_record* r) {
-    assert(r->kind >= JOB_CAPTURE_ATOMIC && r->kind <= JOB_CAPTURE_QUEUE_CALL);
+    assert(r->kind >= JOB_CAPTURE_ATOMIC && r->kind <= JOB_CAPTURE_POLICY);
     ++*static_cast<unsigned*>(p);
     return 1;
 }
@@ -35,6 +35,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     assert(_putenv_s("MS_JOB_CAPTURE_DIR", argv[1]) == 0);
+    const bool policy = !strcmp(argv[2], "policy");
     const bool filtered = !strcmp(argv[2], "filtered");
     assert(_putenv_s("MS_JOB_CAPTURE_EXECUTION_PCS", filtered ? "0x1c8,0x3180" : "") == 0);
     if (!strcmp(argv[2], "invalid-filter")) {
@@ -56,7 +57,7 @@ int main(int argc, char** argv) {
         assert(!job_capture_control_start() && !ppu && !spu);
         return 0;
     }
-    assert(!strcmp(argv[2], "run") || filtered);
+    assert(!strcmp(argv[2], "run") || filtered || policy);
     assert(job_capture_control_start());
     assert(ppu && spu && execution && scheduler);
 #ifdef PORT_QUEUE_CALL_OBSERVATION
@@ -96,6 +97,19 @@ int main(int argc, char** argv) {
     ppu->observe(ppu->user, &event);
     ps3_spu_execution_event exec{}; exec.tick = 77; exec.context = 123; exec.target_pc = 456;
     exec.kind = PS3_SPU_COMPILED_DISPATCH; execution->observe(execution->user, &exec);
+    if (policy) {
+        static spu_context context;
+        context.ls = context.ls_store;
+        context.policy_mode = 1;
+        context.pc = 0x6000;
+        context.ls[0x1430] = 0x7a;
+        auto policy_event = exec;
+        policy_event.context = reinterpret_cast<uintptr_t>(&context);
+        policy_event.policy_mode = 1;
+        policy_event.source_pc = 0x3094;
+        policy_event.target_pc = 0x6000;
+        execution->observe(execution->user, &policy_event);
+    }
     ps3_spurs_scheduler_event sched{}; sched.info.dispatch = 42; sched.info.workload_generation = 7;
     sched.tick_begin = 80; sched.tick_end = 81; sched.kind = PS3_SPURS_ADMITTED;
     scheduler->observe(scheduler->user, &sched);
@@ -110,7 +124,7 @@ int main(int argc, char** argv) {
         Sleep(10); f = fopen(path.c_str(), "rb");
         if (f) { count = 0; read = job_capture_read_snapshot(f, count_record, &count, &snapshot) != 0; fclose(f); }
     }
-    assert(read && count ==
+    assert(read && count == (policy ? 2u : 0u) +
 #ifdef PORT_QUEUE_CALL_OBSERVATION
         16
 #else

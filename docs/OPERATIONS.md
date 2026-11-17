@@ -489,7 +489,7 @@ The earliest record can precede the requested interval. Retain and check buffer
 loss counters across both phases.
 
 Retain launch/final metadata, original logs, selected build identity, timing,
-snapshot and offline summary together. The snapshot uses native ABI/schema 5,
+snapshot and offline summary together. The snapshot uses native ABI/schema 6,
 raw context/entry-LR values, a partial reservation horizon and explicit coverage
 counts. Check clock validity, exclusions, pending records, loss, call-ID exhaustion
 and inline-path gaps before interpreting a queue generation. Measure observer
@@ -511,3 +511,20 @@ the saturating exclusion counters. Unknown raw zero PCs may match selected zero;
 retain event validity flags when interpreting that match. Keep launch metadata
 with the snapshot because selected PCs describe intentional coverage exclusions.
 All existing loss, partial-window, ownership and completion qualifications apply.
+
+
+Policy-state capture copies the running/store slots, physical lane, module data,
+three raw policy records, preferred r0/r3/r4/r5 values and dispatcher bytes at each
+admitted policy execution event. Capture builds record `job_capture_policy_state`
+and startup reports `policy_state=1`. Select raw PC `0x3094` to observe the original
+job-call boundary alongside the output/cleanup/marker PCs. The supplemental
+`policy` record retains its execution event and clock bounds around sequential
+copies. Only private `ls_store` backing is copied. Null/external backing and
+invalid clock bounds have explicit flags. Check original dispatcher identity and
+record/lane semantics offline before joining job ownership. Concurrent DMA and
+unobserved inline control paths still require lifetime/coverage qualification.
+
+Schema 6 includes larger policy records and increases bounded recorder memory.
+Retain the matching decoder with each capture. Existing schema-5 evidence uses
+its preserved decoder and decoded artifacts. Filter-inclusive policy-copy cost
+and a current title trace remain to be measured before performance conclusions.

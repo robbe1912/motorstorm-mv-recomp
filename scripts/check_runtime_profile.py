@@ -420,6 +420,7 @@ class ExecutionProfileTests(unittest.TestCase):
         self.assertFalse(record['job_capture'])
         self.assertFalse(record['job_capture_execution_filter'])
         self.assertFalse(record['job_capture_queue_history'])
+        self.assertFalse(record['job_capture_policy_state'])
         self.assertIn('-DPORT_ENABLE_JOB_CAPTURE=OFF', commands[0])
         self.assertIn('-DPORT_QUEUE_CALL_OBSERVATION=OFF', commands[0])
 
@@ -452,6 +453,7 @@ class ExecutionProfileTests(unittest.TestCase):
         self.assertTrue(record['queue_call_observation'])
         self.assertTrue(record['job_capture_execution_filter'])
         self.assertTrue(record['job_capture_queue_history'])
+        self.assertTrue(record['job_capture_policy_state'])
 
     def test_build_wrapper_records_selected_unsupported_source(self):
         other = self.root / 'selected toolkit'

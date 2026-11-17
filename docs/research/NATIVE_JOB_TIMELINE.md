@@ -651,3 +651,23 @@ Private evidence is
 `temp/job-timeline-evidence/20261117T171503.565578Z/analysis.json`, with original
 logs/snapshot hashes, build identity, launch claim, initialization/reset/publication
 candidates, scoped wait analysis and inspected-image hash.
+
+
+## Selected policy observation
+
+The original policy dispatcher writes its running slot at `0x303c` and calls the
+job through `bisl r0,r5` at `0x3094`, with continuation `0x3098`. Its verified
+168-byte dispatcher extent is LS `0x3008..0x30b0`. Supplemental schema-6 policy
+records preserve that extent, the three raw records at `0x1430`, running/store
+state, physical lane/module fields and preferred scalar register values.
+Inspection runs synchronously in the execution callback and changes no guest
+state. Private backing and copy clock bounds are explicit. These are sequential
+observations requiring code, slot, generation and DMA/lifetime checks offline.
+
+Authored tests reject wrong running/record/lane addresses, wrong preferred
+register lane, admitted external backing, hidden clock failure and LS mutation.
+Actual owner integration retains the ordinary execution record, checks optional
+supplemental admission, and the Windows controller/decoder exercises the real
+native snapshot and raw byte fields. A controller opt-in omission must fail.
+Current selected-job entry/exit, complete producer attribution and title-overhead
+qualification remain pending a rebuilt capture and evidence join.
