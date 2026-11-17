@@ -450,8 +450,8 @@ maximum length, strict numeric parsing and unchanged state after invalid input.
 Seven compiled filter mutants must fail. Actual Windows controller tests reject
 invalid configuration, preserve a frozen filter after environment changes, and
 expose rejected execution counts. Existing owner, queue, snapshot, binding,
-launcher and SIMD controls continue to run. A current filtered title trace and
-title-overhead qualification remain pending.
+launcher and SIMD controls continue to run. The filtered title checkpoint below
+records current source volume. Title-overhead qualification remains pending.
 
 The filter-inclusive authored fixture links the actual selector/window,
 recorder, queue wrappers and SDK notification/storage code with checked general
@@ -480,3 +480,48 @@ behind a snapshot. The existing own-fork barrier fixes that case. Fourteen
 prompt mutants, concurrent requests, capture/queue/binding/launcher controls
 and serialized/overlapped WARP snapshot controls pass. The GPU fixture extracts
 the actual drain selector and rejects an ignored-selection mutant.
+
+
+### Filtered native-menu title checkpoint
+
+The owned muted run `20261117T045348.949063Z` used launcher source
+`5d8bf2a8228aa4536627375e9a1083d931d29cb5` and the preserved capture executable
+`20dd52eaee7c66cdf0540f34d43b379f3ac51b9d419a222c1657b068fb0342bd`
+from verified menu source `6c42e97eac5b8dc4c0b418ba35b8307410614f3b`.
+All 34 recorded handwritten source hashes matched. Native startup reached PLAY
+without opening-sequence inputs, followed by six acknowledged normal race-menu
+inputs. The target/capture guard closed after 279.719 seconds. The inspected
+race frame shows 00:03.00, LAP 0/2, POS 9/15 and AI vehicles ahead. Graphics
+acceptance remains open.
+
+Selected execution PCs were `0x30B0`, `0x317C`, `0x3180` and `0x3330`.
+The validated snapshot contains 1,838 records over 0.5599999 seconds of stored
+ticks, comprising 952 atomic, 250 execution, 402 scheduler and 234 queue-call
+records. Dropped records, pending slots, unexpected append failures and recorded
+clock/identity errors were zero. Startup and downstream exclusions remain
+combined in the counters, and execution paths outside the selected PCs remain
+outside this trace's coverage.
+
+All 117 AddJob calls have consistent enter/returned pairs. The existing strict
+analyzer finds 117 same-thread/context committed descriptor-store candidates.
+An exploratory join also matches their ordered 32-bit hint updates, preserving
+the low halfword and agreeing with the descriptor slot. Thirty-four calls have
+entry LR `0x87D9A4`. Independent original-ELF decoding verifies the publisher's
+call at `0x87D9A0` through thunk `0x87B814`, whose tail branch reaches
+`0xC5C6A0`. Their candidate header is `0x40044480`, with descriptor slots 15..49.
+
+The open window contains no ResetList or initialization calls. Queue-generation
+history and selected running-job identity therefore remain unqualified. An
+exploratory six-lane threshold scan produced zero ordered crossings for these
+34 candidates under its unqualified header/threshold assumptions. The observed
+marker-byte changes require lifetime and selected-job mapping before completion
+or critical-path interpretation. Title overhead, producer attribution, minimum
+30 FPS and interpreter removal remain open.
+
+Private validated summary/events, candidate joins, original callsite receipt,
+launch/build identities, screenshot and artifact hashes are pinned under
+`temp/job-timeline-evidence/20261117T045348.949063Z/analysis.json` and the
+associated run's `job-capture/` directory. Required post-native inventory was
+attempted through the delegated worker, then completed read-only by the primary
+agent after the worker hit its usage limit. Four worktrees, source changes,
+shared inputs and protected evidence were retained.
