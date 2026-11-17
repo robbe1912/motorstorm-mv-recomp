@@ -15,7 +15,7 @@ def main():
     (out / "ppu_recomp.h").write_text(
         "#pragma once\n#include <cstdint>\n"
         "struct ppu_context { std::uint64_t gpr[32]{}, lr{}; };\n"
-        "extern void (*g_trampoline_fn)(ppu_context*);\n",
+        "",
         encoding="utf-8",
     )
     env = os.environ.copy()

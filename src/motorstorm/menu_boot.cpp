@@ -7,6 +7,8 @@
 #include <cstring>
 #include <stdexcept>
 
+extern "C" thread_local void (*g_trampoline_fn)(void*);
+
 void game_original_start_video(ppu_context*);
 void game_original_language_event(ppu_context*);
 void func_0050C5A0(ppu_context*); // StopVideo.

@@ -7,7 +7,9 @@
 
 void motorstorm_boot_start_video(ppu_context *);
 void motorstorm_boot_language_event(ppu_context *);
-void (*g_trampoline_fn)(ppu_context *) = nullptr;
+extern "C" {
+thread_local void (*g_trampoline_fn)(void *) = nullptr;
+}
 
 static unsigned starts, closes, accepts, events;
 static bool playing;
@@ -25,7 +27,7 @@ void game_original_start_video(ppu_context *) {
     playing = true;
 }
 void game_original_language_event(ppu_context *) { ++events; }
-static void finish_close(ppu_context *) { playing = false; }
+static void finish_close(void *) { playing = false; }
 void func_0050C5A0(ppu_context *context) {
     ++closes;
     if (deferred)
@@ -33,7 +35,10 @@ void func_0050C5A0(ppu_context *context) {
     else
         finish_close(context);
 }
-static void finish_accept(ppu_context *context) { context->gpr[3] = 4; }
+static void finish_accept(void *raw) {
+    auto *context = static_cast<ppu_context *>(raw);
+    context->gpr[3] = 4;
+}
 void func_005340A8(ppu_context *context) {
     ++accepts;
     check(context->gpr[3] == 0x1234, "language object preserved");
