@@ -1,5 +1,81 @@
 # Vendor provenance and upstream
 
+## FACING and full polygon-offset identity (#320)
+
+The reusable port is own-fork modular commit
+`e6554ae0c44f7cf941989f0d8d357551fa1cb36e` in
+`robbe1912/ps3recomp`. It preserves the toolkit's distinct colour-input saturation
+and the curated decompiler's existing colour behavior. FACING input `0xE` uses
+`SV_IsFrontFace` with signed unit vectors; programs using other inputs retain
+byte-identical HLSL in the authored control. Winding remains part of the raster
+key with face culling disabled.
+
+Regression-first checks found that the proposal's packed polygon key erased a
+factor of `0.015625` and reduced units `65536` to `2047`. The correction carries
+both guest float bit patterns in a separate 64-bit key through draw capture,
+PSO lookup/storage, prefetch and merge equality. Rasterizer slope keeps its float
+bits. D24 integer bias uses nearest-integer conversion with halves away from
+zero and the signed 32-bit API limits; NaN units map to zero. Disabled fill
+has zero effective key. The recorded raw key keeps distinct guest values even
+when integer API conversion yields the same bias.
+
+Authored tests exercise twelve range/precision cases, exact key bits and cache
+separation, five compiled mutants and six wiring omission controls. Windows
+WARP executes four front/back checks under both windings and rejects zero
+FACING. Portable production-decompiler, plain-HLSL and UBSan descriptor/key
+controls pass on Linux. The checked Windows SDK suite passes 45 native tests;
+its capacity and shader-owner models include the new state member. Full SDK
+CI also exercises the two new test entry points. Original author native bridge
+observations remain original-revision evidence. Corrected native-title visual
+parity, performance, minimum 30 FPS and interpreter removal remain unverified.
+
+## Early submission for pending CPU reads (#321)
+
+The reusable correction is own-fork modular commit
+`1e31a4b299b56a56adbd92aabdae914275ac3414` on
+`codex/cpu-surface-early-submit`. It submits a recorded batch through the
+existing nonpresenting capacity path when a queued regular read overlaps a
+pending colour write. The draw-boundary and idle-pump hooks retain the existing
+readback, fence and completion path.
+
+Regression-first probes rejected recording-state access before renderer-owner
+validation and GPU-state access before that validation. The correction checks
+the atomic queue hint and renderer owner before recording state, then evaluates
+the flush decision before initialized/draw-count fields. The overlap selector
+uses the existing immutable environment cache.
+
+The curated capacity path remains serialized by default. `RSX_DRAIN_OVERLAP=1`
+retains pre-drain retirement and permits recording into the other upload parity
+while the submitted batch executes. Subsequent retirement still checks actual
+fence completion and device state. The toolkit already used overlapped capacity
+drains, so its port preserves that policy. Its snapshot-enabled transport keeps
+the snapshot and queued suffix behind their owned FIFO boundary in both early
+service and flush selection. The shared checker conditionally exercises that
+transport with fourteen mutants. The base byte-read port had twelve controls;
+the native-deformation/PVS integration exercises all fourteen. Its regression
+rejected a queued suffix driving submission past a snapshot before the same
+barrier was applied to flush selection. The idle pump retains owned-boundary
+snapshot handling before ordinary flush/service. The authored WARP snapshot
+fixture includes the actual drain selector and environment-cache helper,
+exercises serialized/overlapped modes, and rejects fourteen mutants.
+
+Actual extracted producer/consumer controls cover overlap, adjacency, queue
+tail/order, replay, foreign callers and empty batches. Four clients complete
+256 real threaded requests. Retirement controls cover both frame indices,
+serialized/overlapped modes and error paths. Full checked backend compilation,
+Windows checked SDK tests, authored WARP snapshot tests and portable Linux
+controls passed. Hosted SDK validation passed on Windows, Linux and macOS.
+All seven modular workflows and all nine subsequent combined workflows passed
+on the exact source, which is published on the existing own-fork `combined`
+branch at `1e31a4b299b56a56adbd92aabdae914275ac3414`.
+
+`run.py --cpu-surface-flush default|0|1` and
+`--drain-overlap default|0|1` admit and record the switches after inherited
+RSX diagnostics are cleared. Five actual-launcher tests cover defaults,
+both explicit values and independent mixed settings. Author measurements remain
+original-revision evidence. Corrected native visuals, matched performance,
+minimum 30 FPS and interpreter removal remain unverified.
+
 ## Prompt CPU surface reads (#319)
 
 The reusable service was validated first on the existing

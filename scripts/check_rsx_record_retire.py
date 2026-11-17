@@ -37,20 +37,35 @@ def main():
         unit.write_text((FIX/'rsx_record_retire.c.in').read_text().replace('@FUNCTIONS@', bodies))
         compile_c(unit, exe, VIDEO, out)
         for frame in ([],['frame1']):
-            for mode in range(11):
-                r=subprocess.run([str(exe),str(mode),*frame],capture_output=True,text=True,timeout=10)
-                if (mode==0 and (r.returncode!=0 or 'PASS:' not in r.stdout)) or (mode!=0 and (r.returncode==0 or 'GPU retirement failed' not in r.stderr)):
-                    raise RuntimeError(f'frame={frame} mode={mode}: {r.returncode} {r.stdout} {r.stderr}')
+            for overlap in ([],['overlap']):
+                for mode in range(11):
+                    r=subprocess.run([str(exe),str(mode),*frame,*overlap],capture_output=True,text=True,timeout=10)
+                    if (mode==0 and (r.returncode!=0 or 'PASS:' not in r.stdout)) or (mode!=0 and (r.returncode==0 or 'GPU retirement failed' not in r.stderr)):
+                        raise RuntimeError(f'frame={frame} overlap={overlap} mode={mode}: {r.returncode} {r.stdout} {r.stderr}')
+        def mutated(name, before, after):
+            mutant = bodies.replace(before, after, 1)
+            if mutant == bodies:
+                raise RuntimeError(name + ': mutation anchor not found')
+            unit.write_text((FIX/'rsx_record_retire.c.in').read_text().replace('@FUNCTIONS@', mutant))
+            compile_c(unit, exe, VIDEO, out)
         # Negative control: remove the post-drain retirement check. The same
         # failure oracle must reject the resulting silent continuation.
-        mutant = bodies.replace('    render_frame();\n    record_batch_retire();', '    render_frame();\n    /* omitted post-drain check */', 1)
-        if mutant == bodies:
-            raise RuntimeError('post-drain mutation anchor not found')
-        unit.write_text((FIX/'rsx_record_retire.c.in').read_text().replace('@FUNCTIONS@', mutant))
-        compile_c(unit, exe, VIDEO, out)
+        mutated('post-drain', '    render_frame();\n    if (!drain_overlap()) record_batch_retire();', '    render_frame();\n    /* omitted post-drain check */')
         for frame in ([], ['frame1']):
             r=subprocess.run([str(exe),'5',*frame],capture_output=True,text=True,timeout=10)
             if 'GPU retirement failed' in r.stderr:
                 raise RuntimeError('post-drain omission was not exposed')
-        print('PASS: actual retirement rejects incomplete/device-error fences before and after drain on both frames; omission control exposed')
+        # Overlapped drains keep the pre-drain retirement: without it the next
+        # replay would start while the previous batch may still run.
+        mutated('pre-drain', '    record_batch_retire();\n    int saved', '    int saved')
+        for args in (['0'], ['0', 'overlap']):
+            r=subprocess.run([str(exe),*args],capture_output=True,text=True,timeout=10)
+            if r.returncode == 0:
+                raise RuntimeError('pre-drain omission was not exposed: ' + ' '.join(args))
+        # RSX_DRAIN_OVERLAP must actually drop the post-drain wait.
+        mutated('overlap-ignored', 'if (!drain_overlap()) record_batch_retire();', 'record_batch_retire();')
+        r=subprocess.run([str(exe),'0','overlap'],capture_output=True,text=True,timeout=10)
+        if r.returncode == 0:
+            raise RuntimeError('ignored overlap switch was not exposed')
+        print('PASS: actual retirement rejects incomplete/device-error fences before and after drain on both frames, serialized and overlapped; post-drain, pre-drain and ignored-switch controls exposed')
 if __name__=='__main__': main()

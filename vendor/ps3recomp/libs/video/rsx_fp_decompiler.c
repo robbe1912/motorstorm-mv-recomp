@@ -369,9 +369,15 @@ static const char* input_expr(u32 input_src)
     case 0x1: return "input.col0";     /* COL0 */
     case 0x2: return "input.col1";     /* COL1 */
     case 0x3: return "input.fog";      /* FOGC */
+    /* FACING: +1 on front faces, -1 on back faces (all four lanes). Programs
+     * flip the normal of double-sided surfaces with FACING/|FACING|; a zero
+     * here made that 0/0 = NaN and wiped their lighting. The PSO's
+     * FrontCounterClockwise follows the guest FRONT_FACE, so D3D's front face
+     * is the guest's. */
+    case 0xE: return "(input.rsx_front ? float4(1,1,1,1) : float4(-1,-1,-1,-1))";
     default:
         if (input_src >= 0x4 && input_src <= 0xB) return tc[input_src - 0x4]; /* TC0..7 */
-        return "float4(0,0,0,0)";      /* TC8/TC9/FACING not plumbed */
+        return "float4(0,0,0,0)";      /* TC8/TC9 not plumbed */
     }
 }
 
@@ -1012,8 +1018,11 @@ static int rsx_fp_decompile_internal(
         "    float4 position : SV_POSITION; float4 col0 : COLOR0; float4 col1 : COLOR1;\n"
         "    float4 fog : FOG;\n"
         "    float4 tc0:TEXCOORD0; float4 tc1:TEXCOORD1; float4 tc2:TEXCOORD2; float4 tc3:TEXCOORD3;\n"
-        "    float4 tc4:TEXCOORD4; float4 tc5:TEXCOORD5; float4 tc6:TEXCOORD6; float4 tc7:TEXCOORD7;\n"
-        "};\n");
+        "    float4 tc4:TEXCOORD4; float4 tc5:TEXCOORD5; float4 tc6:TEXCOORD6; float4 tc7:TEXCOORD7;\n");
+    /* System value last, and only when the body reads FACING, so programs
+     * that do not are byte-identical to before. */
+    if (strstr(out, "input.rsx_front")) out_puts(&p, "    bool rsx_front : SV_IsFrontFace;\n");
+    out_puts(&p, "};\n");
     /* Texture bank. With no cube units (the default) emit the exact legacy
      * array declaration so 2D-only programs are byte-identical. When any unit
      * is a cubemap, declare each unit individually at its t-register so the

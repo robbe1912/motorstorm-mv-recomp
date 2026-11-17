@@ -198,6 +198,30 @@ class ExecutionProfileTests(unittest.TestCase):
     def test_surface_prompt_enabled_selection_is_recorded(self):
         self.check_surface_prompt_selection('1')
 
+    def check_surface_batch_selection(self, flush, overlap):
+        keys = {'RSX_CPU_SURFACE_FLUSH': flush, 'RSX_DRAIN_OVERLAP': overlap}
+        with patch.dict(os.environ, {key: 'inherited' for key in keys}):
+            record, env = self.launch('--cpu-surface-flush', flush, '--drain-overlap', overlap)
+        for key, mode in keys.items():
+            expected = None if mode == 'default' else mode
+            self.assertEqual(env.get(key), expected)
+            self.assertEqual(record['environment'].get(key), expected)
+
+    def test_surface_batch_defaults_clear_inherited_selections(self):
+        self.check_surface_batch_selection('default', 'default')
+
+    def test_surface_batch_disabled_selections_are_recorded(self):
+        self.check_surface_batch_selection('0', '0')
+
+    def test_surface_batch_enabled_selections_are_recorded(self):
+        self.check_surface_batch_selection('1', '1')
+
+    def test_surface_flush_and_serialized_drain_are_independent(self):
+        self.check_surface_batch_selection('1', '0')
+
+    def test_surface_flush_disabled_and_overlap_are_independent(self):
+        self.check_surface_batch_selection('0', '1')
+
     def test_unsupported_baseline_rejects_before_pruning_or_launch(self):
         self.record['runtime_capabilities']['policy_interpreter'] = False
         self.save_record()

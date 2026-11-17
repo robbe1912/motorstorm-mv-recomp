@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <windows.h>
+#include "rsx_env_once.h"
 
 typedef uint32_t u32;
 typedef uint64_t u64;
@@ -375,6 +376,8 @@ static DWORD WINAPI release_gate(void *unused) {
   return FAILED(gate->lpVtbl->Signal(gate, 1));
 }
 int main(int argc, char **argv) {
+  const char *overlap = getenv("RSX_DRAIN_OVERLAP");
+  CHECK(drain_overlap() == (overlap && overlap[0] == '1' && !overlap[1]));
   _set_error_mode(_OUT_TO_STDERR);
   _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
   _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);

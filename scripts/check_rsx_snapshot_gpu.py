@@ -34,11 +34,11 @@ assert not any(
 ), "Native host is owned"
 source = RUNTIME / "libs/video/rsx_cpu_surface.inc"
 backend = RUNTIME / "libs/video/rsx_d3d12_backend.c"
-backend_source = backend.read_text()
+backend_source = backend.read_text(encoding="utf-8")
 submission_functions = []
-for name in ("wait_for_gpu_required", "record_batch_retire", "submit_record_capacity"):
+for name in ("wait_for_gpu_required", "record_batch_retire", "drain_overlap", "submit_record_capacity"):
     match = re.search(
-        r"^static void " + name + r"\([^\n]*\n\{.*?^\}", backend_source, re.M | re.S
+        r"^static (?:void|int) " + name + r"\([^\n]*\n\{.*?^\}", backend_source, re.M | re.S
     )
     if match:
         submission_functions.append(match.group())
@@ -63,26 +63,31 @@ report = dict(
             RUNTIME / "libs/video/rsx_surface_readback.h",
             RUNTIME / "libs/video/rsx_cpu_surface_profile.h",
             RUNTIME / "libs/video/rsx_fifo_boundary.h",
+            RUNTIME / "libs/video/rsx_env_once.h",
         ]
     },
     commands=[],
 )
 
 
-def run(command, profile=False):
-    env = dict(os.environ, RSX_CPU_SURFACE_PROFILE="1" if profile else "0")
+def run(command, profile=False, overlap="0"):
+    selected_environment = dict(
+        RSX_CPU_SURFACE_PROFILE="1" if profile else "0", RSX_DRAIN_OVERLAP=overlap
+    )
+    env = dict(os.environ, **selected_environment)
     result = subprocess.run(
         list(map(str, command)), env=env, capture_output=True, text=True, timeout=120
     )
     report["commands"].append(
         dict(
             command=list(map(str, command)),
+            environment=selected_environment,
             returncode=result.returncode,
             stdout=result.stdout,
             stderr=result.stderr,
         )
     )
-    (OUT / "result.json").write_text(json.dumps(report, indent=2))
+    (OUT / "result.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     return result
 
 
@@ -93,7 +98,7 @@ assert compiler, "Prepare the Visual Studio compiler environment"
 def build(name, body, record_submission=submission):
     compiled = OUT / (name + ".c")
     compiled.write_text(
-        fixture.read_text()
+        fixture.read_text(encoding="utf-8")
         .replace("// PRODUCTION_SURFACE", body)
         .replace("// PRODUCTION_SUBMIT_RECORDS", record_submission)
     )
@@ -129,7 +134,7 @@ def build(name, body, record_submission=submission):
     return exe
 
 
-body = source.read_text()
+body = source.read_text(encoding="utf-8")
 exe = build("production", body)
 adapter = "warp" if args.warp else "hardware"
 
@@ -168,13 +173,15 @@ def verify_trace(stderr):
         assert f"[CPUSNAPSHOT_RESULT] seq={sequence} status=0 " in stderr
 
 
-result = run([exe, adapter])
-assert result.returncode == 0, (result.stderr, OUT / "result.json")
-assert "zero validation messages" in result.stdout
-assert "[CPUSNAPSHOT_" not in result.stderr
-profiled = run([exe, adapter], profile=True)
-assert profiled.returncode == 0, (profiled.stderr, OUT / "result.json")
-verify_trace(profiled.stderr)
+for overlap in ("0", "1"):
+    result = run([exe, adapter], overlap=overlap)
+    assert result.returncode == 0, (result.stderr, OUT / "result.json")
+    assert "zero validation messages" in result.stdout
+    assert "[CPUSNAPSHOT_" not in result.stderr
+    profiled = run([exe, adapter], profile=True, overlap=overlap)
+    assert profiled.returncode == 0, (profiled.stderr, OUT / "result.json")
+    verify_trace(profiled.stderr)
+report["overlap_modes"] = ["0", "1"]
 for mode, error in [
     (1, "CPU snapshot before command submission"),
     (2, "0x887A0005"),
@@ -185,7 +192,7 @@ for mode, error in [
         mode,
         OUT / "result.json",
     )
-packing = (RUNTIME / "libs/video/rsx_surface_readback.h").read_text()
+packing = (RUNTIME / "libs/video/rsx_surface_readback.h").read_text(encoding="utf-8")
 wrong_packing = packing.replace("d[x]=s[x*4+2];", "d[x]=s[x*4];")
 assert wrong_packing != packing
 (OUT / "wrong-channel.h").write_text(wrong_packing)
@@ -277,10 +284,20 @@ assert result.returncode != 0 and "CHECK " in result.stderr, (
     "Presenting submission accepted",
     OUT / "result.json",
 )
-report["rejected_mutants"] = [*mutants, "presenting-submission"]
+ignored_overlap = submission.replace(
+    "return value && value[0] == '1' && !value[1];", "return 0;"
+)
+assert ignored_overlap != submission
+result = run(
+    [build("ignored-overlap-selection", body, ignored_overlap), adapter], overlap="1"
+)
+assert result.returncode != 0 and "CHECK " in result.stderr, (
+    "Overlap selection ignored", OUT / "result.json"
+)
+report["rejected_mutants"] = [*mutants, "presenting-submission", "ignored-overlap-selection"]
 report["passed"] = True
-(OUT / "result.json").write_text(json.dumps(report, indent=2))
+(OUT / "result.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
 print(
-    "PASS actual D3D12 snapshot producer, nonpresenting record submission, visible errors, bounded trace and thirteen source mutants;",
+    "PASS actual D3D12 snapshot producer, nonpresenting record submission, visible errors, bounded trace, serialized/overlapped drains and fourteen source mutants;",
     OUT,
 )

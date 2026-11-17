@@ -451,4 +451,32 @@ Seven compiled filter mutants must fail. Actual Windows controller tests reject
 invalid configuration, preserve a frozen filter after environment changes, and
 expose rejected execution counts. Existing owner, queue, snapshot, binding,
 launcher and SIMD controls continue to run. A current filtered title trace and
-filter-inclusive overhead qualification remain pending.
+title-overhead qualification remain pending.
+
+The filter-inclusive authored fixture links the actual selector/window,
+recorder, queue wrappers and SDK notification/storage code with checked general
+O1, assertions and the Debug CRT. Five interleaved repetitions cover one worker
+with 10,000 groups and eight workers with 9,600 total groups. Each group offers
+one execution, one atomic, two scheduler and two queue-call events. Selection
+covers the unfiltered path, a match in the last of 32 entries, and a 32-entry
+rejection. The open rejection case stores five events per group. All 180 trials
+validate counts, exclusions, deliberate saturated-buffer drops and unchanged
+authored outputs. QPC covers worker release through joins, with separate worker
+thread-cycle samples.
+
+The pre-pass host CPU sample was 46.6% across 12 logical processors. The
+eight-worker open wall medians/ranges were 3.5479 ms / 2.2678..4.1899 ms
+unfiltered, 2.5091 ms / 2.2589..2.7074 ms for the last-entry match, and
+1.9252 ms / 1.8326..1.9415 ms for rejection. Per-trial host load and shard
+collisions were unrecorded. These data retain their differing coverage and
+scheduling conditions; production timing and exclusive producer attribution
+remain open. Private provenance, commands, input/binary hashes and all trials
+are at `temp/capture-filter-overhead/result.json`, with grouped ranges in
+`summary.json`.
+
+The approved main-renderer integration retains snapshot FIFO ownership in the
+early-flush scan. A regression first rejected submission driven by a request
+behind a snapshot. The existing own-fork barrier fixes that case. Fourteen
+prompt mutants, concurrent requests, capture/queue/binding/launcher controls
+and serialized/overlapped WARP snapshot controls pass. The GPU fixture extracts
+the actual drain selector and rejects an ignored-selection mutant.

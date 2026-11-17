@@ -315,6 +315,10 @@ jobs:
         run: python scripts/check_rsx_pso_gpu.py --warp-only
       - name: Fragment source sign bits and invalid-DXBC control (WARP)
         run: python scripts/check_rsx_fp_source_sign.py --warp-only
+      - name: Fragment FACING input on both windings and zero-FACING control (WARP)
+        run: python scripts/check_rsx_fp_facing.py --warp-only
+      - name: Polygon offset decode, PSO key and depth bias
+        run: python scripts/check_rsx_polygon_offset.py
       - name: Independent MRT masks and blending (WARP)
         run: python scripts/check_rsx_mrt.py
       - name: Production depth attachment descriptors and fallback selection
