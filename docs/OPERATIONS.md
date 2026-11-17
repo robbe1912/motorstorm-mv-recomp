@@ -179,7 +179,15 @@ The launcher checks profile mode against selected build/runtime mode before laun
 Continue the subsequent menus through the existing observed-screen gates.
 Authored tests cover caller identity, one-time selection, callback completion,
 original mode, background forwarding and eight compiled negative controls.
-Current title verification remains pending for this new policy.
+Owned muted run `20261117T040309.228124Z` verified this policy at source
+`6c42e97eac5b8dc4c0b418ba35b8307410614f3b`, EXE
+`20dd52eaee7c66cdf0540f34d43b379f3ac51b9d419a222c1657b068fb0342bd`.
+It reached the inspected PLAY menu with zero required/optional replay inputs and
+no PAD_FILE press receipts. Both native startup markers and the `gui_d.m2v`
+background open were present. The owned target guard closed at 34.406 seconds.
+This verifies startup behavior. Race graphics, interpreter removal and minimum
+30 FPS remain open. Private receipt is
+`temp/menu-boot-evidence/20261117T040309.228124Z/analysis.json`.
 
 Reference runs selected with `--original-intro` use continuation profiles with
 screen-gated intro skips in `optional_actions`.
