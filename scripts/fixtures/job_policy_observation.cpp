@@ -15,7 +15,10 @@ int main() {
     for (unsigned i = 0; i < SPU_LS_SIZE; ++i)
         context.ls[i] = static_cast<std::uint8_t>(i ^ (i >> 8));
     const unsigned registers[] = {0, 3, 4, 5};
-    for (unsigned i = 0; i < 4; ++i) context.gpr[registers[i]]._u32[3] = 0x12340000 + i;
+    for (unsigned i = 0; i < 4; ++i) {
+        context.gpr[registers[i]] = spu_make_preferred_u32(0x12340000 + i);
+        context.gpr[registers[i]]._u32[3] = 0xdead0000 + i;
+    }
     ps3_spu_execution_event event{};
     event.context = reinterpret_cast<std::uintptr_t>(&context);
     event.policy_mode = 1;
@@ -37,7 +40,8 @@ int main() {
     assert(!std::memcmp(result.dispatcher, context.ls + 0x3008, 168));
     for (unsigned i = 0; i < 4; ++i) {
         assert(result.preferred_registers[i] == 0x12340000 + i);
-        assert(context.gpr[registers[i]]._u32[3] == 0x12340000 + i);
+        assert(spu_preferred_u32(&context.gpr[registers[i]]) == 0x12340000 + i);
+        assert(context.gpr[registers[i]]._u32[3] == 0xdead0000 + i);
     }
     assert(context.pc == 0x6000 && context.ls == context.ls_store);
     for (unsigned i = 0; i < SPU_LS_SIZE; ++i)

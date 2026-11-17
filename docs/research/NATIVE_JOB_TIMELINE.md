@@ -671,3 +671,13 @@ supplemental admission, and the Windows controller/decoder exercises the real
 native snapshot and raw byte fields. A controller opt-in omission must fail.
 Current selected-job entry/exit, complete producer attribution and title-overhead
 qualification remain pending a rebuilt capture and evidence join.
+
+
+The first schema-6 title run, source `3350c26`, stored SDK lane 3 in the four
+register fields. The runtime's preferred scalar is supplied by
+`spu_preferred_u32()` from lane 0. Register fields from that run are invalid for
+job interpretation. Its independently matching dispatcher bytes and raw LS
+copies remain retained with this qualification. The corrected inspector uses the
+SDK accessor. The authored fixture sets the preferred value through the runtime
+constructor and places distinct poison values in lane 3, rejecting the previous
+reader while also checking input preservation.

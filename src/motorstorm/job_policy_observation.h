@@ -48,7 +48,7 @@ inline bool capture_job_policy_observation(const ps3_spu_execution_event& event,
         result.context_pc = context->pc;
         const unsigned registers[] = {0, 3, 4, 5};
         for (unsigned i = 0; i < 4; ++i)
-            result.preferred_registers[i] = context->gpr[registers[i]]._u32[3];
+            result.preferred_registers[i] = spu_preferred_u32(&context->gpr[registers[i]]);
         std::memcpy(result.running, ls + 0x12e0, sizeof(result.running));
         std::memcpy(result.storing, ls + 0x12f0, sizeof(result.storing));
         std::memcpy(result.lane, ls + 0x1340, sizeof(result.lane));
