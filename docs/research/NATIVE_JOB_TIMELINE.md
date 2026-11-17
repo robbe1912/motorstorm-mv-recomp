@@ -613,3 +613,41 @@ Consumers must retain launch/armed/timing data and scope measurements with the
 opening QPC bounds. The complete record tick envelope includes startup history.
 Queue generations, selected-job ownership and real completion still require
 validated joins and coverage from a current executable.
+
+### Owned startup-history run
+
+Owned muted run `20261117T171503.565578Z` used source
+`f29a05c13036d435b43416b7a4b9bae508628ac8` and executable
+`8a94feb73cf5d35d3777f629068e358e0908a1e330287a3bfa771a644e3b9ee3`.
+Native-menu startup and six observed race-menu inputs reached the target. The
+owned target/capture guard closed after 276.203 seconds without a resource breach.
+The inspected image shows timer 00:27.94, LAP 0/2 and POS 10/15.
+
+The validated snapshot delivered 41,085 records with zero pending records,
+buffer drops or unexpected append failures. Reservation counts changed from
+41,085 to 41,195 during visitation, preserving its partial-live-view limit.
+It contains five paired initializations, 15,095 paired resets and 645 paired
+AddJob calls, with no partial or inconsistent call pairs. There are 30,114
+lifecycle records before the opening bounds. Measured work uses the confirmed
+opening QPC through the last recorded event, spanning 5.0736756 seconds.
+
+Startup initialization maps the PVS queue object `0x40044410` directly to
+physical header `0x40044480`. Its 3,432 observed resets retain caller
+`0x67396c`. Six observed publication epochs each contain 50 descriptor/store-hint
+candidates, including 34 PVS publications at caller `0x87d9a4` and 16 publications
+from other callers. Each candidate agrees with the initialized header and lies
+inside its observed lifecycle interval. These are observed wrapped-path epochs.
+Coverage of every possible inline reset and selected-job ownership remains open.
+
+Within the measured interval, main PVS caller `0x87d2d4` accumulated
+2,355.2572 ms of clipped completed-wait union, 46.42 percent of the interval.
+Its largest full completed wait was 453.4057 ms. Vehicle caller `0x8ac670`
+accumulated 500.2052 ms, with a largest full wait of 46.7854 ms. Completed-only
+profiling leaves unfinished-entry coverage open. Selected-job entry/exit,
+exclusive producer cost, matched performance, minimum 30 FPS and interpreter
+removal remain unqualified.
+
+Private evidence is
+`temp/job-timeline-evidence/20261117T171503.565578Z/analysis.json`, with original
+logs/snapshot hashes, build identity, launch claim, initialization/reset/publication
+candidates, scoped wait analysis and inspected-image hash.
