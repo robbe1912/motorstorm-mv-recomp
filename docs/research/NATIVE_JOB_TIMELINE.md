@@ -536,4 +536,31 @@ caller/object/owner/threshold/minimum and QPC bounds after genuine progress.
 Actual launcher controls cover default sanitization, current/legacy admission,
 unsupported/disabled selection and build capability recording. These spans can
 be joined to the recorder clock once current ownership and queue generation are
-qualified. Runtime evidence from this explicit launcher option remains pending.
+qualified. The owned native-menu run `20261117T115751.061159Z` used launcher source
+`50ba90c3f88601f875c3978eb79c54184be5a842` and the verified preserved
+`20dd52eaee7c66cdf0540f34d43b379f3ac51b9d419a222c1657b068fb0342bd`
+executable. Six normal race-menu inputs reached the target; the guard closed
+after 366.828 seconds. The inspected race image shows 00:19.28, LAP 0/2 and
+POS 10/15. The snapshot stores 16,395 records over 5.0584137 seconds, with zero
+recorder drops, pending slots or unexpected append failures.
+
+On main publication thread 26016, the clipped union of completed marker waits
+at PVS caller `0x87D2D4` is 2.2890822 seconds, or 45.25% of this envelope.
+The largest full completed PVS wait is 319.4676 ms. Vehicle caller `0x8AC670`
+accounts for 0.5870457 seconds, or 11.61%, with a largest full wait of
+33.6699 ms. The combined same-thread marker-wait union is 2.8761408 seconds.
+Read-only Ghidra and 70 independently checked original instructions identify
+`PVSPPUThread::Wait` at `0x87D278` and `SpuVehicleHandler::Wait` at `0x8AC610`.
+Both actual thunk chains reach `0xC5C424` and preserve original completion.
+
+The log contains 27,416 complete timing records and zero clock-error or
+reference/fallback records. Parsing starts after the native marker because an
+unrelated PM prefix can contain its own status field. Completed-only logging
+leaves unfinished entry coverage open. Queue generation, selected job and
+exclusive producer execution remain to be qualified. This single instrumented
+window identifies the largest measured main marker-wait site; it leaves title
+overhead, speedup and minimum 30 FPS unproven. PVS remains the first producer
+under issues 155/219/282, with the vehicle batch tracked in issue 327.
+
+Private launch/build/clock/decode/original verification and artifact hashes are
+pinned at `temp/job-timeline-evidence/20261117T115751.061159Z/analysis.json`.
