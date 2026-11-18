@@ -25,6 +25,7 @@ void spu_halt(spu_context*); /* Policy trampolines can precede its definition. *
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>
 /* ---------------------------------------------------------------------------
  * Slow-quantum guest-read ring (round-5 diagnostics; no behavior change).
  *
@@ -533,6 +534,24 @@ int spu_native_owned_observed(void) {
     }
     return observed;
 #endif
+}
+int spu_native_owned_image(void) {
+    static SPU_THREAD_LOCAL int image = -1;
+    if (image < 0) {
+        const char* value = getenv("SPU_NATIVE_OWNED_IMAGE");
+        if (!value) {
+            image = 0;
+        } else {
+            unsigned long id = strtoul(value, NULL, 10);
+            if (!id || id > INT_MAX ||
+                value[strspn(value, "0123456789")] != '\0') {
+                fprintf(stderr, "invalid SPU_NATIVE_OWNED_IMAGE: expected a positive decimal image ID\n");
+                abort();
+            }
+            image = (int)id;
+        }
+    }
+    return image;
 }
 void spu_native_owned_interpret(spu_context* ctx) {
     spu_pm_interp_trampoline(ctx);

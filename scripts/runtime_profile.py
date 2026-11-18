@@ -23,7 +23,10 @@ def _source_capabilities(source):
     # A commented-out historical switch does not provide the capability.
     tokens = re.compile(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', re.DOTALL)
     source = tokens.sub(lambda m: ' ' if m[0].startswith('/') else m[0], source)
-    return {'policy_interpreter': bool(re.search(r'\bgetenv\s*\(\s*"SPU_PM_INTERP"\s*\)', source))}
+    capabilities = {'policy_interpreter': bool(re.search(r'\bgetenv\s*\(\s*"SPU_PM_INTERP"\s*\)', source))}
+    if re.search(r'\bgetenv\s*\(\s*"SPU_NATIVE_OWNED_IMAGE"\s*\)', source):
+        capabilities['native_owned_image'] = True
+    return capabilities
 
 
 def runtime_identity(source_root):

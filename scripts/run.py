@@ -69,6 +69,7 @@ def main():
     ap.add_argument('--min-free-commit-gib',type=commit_reserve,default=12,help='Host free-commit reserve, 1..12 GiB (default 12); records budget and preserves other guards')
     ap.add_argument('--jobmod-dispatch-log',action='store_true',help='Diagnostic: log the first 16 and every 64th native job transfer a lift serves ([pm-jobmod] DISPATCH resolver=lift); slows SPU threads')
     ap.add_argument('--native-owned-jobs',action='store_true',help='Opt in to fingerprint-owned native jobs while retaining policy interpretation')
+    ap.add_argument('--native-owned-image', type=int, help='Restrict native-owned jobs to one resident SPU image ID')
     ap.add_argument('--jobmod-header-fnv',action='store_true',help='Also identify staged job images by their declared C0DEC0DE span, ignoring load padding')
     ap.add_argument('--pm-native-services',action='store_true',help='Run the job manager services native jobs call (registered in src/motorstorm/spu_pm_services.cpp) compiled while their LS text is pristine; requires --native-owned-jobs')
     ap.add_argument('--min-free-physical-gib',type=physical_reserve,default=4,help='Host free physical RAM reserve, 1..4 GiB (default 4); lower explicitly for concurrent host work')
@@ -88,6 +89,11 @@ def main():
     if args.capture_on_pad and not args.capture_burst_frames: raise SystemExit('Capture input event requires --capture-burst-frames')
     if args.capture_burst_frames and not (args.capture_menu or args.menu_replay): raise SystemExit('Capture burst requires --capture-menu or --menu-replay')
     if args.pm_native_services and not args.native_owned_jobs: raise SystemExit('Native policy services require --native-owned-jobs')
+    if args.native_owned_image is not None:
+        if not args.native_owned_jobs or not 1 <= args.native_owned_image <= 0x7fffffff:
+            raise SystemExit('--native-owned-image requires --native-owned-jobs and an image ID in 1..2147483647')
+        if args.pm_native_services or args.capture_jobs:
+            raise SystemExit('--native-owned-image requires policy services and job capture to be off')
     if args.menu_replay:
         from menu_replay import load_profile
         replay_profile=load_profile(args.menu_replay)  # Reject blind routes before process creation.
@@ -105,6 +111,10 @@ def main():
     elf_sha256=hashlib.sha256(c['elf'].read_bytes()).hexdigest()
     try: admitted=admit_execution_profile(args.execution_profile,exe,elf_sha256)
     except (OSError,ValueError) as error: raise SystemExit(str(error))
+    if args.native_owned_image is not None:
+        identity = admitted['build_identity']
+        if identity['runtime_capabilities'].get('native_owned_image') is not True or identity.get('job_capture'):
+            raise SystemExit('--native-owned-image requires a matching image-scope build with capture observers off')
     menu_boot = admitted['build_identity'].get('menu_boot') is True and not args.original_intro
     if args.menu_replay and replay_profile.get('startup', 'original') != ('menu' if menu_boot else 'original'):
         raise SystemExit('Replay startup differs from selected executable mode; select a menu-start profile or --original-intro')
@@ -158,6 +168,8 @@ def main():
         env.update(MS_NATIVE_JOB_WAIT='1', MS_NATIVE_JOB_WAIT_PROFILE='1')
     if args.jobmod_dispatch_log:env['SPU_JOBMOD_DISPATCH_LOG']='1'
     if args.native_owned_jobs:env['SPU_NATIVE_OWNED_JOBS']='1'
+    if args.native_owned_image is not None:
+        env['SPU_NATIVE_OWNED_IMAGE'] = str(args.native_owned_image)
     if args.jobmod_header_fnv:env['SPU_JOBMOD_HEADER_FNV']='1'
     if args.pm_native_services:env['SPU_PM_NATIVE_SVC']='1'
     env['PS3_KEYS_FILE']=str(c.get('keys',ROOT/'game/private_keys')/'keys.json')
@@ -213,7 +225,7 @@ def main():
     startup.wShowWindow=5  # SW_SHOW
     p=subprocess.Popen([str(exe),str(c['elf'])],cwd=ROOT,env=env,stdout=log,stderr=err,creationflags=subprocess.CREATE_NO_WINDOW,startupinfo=startup)
     proc=psutil.Process(p.pid); start=time.monotonic(); reason='guard tooling failure'; terminated=False
-    record={'pid':p.pid,'create_time':proc.create_time(),'exe':str(exe),'exe_sha256':hashlib.sha256(exe.read_bytes()).hexdigest(),'elf_sha256':hashlib.sha256(c['elf'].read_bytes()).hexdigest(),'output':str(out),'muted':True,'capture_menu':bool(args.capture_menu or args.menu_replay),'menu_replay':str(args.menu_replay.resolve()) if args.menu_replay else None,'capture_textures':args.capture_textures,'trace_video':args.trace_video,'capture_havok':args.capture_havok or args.capture_havok_only,'capture_bike':args.capture_bike,'loadtime_trace':args.loadtime_trace,'capture_profile':'broad' if args.capture_havok else 'havok-only' if args.capture_havok_only else 'none','environment':{k:v for k,v in env.items() if k in ('PS3_VFS_ROOT','PS3_HDD0_ROOT','PS3_SAVEDATA_ROOT','AUDIO_MUTE','PAD_FILE','CAP_HAVOK_DIR','CAP_BIKE_DIR','CAP_BIKE_ARM_FILE','LOADTIME_TRACE','LOADTIME_TRACE_FILE','SPU_PM_INTERP','SPU_NATIVE_OWNED_JOBS','SPU_JOBMOD_HEADER_FNV','SPU_JOBMOD_DISPATCH_LOG') or k.startswith(('SPU_PM_','TEX_','RSX_')) or k in ('VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG') or k=='SPU_WP'}}
+    record={'pid':p.pid,'create_time':proc.create_time(),'exe':str(exe),'exe_sha256':hashlib.sha256(exe.read_bytes()).hexdigest(),'elf_sha256':hashlib.sha256(c['elf'].read_bytes()).hexdigest(),'output':str(out),'muted':True,'capture_menu':bool(args.capture_menu or args.menu_replay),'menu_replay':str(args.menu_replay.resolve()) if args.menu_replay else None,'capture_textures':args.capture_textures,'trace_video':args.trace_video,'capture_havok':args.capture_havok or args.capture_havok_only,'capture_bike':args.capture_bike,'loadtime_trace':args.loadtime_trace,'capture_profile':'broad' if args.capture_havok else 'havok-only' if args.capture_havok_only else 'none','environment':{k:v for k,v in env.items() if k in ('PS3_VFS_ROOT','PS3_HDD0_ROOT','PS3_SAVEDATA_ROOT','AUDIO_MUTE','PAD_FILE','CAP_HAVOK_DIR','CAP_BIKE_DIR','CAP_BIKE_ARM_FILE','LOADTIME_TRACE','LOADTIME_TRACE_FILE','SPU_PM_INTERP','SPU_NATIVE_OWNED_JOBS','SPU_NATIVE_OWNED_IMAGE','SPU_JOBMOD_HEADER_FNV','SPU_JOBMOD_DISPATCH_LOG') or k.startswith(('SPU_PM_','TEX_','RSX_')) or k in ('VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG') or k=='SPU_WP'}}
     record['resource_limits']=resource_policy
     record['resource_breach']=None
     record['launcher_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()

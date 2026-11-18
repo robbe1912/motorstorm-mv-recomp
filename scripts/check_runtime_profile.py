@@ -204,7 +204,7 @@ class ExecutionProfileTests(unittest.TestCase):
         self.assertFalse((self.root / 'temp/runs').exists())
 
     def test_actual_curated_source_supports_baseline(self):
-        self.assertEqual(profile.runtime_capabilities(ROOT / 'vendor/ps3recomp'), {'policy_interpreter': True})
+        self.assertIs(profile.runtime_capabilities(ROOT / 'vendor/ps3recomp')['policy_interpreter'], True)
 
     def test_comments_do_not_advertise_support(self):
         self.write_source(self.source, '// getenv("SPU_PM_INTERP")\n/* getenv("SPU_PM_INTERP") */\n' + UNSUPPORTED)
@@ -292,6 +292,37 @@ class ExecutionProfileTests(unittest.TestCase):
 
     def test_pm_native_services_require_owned_jobs(self):
         self.rejected('Native policy services require --native-owned-jobs', '--pm-native-services')
+
+    def test_owned_image_requires_owned_jobs(self):
+        self.rejected('requires --native-owned-jobs', '--native-owned-image', '210')
+
+    def test_owned_image_rejects_unmatched_build(self):
+        self.rejected('requires a matching image-scope build', '--native-owned-jobs', '--native-owned-image', '210')
+
+    def test_owned_image_rejects_other_execution_modes(self):
+        for mode in ('--pm-native-services', '--capture-jobs'):
+            self.rejected('requires policy services and job capture to be off',
+                          '--native-owned-jobs', '--native-owned-image', '210', mode)
+
+    def test_owned_image_rejects_wrong_range(self):
+        for image in ('0', '2147483648'):
+            self.rejected('image ID in 1..2147483647', '--native-owned-jobs', '--native-owned-image', image)
+
+    def test_owned_image_selection_is_recorded(self):
+        self.write_source(self.source, CURATED + 'void image(void) { getenv("SPU_NATIVE_OWNED_IMAGE"); }\n')
+        self.record.update(profile.runtime_identity(self.source))
+        self.save_record()
+        with patch.dict(os.environ, {'SPU_NATIVE_OWNED_IMAGE': '25'}):
+            record, env = self.launch('--native-owned-jobs', '--native-owned-image', '210')
+        self.assertEqual(env['SPU_NATIVE_OWNED_IMAGE'], '210')
+        self.assertEqual(record['environment']['SPU_NATIVE_OWNED_IMAGE'], '210')
+
+    def test_owned_image_default_clears_inherited_selection(self):
+        with patch.dict(os.environ, {'SPU_NATIVE_OWNED_IMAGE': '210'}):
+            record, env = self.launch('--native-owned-jobs')
+        self.assertNotIn('SPU_NATIVE_OWNED_IMAGE', env)
+        self.assertNotIn('SPU_NATIVE_OWNED_IMAGE', record['environment'])
+
     def check_surface_batch_selection(self, flush, overlap):
         keys = {'RSX_CPU_SURFACE_FLUSH': flush, 'RSX_DRAIN_OVERLAP': overlap}
         with patch.dict(os.environ, {key: 'inherited' for key in keys}):

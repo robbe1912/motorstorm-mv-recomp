@@ -398,6 +398,15 @@ remain private; CI uploads authored-test logs/JSON only.
 
 For the default-off fingerprint-owned job experiment, pass `--native-owned-jobs` to [run.py](../scripts/run.py). The launcher clears inherited SPU flags, explicitly selects and records `SPU_NATIVE_OWNED_JOBS=1`, and retains required policy interpretation. Environment inheritance alone does not select this mode.
 
+Use `--native-owned-jobs --native-owned-image 210` to isolate compiled
+admission to the verified debug-US PVS image. The selected executable must
+record the image selector capability. Use a build without job capture, and
+keep native policy services off for this comparison. The launcher records
+`SPU_NATIVE_OWNED_IMAGE`. The runtime checks the first containing resident
+span and retains the original ownership, interrupt and observation guards.
+This selects compiled jobs for measurement. A typed batch has a separate
+input, output and completion contract.
+
 Pass `--jobmod-dispatch-log` to select and record `SPU_JOBMOD_DISPATCH_LOG=1` (default off; diagnostic). `spu_indirect_branch` then logs the first 16 and every 64th transfer per worker into a claimed job span that a lift serves, as `[pm-jobmod] DISPATCH ... resolver=lift`. Transfers the resolver misses (`resolver=MISS->interp`) always log. With lift hits logged, a MotorStorm race writes about 875,000 of these lines, and the SPU threads wait on stderr and the C runtime's stream lock. Any value other than unset, `0` or `1` aborts. [check_spu_native_owned.py](../scripts/check_spu_native_owned.py) covers the switch.
 
 Pass `--jobmod-header-fnv` as well to select and record `SPU_JOBMOD_HEADER_FNV=1` (default off). The staging matcher then also identifies a job image by the span its C0DEC0DE header declares (image minus the 0x20 trailer), once per burst. Without it, a job the policy module loads with tail padding never matches its registered identity and runs interpreted; the MP3 job objects (ids 217/218) are loaded this way. A header match logs `[pm-jobmod] header identity`. [check_spu_jobmod_identity.py](../scripts/check_spu_jobmod_identity.py) covers the matcher with authored images.

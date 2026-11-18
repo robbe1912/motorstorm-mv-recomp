@@ -1,5 +1,17 @@
 # Vendor provenance and upstream
 
+## Image-scoped native job admission (#219)
+
+The existing fork carries the selector on `codex/native-owned-image-scope`
+at `c5a23d5469dc326c5e1676b35e1389e469f6c5bd`. The runtime checks the
+first containing resident image at lifted entry and continuation. An explicit
+image selection retains interpretation for other images and for policy
+services. Authored runtime tests compare full execution state for nested
+calls and overlapping owners. The policy service fixture also checks that a
+resident job can enter compiled code while its service stays interpreted.
+The Windows MRT fixture also aligns each readback placement to the D3D12
+placement requirement while preserving its pixel and blend checks.
+
 ## Native policy-module services (#327)
 
 Own-fork branch `codex/pm-native-services` carries the reusable runtime and
