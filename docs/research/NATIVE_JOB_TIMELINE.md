@@ -865,6 +865,27 @@ The typed native deformation query was disabled, so its current handoff
 cost remains open under #326. Each timed run has instrumentation overhead
 and varying race state.
 
+### Scoped compiled PVS admission
+
+The checked build from `c6a1553` reached the race HUD through six
+acknowledged inputs in run `20261118T225659.963901Z` with
+`--native-owned-jobs --native-owned-image 210`. It recorded 226 sampled
+lift dispatches at image 210 entry `0x16270`. The shared gate restricts
+policy-mode admission. Dispatch logging also covers calls outside that gate.
+The final persisted cadence was 38 Present intervals in 19.94 seconds
+with dispatch logging and marker-wait profiling enabled.
+
+In that log bracket, the largest completed wait on the main thread was
+`SpuVertexBufferThread::Wait` at return PC `0x727258`. Its 79 rows totaled
+8.304 seconds on queue object `0x40044440` and physical header
+`0x40048500`. Vehicle waits totaled 3.087 seconds and PVS waits 1.371
+seconds. Separately, the schema-8 trace joined eight publications from
+`SpuJobHandler<SpuVertexBufferParams>::Process` at return PC `0x7276CC`
+on that header to selected entry `0xB850` and distinct real marker
+commits. The module inventory identifies image 212. Issue #331 tracks
+joining the producer to timed waits and recovering the typed vertex-buffer
+contract. Matched timing and full native execution remain open.
+
 Private evidence is in the run-stamped folders under
 `temp/job-timeline-evidence/`. The reports retain binary identities, matched
 slot cohorts, committed marker joins, route receipts and artifact hashes.
