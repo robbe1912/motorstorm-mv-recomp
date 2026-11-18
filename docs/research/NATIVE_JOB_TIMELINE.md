@@ -760,4 +760,21 @@ slot/register/backing/clock invariants plus omitted module capture, wrong base,
 entry bytes, fingerprint basis, truncation, trailer inclusion, invalid header, alignment and bounded short entries.
 Windows controller/decoder tests exercise an authored valid module through the
 actual capture path. The prior schema-6 decoder was preserved before rebuilding.
-A rebuilt native trace and module-hash overhead qualification remain pending.
+The rebuilt trace `20261118T095232.018909Z` used source `fe29d76` and executable
+SHA256 `6122247025f1f9d1cc53950dcc1ae0026354b4b918c3c64101ee67586efefd16`.
+It reached normal PLAY with six acknowledged inputs and recorded 32,139 events,
+699 policy observations and zero buffer drops. The 174 selected calls joined
+to published descriptors. All 68 PVS publications selected LS `0x16270` and
+matched the original header and entry bytes. Twelve matched the registered
+75,328-byte staged fingerprint. The other 56 had fingerprint
+`F68BA71E8915A693`. Both fingerprints occurred across the same five SPU
+contexts. Qualifying that variant requires locating the changed ranges and
+establishing whether they contain instructions or mutable state.
+
+Completed PVS waits covered 519.3137 ms in the 1.090671-second capture
+interval. The policy copy and hash had median clock bounds of 79.35 µs and
+73.35 µs for the two PVS groups, respectively. The 180 authored recorder
+trials separately exercised a 75,328-byte hash and validated the recorded
+fingerprints. Neither observation is a speedup comparison. The private
+`job-timeline-evidence/20261118T095232.018909Z/analysis.json` retains capture,
+build, cohort and measurement identities.
