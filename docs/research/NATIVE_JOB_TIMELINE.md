@@ -786,3 +786,51 @@ replacing the original slot's three zero words with `0x3F800000` reproduces
 that slot for the matching base, span and entry layout so the next live
 capture can test this explanation against the actual bytes. Retain the schema-7
 decoder for previous captures.
+
+### Live mutable slot and compiled admission
+
+Schema-8 run `20261118T103818.287257Z` reached normal PLAY and retained 40,186
+records with zero observed recorder drops. All 132 selected PVS calls had
+matching module headers and entry bytes. The original slot value occurred in
+20 calls and produced `1D912920D52B9FE0`. The slot containing four ones occurred
+in 112 calls and produced `F68BA71E8915A693`. Substituting each observed slot
+into the original declared span reconstructed every live fingerprint.
+These observations support mutable data as the explanation for both
+fingerprints. The hash alone cannot establish equivalence of other bytes.
+
+The same trace joins 462 selected call continuations to distinct successful
+marker commits, including 127 PVS candidates. Six of 128 complete in-window
+PVS waits join unique threshold crossings. The longest three all close on
+descriptor 15, with waits of 191.0895, 190.2563 and 184.492 ms. Their observed
+dispatcher intervals are 269.8232, 269.8825 and 257.6868 ms. The corresponding
+waits finish 0.6211, 0.1436 and 0.0806 ms after the matching commits. These wall
+intervals include scheduling and instrumentation. Each crossing also joins
+one observed SPURS admission, worker entry and worker return by dispatch,
+workload generation, worker thread, lane and physical queue. For the
+three longest waits, publication to selection takes 0.7146–2.1531 ms and
+the upper admission-to-worker bound is at most 0.0336 ms. Two later crossings
+are selected more than 270 ms into an already-running assignment. These
+intervals distinguish work inside a policy assignment from host assignment
+startup. They leave job eligibility and exclusive CPU time unqualified.
+
+The checked non-observer build from source `bd5a96fe` reached normal PLAY in
+run `20261118T104237.760350Z` with `--native-owned-jobs`, policy interpretation
+and marker-wait profiling enabled. Its sampled log records 436 lifted
+dispatches to PVS image 210 at LS `0x16270`. The final 19.88-second persisted
+window averaged 3.22 successful Presents per second. The repeated DMA guard
+also reported 187 halts in policy image 3 at LS `0x2328`. Original disassembly
+identifies that instruction as the command write for a 128-byte queue GET.
+The same binary and replay with native-owned jobs disabled reached normal
+PLAY in run `20261118T104905.516650Z`. Its final 19.80-second persisted
+window averaged 1.82 successful Presents per second. The longest completed
+PVS wait in the corresponding log bracket was 285.1942 ms with native-owned
+jobs disabled and 56.2619 ms with them enabled. The repeat guard tripped 191
+times in the reference run. These are two sequential diagnostic runs with
+mutable race state and whole-worker admission enabled in the native arm.
+Isolating the PVS effect requires controlling the other workloads and
+validating outputs. The guard's critical-path cost and a matched speedup
+remain unresolved.
+
+Private evidence is in the three run-stamped folders under
+`temp/job-timeline-evidence/`. The reports retain binary identities, matched
+slot cohorts, committed marker joins, route receipts and artifact hashes.
