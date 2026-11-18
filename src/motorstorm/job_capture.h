@@ -9,7 +9,7 @@
 
 /* Process-local, versioned data. The raw pointer fields are observations, not
  * lifetime-qualified guest identities. The owner defines the output format. */
-enum { JOB_CAPTURE_SCHEMA_VERSION = 7 };
+enum { JOB_CAPTURE_SCHEMA_VERSION = 8 };
 enum { JOB_CAPTURE_ATOMIC = 1, JOB_CAPTURE_EXECUTION, JOB_CAPTURE_SCHEDULER, JOB_CAPTURE_QUEUE_CALL, JOB_CAPTURE_POLICY };
 enum { JOB_CAPTURE_THREAD_UNKNOWN = 1, JOB_CAPTURE_HOST_ASSIGNMENT = 2 };
 enum { JOB_CAPTURE_FILTER_ATOMIC = 1, JOB_CAPTURE_FILTER_EXECUTION = 2,

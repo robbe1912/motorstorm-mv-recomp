@@ -39,6 +39,7 @@ struct job_policy_observation {
     std::uint32_t module_flags, module_base, module_span, module_entry_size;
     std::uint64_t module_fingerprint;
     std::uint8_t module_header[48], module_entry[64];
+    std::uint8_t pvs_mutable_slot[16]; // LS 0x16580 in the selected PVS layout.
     std::uint8_t dispatcher[168]; // Original dispatcher extent 0x3008..0x30B0.
 };
 
@@ -72,6 +73,8 @@ inline void capture_job_module_identity(const std::uint8_t* ls,
     result.module_entry_size = span - entry < sizeof(result.module_entry)
         ? span - entry : sizeof(result.module_entry);
     std::memcpy(result.module_entry, ls + base + entry, result.module_entry_size);
+    if (base == 0x4000 && span == 0x12640 && entry == 0x12270)
+        std::memcpy(result.pvs_mutable_slot, ls + 0x16580, sizeof(result.pvs_mutable_slot));
     std::uint64_t fingerprint = UINT64_C(1469598103934665603);
     for (std::uint32_t i = 0; i < span; ++i)
         fingerprint = (fingerprint ^ ls[base + i]) * UINT64_C(1099511628211);

@@ -489,7 +489,7 @@ The earliest record can precede the requested interval. Retain and check buffer
 loss counters across both phases.
 
 Retain launch/final metadata, original logs, selected build identity, timing,
-snapshot and offline summary together. The snapshot uses native ABI/schema 7,
+snapshot and offline summary together. The snapshot uses native ABI/schema 8,
 raw context/entry-LR values, a partial reservation horizon and explicit coverage
 counts. Check clock validity, exclusions, pending records, loss, call-ID exhaustion
 and inline-path gaps before interpreting a queue generation. Measure observer

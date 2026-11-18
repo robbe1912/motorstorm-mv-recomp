@@ -36,6 +36,7 @@ static int count_record(void* p, uint64_t index, const job_capture_record* r) {
         std::printf(",\"module_entry_size\":%u", state.module_entry_size);
         print_bytes("module_header", state.module_header, sizeof(state.module_header));
         print_bytes("module_entry", state.module_entry, sizeof(state.module_entry));
+        print_bytes("pvs_mutable_slot", state.pvs_mutable_slot, sizeof(state.pvs_mutable_slot));
         print_bytes("running", state.running, sizeof(state.running));
         print_bytes("storing", state.storing, sizeof(state.storing));
         print_bytes("lane", state.lane, sizeof(state.lane));

@@ -778,3 +778,11 @@ trials separately exercised a 75,328-byte hash and validated the recorded
 fingerprints. Neither observation is a speedup comparison. The private
 `job-timeline-evidence/20261118T095232.018909Z/analysis.json` retains capture,
 build, cohort and measurement identities.
+
+The selected original PVS body contains four stores to the 16-byte slot at
+LS `0x16580`, inside the declared fingerprint span. On the selected ELF,
+replacing the original slot's three zero words with `0x3F800000` reproduces
+`F68BA71E8915A693` while retaining every other input byte. Schema 8 copies
+that slot for the matching base, span and entry layout so the next live
+capture can test this explanation against the actual bytes. Retain the schema-7
+decoder for previous captures.

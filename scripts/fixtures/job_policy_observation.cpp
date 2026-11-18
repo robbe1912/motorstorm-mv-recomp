@@ -98,6 +98,18 @@ int main() {
     assert(capture_job_policy_observation(event, result, tick, &now));
     assert(result.module_flags == JOB_POLICY_MODULE_BAD_BASE && !result.module_fingerprint);
     put_word(0x1330, module_base);
+    put_word(module_base + 0x10, 0x12270);
+    put_word(module_base + 0x14, 0x12660);
+    for (unsigned i = 0; i < 4; ++i)
+        put_word(0x16580 + 4 * i, 0x3f800000 + i);
+    event.target_pc = context.pc = 0x16270;
+    assert(capture_job_policy_observation(event, result, tick, &now));
+    assert(result.module_flags == JOB_POLICY_MODULE_VALID);
+    assert(!std::memcmp(result.pvs_mutable_slot, context.ls + 0x16580, 16));
+    put_word(module_base + 0x14, 0x12670);
+    assert(capture_job_policy_observation(event, result, tick, &now));
+    assert(result.module_flags == JOB_POLICY_MODULE_VALID);
+    for (auto value : result.pvs_mutable_slot) assert(value == 0);
     event.source_pc = 0x16358;
     assert(capture_job_policy_observation(event, result, tick, &now));
     assert(!result.module_flags && !result.module_fingerprint);

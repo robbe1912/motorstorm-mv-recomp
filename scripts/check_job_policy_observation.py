@@ -54,6 +54,9 @@ def run(variant, name):
 
 assert run(text, 'production').returncode == 0
 mutants = {
+    'omits-pvs-slot': ('ls + 0x16580, sizeof(result.pvs_mutable_slot)',
+                       'ls + 0x16590, sizeof(result.pvs_mutable_slot)'),
+    'wrong-pvs-span': ('span == 0x12640', 'span >= 0x12640'),
     'unaligned-module': ('!base || (base & 15u)', '!base || false'),
     'overreads-entry': ('span - entry < sizeof(result.module_entry)', 'false'),
     'missing-module': ('capture_job_module_identity(ls, result);', '(void)context;'),
