@@ -221,6 +221,7 @@ motorstorm_bind_world_transforms()
 add_executable(${PROJECT_NAME}
     src/main.cpp
     src/stubs.cpp
+    src/motorstorm/spu_pm_services.cpp
     ${PS3RECOMP_SCAFFOLD}
     ${HLE_NID_TABLE}
     ${RECOMP_SOURCES}

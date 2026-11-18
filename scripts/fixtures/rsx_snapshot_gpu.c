@@ -45,6 +45,7 @@ typedef struct {
 } rsx_state;
 typedef struct {
   u32 cpu_address[4], cpu_pitch[4], rt_fmt, rt_h;
+  u32 rt_off, rt_mrt[3];
 } D3D12DrawRecord;
 static rsx_state state;
 static struct {

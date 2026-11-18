@@ -99,6 +99,18 @@ if entry['musttail_compiled']:run(binary,entry,'musttail')
 run(binary,entry,'observed',observed=True);run(binary,entry,'owned',flag='0',red=True);run(binary,entry,'owned',flag='invalid',red=True)
 for mode in ['owned','call-policy','live-explicit-stop','native-call-no-frame','native-call-wrong-return','nested-owned','nested-tail','irq','unknown','owner-miss','overlap','invalid-range','budget','global-budget','native-call-global-budget','stop-boundary']:run(binary,entry,mode,pm=True)
 run(binary,entry,'owned',flag='0',pm=True,red=True)
+# Lift-hit DISPATCH records are opt-in (SPU_JOBMOD_DISPATCH_LOG): unset and 0 are silent, 1 logs, anything else aborts.
+def dispatch_log(binary,entry,value,logged):
+    env={k:v for k,v in os.environ.items() if not k.startswith(('SPU_','SPURS_','YDKJ_','LBP_','GH3_'))}
+    env['SPU_NATIVE_OWNED_JOBS']='1';env['SPU_INTERP_UNLIFTED']='1'
+    if value is not None:env['SPU_JOBMOD_DISPATCH_LOG']=value
+    result=subprocess.run([str(binary),'owned'],cwd=binary.parent,env=env,capture_output=True,text=True,timeout=10)
+    entry['runs'].append({'mode':'owned','dispatch_log':value,'returncode':result.returncode,'stdout':result.stdout,'stderr':result.stderr})
+    (out/'result.json').write_text(json.dumps(report,indent=2))
+    if logged is None:assert result.returncode!=0 and 'SPU_JOBMOD_DISPATCH_LOG must be 0 or 1' in result.stderr,entry['runs'][-1]
+    else:assert result.returncode==0 and 'PASS' in result.stdout and ('resolver=lift' in result.stderr)==logged,entry['runs'][-1]
+    print('PASS '+entry['label']+' dispatch-log '+str(value),flush=True)
+for value,logged in ((None,False),('0',False),('1',True),('2',None)):dispatch_log(binary,entry,value,logged)
 binary,entry=build(sdk,'compiled-observers',observed=True)
 run(binary,entry,'observed')
 if args.historical_source_root:

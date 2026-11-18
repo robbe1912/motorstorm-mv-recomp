@@ -240,6 +240,58 @@ class ExecutionProfileTests(unittest.TestCase):
     def test_surface_prompt_enabled_selection_is_recorded(self):
         self.check_surface_prompt_selection('1')
 
+    def test_jobmod_dispatch_log_default_clears_inherited_selection(self):
+        with patch.dict(os.environ, {'SPU_JOBMOD_DISPATCH_LOG': '1'}):
+            record, env = self.launch()
+        self.assertNotIn('SPU_JOBMOD_DISPATCH_LOG', env)
+        self.assertNotIn('SPU_JOBMOD_DISPATCH_LOG', record['environment'])
+
+    def test_jobmod_dispatch_log_selection_is_recorded(self):
+        record, env = self.launch('--jobmod-dispatch-log')
+        self.assertEqual(env.get('SPU_JOBMOD_DISPATCH_LOG'), '1')
+        self.assertEqual(record['environment'].get('SPU_JOBMOD_DISPATCH_LOG'), '1')
+
+    def check_surface_prefetch(self, mode):
+        with patch.dict(os.environ, {'RSX_CPU_SURFACE_PREFETCH': 'inherited'}):
+            record, env = self.launch('--surface-prefetch', mode)
+        expected = '01A80500,00A80500,02A30480' if mode == '1' else None
+        self.assertEqual(env.get('RSX_CPU_SURFACE_PREFETCH'), expected)
+        self.assertEqual(record['environment'].get('RSX_CPU_SURFACE_PREFETCH'), expected)
+
+    def test_surface_prefetch_default_clears_inherited_list(self):
+        self.check_surface_prefetch('0')
+
+    def test_surface_prefetch_enabled_lists_race_surfaces(self):
+        self.check_surface_prefetch('1')
+
+    def check_eager_surface_submit(self, mode):
+        with patch.dict(os.environ, {'RSX_CPU_SURFACE_EAGER': 'inherited'}):
+            record, env = self.launch('--eager-surface-submit', mode)
+        expected = '02A30480' if mode == '1' else None
+        self.assertEqual(env.get('RSX_CPU_SURFACE_EAGER'), expected)
+        self.assertEqual(record['environment'].get('RSX_CPU_SURFACE_EAGER'), expected)
+
+    def test_eager_surface_submit_default_clears_inherited_list(self):
+        self.check_eager_surface_submit('0')
+
+    def test_eager_surface_submit_enabled_lists_exposure_target(self):
+        self.check_eager_surface_submit('1')
+
+    def test_pm_native_services_default_clears_inherited_selection(self):
+        with patch.dict(os.environ, {'SPU_PM_NATIVE_SVC': '1', 'SPU_PM_SVC_VERIFY': '1'}):
+            record, env = self.launch('--native-owned-jobs')
+        for key in ('SPU_PM_NATIVE_SVC', 'SPU_PM_SVC_VERIFY'):
+            self.assertNotIn(key, env)
+            self.assertNotIn(key, record['environment'])
+
+    def test_pm_native_services_selection_is_recorded(self):
+        record, env = self.launch('--native-owned-jobs', '--pm-native-services')
+        self.assertEqual(env.get('SPU_PM_NATIVE_SVC'), '1')
+        self.assertEqual(env.get('SPU_NATIVE_OWNED_JOBS'), '1')
+        self.assertEqual(record['environment'].get('SPU_PM_NATIVE_SVC'), '1')
+
+    def test_pm_native_services_require_owned_jobs(self):
+        self.rejected('Native policy services require --native-owned-jobs', '--pm-native-services')
     def check_surface_batch_selection(self, flush, overlap):
         keys = {'RSX_CPU_SURFACE_FLUSH': flush, 'RSX_DRAIN_OVERLAP': overlap}
         with patch.dict(os.environ, {key: 'inherited' for key in keys}):

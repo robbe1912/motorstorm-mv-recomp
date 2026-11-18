@@ -9,6 +9,7 @@
 #include "spu_native_owned.h"
 #include "spu_context.h"
 #include <setjmp.h>
+#include <stdatomic.h>
 
 /* See spu_context.h `irq_frame`. */
 typedef struct spu_irq_frame {
@@ -370,7 +371,7 @@ void (*spu_take_interrupt(spu_context* ctx,
 /* See the declaration in spu_context.h. */
 void spu_depth_guard(spu_context* ctx)
 {
-    static uint32_t s_max = 0;
+    static SPU_THREAD_LOCAL uint32_t s_max;
     if (!s_max) {
         const char* e = getenv("SPU_HOST_DEPTH_MAX");
         s_max = e ? (uint32_t)strtoul(e, 0, 0) : 2000u;
@@ -378,17 +379,18 @@ void spu_depth_guard(spu_context* ctx)
 
     /* Ring of recent drain sites. When the depth trips, the useful question is
      * not "where are we" but "what cycle got us here" -- one pc names a point,
-     * a ring names the loop. */
+     * a ring names the loop. One ring per thread: a ring shared by every SPU
+     * thread is written on every lifted call and bounces its cache line
+     * between them (#327), and the cycle that trips is this thread's own. */
     enum { RING = 24 };
-    static uint32_t s_ring[RING];
-    static uint32_t s_n;
+    static SPU_THREAD_LOCAL uint32_t s_ring[RING];
+    static SPU_THREAD_LOCAL uint32_t s_n;
     s_ring[s_n % RING] = ((uint32_t)ctx->pc & SPU_LS_MASK);
     s_n++;
 
     if (ctx->host_depth < s_max) return;
-    static int s_reported = 0;
-    if (s_reported < 1) {   /* one report: five SPU threads all trip together */
-        s_reported++;
+    static atomic_flag s_reported = ATOMIC_FLAG_INIT;
+    if (!atomic_flag_test_and_set_explicit(&s_reported, memory_order_relaxed)) {
         fprintf(stderr, "[spu-depth] img=%d pc=0x%05X lr=0x%05X host_depth=%u"
                         " -- lifted call recursion, halting the SPU\n",
                 ctx->image_id, (uint32_t)ctx->pc & SPU_LS_MASK,
@@ -733,4 +735,5 @@ void spu_drain_call(spu_context* ctx, uint32_t return_pc) {
     uint64_t saved=spu_sf_simd_enter();
     spu_drain_call_scoped_body(ctx,return_pc);
     spu_sf_simd_leave(saved);
+    if (g_spu_pm_svc_on) spu_pm_svc_drain_done(ctx,return_pc);
 }

@@ -1,5 +1,103 @@
 # Vendor provenance and upstream
 
+## Native policy-module services (#327)
+
+Own-fork branch `codex/pm-native-services` carries the reusable runtime and
+authored differential fixtures through `20245d30`. Game-specific registration
+stays in this repository. The default-off `SPU_PM_NATIVE_SVC=1` switch admits a
+registered service only for a `bisl r0` from a resident job with both the call
+and its continuation in that job's span. The registered LS code ranges must
+match the pristine text published through an interlocked cache state. The
+drain closes the service scope when the call bracket ends.
+
+The opt-in `SPU_PM_SVC_VERIFY=1` path compares the interpreted service with a
+private compiled replay. The authored fixture builds the actual interpreter,
+drain and owned gate with lifter-emitted calls and service bodies. It checks
+full GPR/LS/status parity in eleven modes and rejects nine compiled mutants,
+including a jump at the purported call site. The fixture uses authored bytes.
+
+## Coherent surface prefetch (#322)
+
+The reusable implementation and authored validation are own-fork modular and
+combined commit `9a5efceeeec9dcb13047af799dda176fa2147edf` in
+`robbe1912/ps3recomp`. All eight modular workflows, including SDK validation on
+Windows, Linux and macOS, passed. Existing toolkit snapshot requests and their
+owned FIFO boundaries remain intact. The shared fence/prefetch block is carried
+selectively into this byte-read consumer.
+
+CPU reads continue through the coherent renderer handler. Reuse requires the
+exact current GPU generation and resource/guest layout. Missing or superseded
+copies follow the coherent copy path. Prefetch copies have their own command
+allocator/list and real completion fence. Resource retirement waits before
+untracking, and device-removal sentinels or incomplete waits stop visibly.
+The bounded hex parser rejects malformed, overflowing and duplicate offsets.
+
+The production-body model passes thirteen compiled mutants on Windows/Linux.
+The full-backend authored GPU fixture passes on actual WARP and hardware,
+covering feature-off/on byte equality, current generation reuse, completed newer
+writes, in-flight reads, pitch changes, retirement and resource replacement.
+Four compiled GPU mutants must fail. The varying-clear fixture admits only its
+expected optimized-clear-value performance warnings and rejects other validation
+messages/errors. Existing snapshot WARP controls and all 45 assertion-enabled
+Windows native CTests passed. Two snapshot mutant needles were scoped to their
+actual coherent-copy/retirement functions after the added prefetch helpers.
+
+The feature remains opt-in. Original author measurements retain their stated
+revision and local-change qualifications. Current native-title visuals, matched
+performance, minimum 30 FPS and interpreter removal remain open.
+
+## Eager submission after writes to listed surfaces (#326)
+
+The reusable fork implementation is at `abeb4200`, with the WARP fixture
+update at `a954e9d0`. Both are integrated in `combined` at `eb954250`.
+
+`rsx_cpu_surface.inc` gains `RSX_CPU_SURFACE_EAGER`, a list of up to four RSX
+surface offsets (same strict 1-8 hex digit parser as the prefetch list; none by
+default). `cpu_surface_capture` marks the batch when a recorded draw or clear
+records a bound listed render target with a nonzero pitch.
+`cpu_surface_flush_recorded` submits through the existing nonpresenting
+capacity path at the first draw boundary
+whose active targets exclude the listed surfaces, or at the idle pump. The
+decision checks the renderer service-thread owner and `render_frame` replay
+before it reads any renderer state, as the early submission for pending reads
+does; `render_frame` clears the mark after `cpu_surface_batch_submitted()`
+and before the prefetch refresh. Reads keep the coherent contract: each still
+needs the surface's current generation.
+
+In MotorStorm races the HDR exposure target (`02A30480`) is read once per frame
+10-20 ms after its write is recorded, so the batch with that write reaches the
+GPU before the read instead of when it arrives. `run.py
+--eager-surface-submit 1` lists it. `check_cpu_surface_eager.py` compiles the
+production block against a renderer model (16 mutants) and checks the capture,
+init, render_frame and flush wiring; `check_cpu_surface_prompt.py` covers the
+eager request on the shared flush hook. Visual parity in a driven race was
+checked on a local build; broader title coverage is open.
+
+## Job dispatch log and depth-guard ring (#327)
+
+The reusable depth guard is on own-fork branch `codex/spu-depth-ring` at
+`fefcd49a`. The depth limit and history are worker-local. An atomic flag
+retains the single process-wide report when multiple workers trip.
+
+Two costs every native job transfer paid, found by a line-level sample of
+MotorStorm's vehicle job:
+
+- `spu_channels.c`: `spu_indirect_branch` logged the first 16 and every 64th
+  transfer into a claimed resident job span (`[pm-jobmod] DISPATCH`). A lift hit
+  is every native job transfer, so a race wrote about 875,000 lines (117 MB) and
+  the SPU threads waited on stderr and the C runtime's stream lock. Lift hits
+  now log only with `SPU_JOBMOD_DISPATCH_LOG=1` (`run.py --jobmod-dispatch-log`);
+  unset or `0` is off and any other value aborts. Misses
+  (`resolver=MISS->interp`) remain enabled by default. Each worker owns its setting and separate hit and miss counters.
+- `spu_drain.c`: `spu_depth_guard` wrote its ring of recent drain sites, shared
+  by every SPU thread, on every lifted call, so its cache line moved between
+  threads constantly. The ring is now per thread (`SPU_THREAD_LOCAL`). It is
+  only read when `SPU_HOST_DEPTH_MAX` trips, and then lists the tripping
+  thread's own cycle.
+
+`check_spu_native_owned.py` runs the owned fixture with the switch unset, `0`,
+`1` and `2`. Behaviour is otherwise unchanged.
+
 ## FACING and full polygon-offset identity (#320)
 
 The reusable port is own-fork modular commit
@@ -810,6 +908,14 @@ record the bounded ordered witness, overwritten history, strict archived-image
 admission and remaining PVS wait. No upstream PR or native acceptance is claimed.
 
 ## Fork-first workflow
+
+Before publishing a toolkit topic branch, run the affected checks and their
+adjacent consumers. SPU runtime changes can affect isolated interpreter
+fixtures on Windows and Linux. Surface submission changes can affect the
+actual D3D12 snapshot fixture on WARP. Send a combined candidate to a
+validation branch and wait for the SDK test steps on Windows, Linux and
+macOS and the focused workflows on that exact commit before updating
+`combined`.
 
 Packed XY16F render-target sampling is authored on own-fork atomic branch
 `codex/rsx-xy16-rtt-view`. The new `rsx_texture_alias.h` helper and its D3D

@@ -201,8 +201,8 @@ report["wrong_channel_header_sha256"] = hashlib.sha256(
 ).hexdigest()
 mutants = {
     "skip-retirement-flush": body.replace(
-        "static void cpu_surface_retire(OffRT *r) {\n    cpu_surface_copy(r);",
-        "static void cpu_surface_retire(OffRT *r) {\n    /* omitted flush */",
+        "static void cpu_surface_retire(OffRT *r) {\n    cpu_surface_prefetch_retire(r);\n    cpu_surface_copy(r);",
+        "static void cpu_surface_retire(OffRT *r) {\n    cpu_surface_prefetch_retire(r);\n    /* omitted flush */",
         1,
     ),
     "unreadable-commit": body.replace(
@@ -242,8 +242,9 @@ mutants = {
         "sequence>64)return;", "sequence==UINT32_MAX)return;", 1
     ),
     "skip-dirty-copy": body.replace(
-        "    unsigned bpp=rsx_surface_readback_bpp(r->cpu_format);",
-        "    return;\n    unsigned bpp=rsx_surface_readback_bpp(r->cpu_format);",
+        "static void cpu_surface_copy(OffRT *r) {",
+        "static void cpu_surface_copy(OffRT *r) {\n    return;",
+        1,
     ),
     "stale-clean-generation": body.replace(
         "r->cpu_generation=r->gpu_generation;", "r->cpu_generation=0;"

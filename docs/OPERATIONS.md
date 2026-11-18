@@ -398,7 +398,11 @@ remain private; CI uploads authored-test logs/JSON only.
 
 For the default-off fingerprint-owned job experiment, pass `--native-owned-jobs` to [run.py](../scripts/run.py). The launcher clears inherited SPU flags, explicitly selects and records `SPU_NATIVE_OWNED_JOBS=1`, and retains required policy interpretation. Environment inheritance alone does not select this mode.
 
+Pass `--jobmod-dispatch-log` to select and record `SPU_JOBMOD_DISPATCH_LOG=1` (default off; diagnostic). `spu_indirect_branch` then logs the first 16 and every 64th transfer per worker into a claimed job span that a lift serves, as `[pm-jobmod] DISPATCH ... resolver=lift`. Transfers the resolver misses (`resolver=MISS->interp`) always log. With lift hits logged, a MotorStorm race writes about 875,000 of these lines, and the SPU threads wait on stderr and the C runtime's stream lock. Any value other than unset, `0` or `1` aborts. [check_spu_native_owned.py](../scripts/check_spu_native_owned.py) covers the switch.
+
 Pass `--jobmod-header-fnv` as well to select and record `SPU_JOBMOD_HEADER_FNV=1` (default off). The staging matcher then also identifies a job image by the span its C0DEC0DE header declares (image minus the 0x20 trailer), once per burst. Without it, a job the policy module loads with tail padding never matches its registered identity and runs interpreted; the MP3 job objects (ids 217/218) are loaded this way. A header match logs `[pm-jobmod] header identity`. [check_spu_jobmod_identity.py](../scripts/check_spu_jobmod_identity.py) covers the matcher with authored images.
+
+Pass `--pm-native-services` with `--native-owned-jobs` to select and record `SPU_PM_NATIVE_SVC=1` (default off). Native jobs call job manager services with `bisl` into the policy module's text, and under policy interpretation those services otherwise run in the interpreter. [spu_pm_services.cpp](../src/motorstorm/spu_pm_services.cpp) registers MotorStorm's job manager entries and the LS code ranges they reach. A call from compiled job code runs the lifted service while those ranges in LS equal the pristine text, copied from guest memory and checked against its fingerprint; the ranges stay admitted to the owned gate until the call's bracket ends, and every other owned-gate condition still applies. A LS mismatch logs `[pm-svc] LS ... differs` and that call stays interpreted. `SPU_PM_SVC_VERIFY=1` (diagnostic, set by hand) instead runs each call interpreted while recording its channel operations and their LS effects, replays the lifted service on a private context and LS fed those results, and logs `[pm-svc] VERIFY MISMATCH` if the operations, registers, pc or LS differ. [check_spu_pm_services.py](../scripts/check_spu_pm_services.py) covers admission, scope and the verifier with authored guest code.
 
 ### Persistent DX12 texture cache
 
@@ -419,6 +423,36 @@ uploads and their class. Linear (LN) chains assume lower levels packed at their
 own width; that rule has no hardware cross-check yet. Game-free coverage:
 [check_rsx_texture_mips.py](../scripts/check_rsx_texture_mips.py); D3D12
 readback and per-level sampling: `check_rsx_texture_gpu.py` phase `mips-only`.
+
+`--surface-prefetch 0|1` (default `0`) sets `RSX_CPU_SURFACE_PREFETCH` to
+MotorStorm's three race feedback surfaces: the 2048x2048 deformation surface
+(`01A80500`), a 1280x720 surface the game probes at varying points
+(`00A80500`) and the 64x64 HDR exposure target (`02A30480`). Reads stay
+coherent: each still returns the surface as of every write submitted before
+it. After a submitted batch that wrote a listed surface the CPU has read since
+its last copy, the renderer queues a copy behind that batch; a read that needs
+exactly that generation packs it, waiting only for that copy's fence, instead
+of fencing all submitted work and copying anew. Any other read takes the
+ordinary copy. The launcher clears an inherited list and records the
+selection. `RSX_CPU_SURFACE_PREFETCH_LOG=1` prints used, waited, missed and
+copy counts. Game-free coverage:
+[check_cpu_surface_prefetch.py](../scripts/check_cpu_surface_prefetch.py).
+
+`--eager-surface-submit 0|1` (default `0`) sets `RSX_CPU_SURFACE_EAGER` to
+MotorStorm's 64x64 HDR exposure target (`02A30480`). The main thread reads it
+once per race frame, 10-20 ms after the renderer records the draws that write
+it. Without the switch the batch holding those draws is submitted only when the
+read arrives (or at the frame end), so the read waits for the renderer to
+replay it and the GPU to run it. With it, the renderer submits the batch at the
+first draw boundary after those draws whose draw no longer targets a listed
+surface, or at its idle pump, through the same nonpresenting capacity path as
+the early submission for pending reads. Reads stay coherent: each still needs
+the surface's current generation; only the submission point moves. With
+`--surface-prefetch 1` the copy queued behind that batch usually holds the
+generation the read needs. The launcher clears an inherited list and records
+the selection. `RSX_CPU_SURFACE_PROFILE=1` also prints `[CPUSURFACE_EAGER]`
+submit counts. Game-free coverage:
+[check_cpu_surface_eager.py](../scripts/check_cpu_surface_eager.py).
 
 Use identical cache targets, validation and profiling settings for comparisons.
 Retention validates every uploaded face with full XXH3; the reference retains
