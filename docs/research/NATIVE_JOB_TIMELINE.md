@@ -831,6 +831,40 @@ Isolating the PVS effect requires controlling the other workloads and
 validating outputs. The guard's critical-path cost and a matched speedup
 remain unresolved.
 
-Private evidence is in the three run-stamped folders under
+
+### Current checked race diagnostics
+
+The checked build from source `8c5c754` combines main's coherent prefetch,
+eager submission and native policy service support with the PVS trace branch.
+The following owned native-menu runs used executable
+`bb8b6060746325b1b3dcf5a924b73ca57d9e8e92ecb7c183701eb20db2a94489`,
+disabled capture observers and enabled native-owned jobs and marker-wait
+profiling. Each reached the race HUD after six acknowledged inputs.
+
+| Run | Additional setting | Final persisted Presents/s | Completed PVS wait | Completed vehicle wait |
+| --- | --- | ---: | ---: | ---: |
+| 20261118T221626.189910Z | Default | 2.92 | 3.084 s | 1.613 s |
+| 20261118T222102.601745Z | Native policy services | 3.17 | 3.075 s | 1.872 s |
+
+The wait totals use completed main-thread rows between persisted Present
+markers, excluding the first possibly crossing row per caller. The brackets
+are about 20 seconds. The service run verified its registered policy text
+hash. The observed pair leaves a vehicle wait reduction unconfirmed.
+The policy-image queue GET at LS `0x2328` triggered the repeat guard 214
+and 179 times respectively. The guard's frame-time contribution remains
+unmeasured.
+
+Separate run `20261118T222516.846497Z` enabled CPU-surface profiling with
+prefetch and eager submission at their default disabled settings. Within the
+18.449-second main-thread QPC bracket, all 49 recorded main-thread surface
+requests were two-byte reads at guest address `0xC2A34580`. They occupied
+0.504 s including 0.286 s queued and 0.217 s servicing. The marker-wait
+interval union was 3.815 s in the same bracket. The combined union was
+4.319 s. This run supplies request timing on the integrated build.
+The typed native deformation query was disabled, so its current handoff
+cost remains open under #326. Each timed run has instrumentation overhead
+and varying race state.
+
+Private evidence is in the run-stamped folders under
 `temp/job-timeline-evidence/`. The reports retain binary identities, matched
 slot cohorts, committed marker joins, route receipts and artifact hashes.
