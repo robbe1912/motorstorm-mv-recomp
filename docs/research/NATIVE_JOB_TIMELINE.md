@@ -1083,3 +1083,97 @@ Private evidence remains in `temp/occluder-replay-validation.json`,
 `temp/occluder-live-register-proof.json`, `temp/occluder-benchmark-report.json`
 and the run directory. Stable native PLAY against the requested 33 ms ceiling
 remains unachieved.
+
+
+### Native engine comparison and particle producer boundary
+
+A native engine comparison is useful at the level of data flow and scheduling.
+MotorStorm already has an engine designed for Cell/RSX. Compiling parts of its
+implementation for x86 retains guest register and memory semantics, local-store
+buffers, DMA, policy scheduling and completion protocols. A typed native leaf
+removes instruction dispatch within its extent; its surrounding pipeline can
+remain expensive. Rust or C++ alone does not remove that pipeline.
+
+The relevant reference practices are explicit data access and parallel systems
+in [Bevy ECS](https://bevy.org/learn/quick-start/getting-started/ecs/), batching
+and infrequent late waits in [Unity's job-system engineering notes](https://unity.com/blog/engine-platform/improving-job-system-performance-2022-2-part-2),
+and lower-level asynchronous servers in [Godot's performance guide](https://docs.godotengine.org/en/stable/tutorials/performance/using_servers.html).
+Godot also explains how queries that force server synchronization can stall
+pending work. These practices are architectural references, not measurements
+of an equivalent MotorStorm scene in those engines.
+
+| Boundary | Current cost to inspect | Native target |
+| --- | --- | --- |
+| Work unit | Interpreted job body and guest policy surrounding small native leaves | One particle vertex-buffer operation over a meaningful batch |
+| Data | Guest-endian loads, local-store scratch and transfer setup | Explicit input/output arrays with conversion at their ownership boundary |
+| Scheduling | Publication, worker admission, output transfer and polled markers | Host dependencies with real output completion preserved |
+| Rendering | RSX replay, CPU vertex expansion and surface synchronization | GPU-ready buffers and supported GPU decoding, tracked separately by #232 |
+| Qualification | The current occluder leaf fingerprints the module per object | Wider qualified operations; cached identity requires a proved ownership/invalidation contract |
+
+The measured limit is still frame time. In the final 12-second bracket of
+`20261119T182927.541397Z`, 10.496 seconds were between renderer batches and
+6.946 seconds of those gaps overlapped completed main-thread marker waits.
+The remaining gap is unattributed by that join. Median timestamped direct-queue
+work per complete Present group was 32.987 ms, with a 101.484 ms maximum.
+CPU and GPU costs can overlap and must not be added as independent frame costs.
+Both the long CPU-side path and the GPU tail need improvement for stable 33 ms.
+
+Under #331, distinguish these falsifiable explanations before changing the
+particle producer:
+
+1. Interpreted execution dominates: selection-to-return remains large after
+   admission, and replacing the whole operation reduces that same workload.
+2. Queue admission dominates: publication-to-selection is large relative to
+   execution; another small arithmetic leaf leaves the main wait intact.
+3. Transfer or synchronization dominates: output becomes usable substantially
+   after computation; preserve the real dependency while removing redundant
+   conversion, copies or synchronization inside the replacement boundary.
+4. Diagnostic configuration dominates: matched capture-off, logging-controlled
+   runs materially change cadence. Checked selective optimization and replay
+   microbenchmarks do not establish optimized native PLAY performance.
+
+The first follow-up capture, `20261119T184352.014556Z`, retained 44,150 records
+without drops or pending records. It joined 17 vertex publications to selected
+calls and returns, with selected-call wall times of 0.893–28.324 ms and a
+9.001 ms median. Those wall times include host scheduling. Completion joining
+remained unproved because its execution filter omitted cleanup boundaries;
+this capture cannot decide the full wait's cause. The corrected private plan
+requires both `0x3180` and `0x317c`, as well as call/return boundaries, and waits
+for an observed race HUD followed by an actual vertex wait of at least 80 ms.
+The incomplete historical selector set is rejected before launch.
+
+
+The corrected run `20261119T185643.218172Z` opened after an actual 109.894 ms
+vertex wait, 13.766 seconds after HUD observation. Its snapshot delivered
+40,886 records with zero drops, pending records or append failures. The full
+pipeline joined 553 publications, 551 call continuations/completions and eight
+unique real vertex-marker threshold crossings among 12 complete in-window
+waits. Scheduler assignment counterexamples also rejected mismatched identity,
+lane, generation, flags and timestamps.
+
+The longest joined wait was 66.631 ms: 55.648 ms before vertex selection,
+10.947 ms in its selected call, 0.026 ms from return to marker commit and
+0.009 ms to the observed wait finish. Publication preceded selection by
+148.937 ms. Its assigned host worker was already running before publication;
+the observed admission-to-worker interval was bounded by 0.004–0.026 ms.
+The same context and host dispatch executed an earlier `spuparticlesystem`
+call (`0x16e20`, publisher `0x725ea4`) for 269.028 ms across that publication.
+These are wall-time and lifetime observations, not exclusive CPU costs.
+Publication alone does not establish that all input dependencies were ready.
+
+This evidence moves the next producer investigation upstream to particle
+processing. The vertex arithmetic operation alone cannot remove the preceding
+55.648 ms in this joined path. Nineteen separately saved PC observations from
+the older `20261119T175246.434951Z` diagnostic match #204's exact 200-byte
+threshold loop and physical interpreter walks. Those suspended observations
+are a lead, not a current time share; the existing guarded native threshold
+operation must be tested on the observed particle workload before claiming a
+gain. No scheduler priority, dependency or completion was bypassed.
+
+The corrected run still missed the goal: final-15-second median Present
+interval 341.3 ms, p95 400.0 ms and maximum 423.8 ms. This instrumented run
+is not a controlled comparison with the preceding 399.9 ms trial. Native
+race HUD observation and private identity/record checks do not establish
+stable 33 ms or complete graphics/playability correctness. Private join,
+assignment and counterexample reports remain under the run's `job-capture/`;
+loop observations are in `temp/particle-threshold-physical-observations.json`.
