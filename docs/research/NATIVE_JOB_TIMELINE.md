@@ -944,6 +944,37 @@ profile retains direct menu boot and observes normal PLAY. Follow-up issues
 track [DX12 shader-resource setup](https://github.com/robbe1912/motorstorm-mv-recomp/issues/332)
 and [vehicle completion](https://github.com/robbe1912/motorstorm-mv-recomp/issues/327).
 
+### Texture residency and the remaining race waits
+
+Two muted MOHAWK runs used executable `dc7efbb8…`, native visibility,
+the settled ticket replay at stride 32, and the same renderer, texture and
+marker-wait profiling. Each reached the HUD after six screen-gated actions.
+The second run enabled the existing 512 MiB persistent texture cache.
+
+| Observation | Reference cache | Persistent cache |
+| --- | ---: | ---: |
+| Time from launch to observed race HUD | 239.06 s | 160.33 s |
+| Median Present interval in the final 15 seconds | 385.9 ms | 328.1 ms |
+| 95th-percentile Present interval in that window | 551.1 ms | 409.6 ms |
+| Texture misses in the last 80 reported renderer batches | 3,562 | 1 |
+| Texture-call wall time in those batches | 4.350 s | 0.261 s |
+| Nested SRV setup in those batches | 4.710 s | 0.590 s |
+
+The last 80-batch windows include offscreen batches and end separately from
+the Present windows. They recorded about 1.05 million texture calls per arm.
+The persistent run peaked at 234.3 MiB of owned texture and upload allocations
+with no resource failure or eviction. The runs are a single instrumented pair
+with varying race state. Both remain above the 33.3 ms frame budget.
+
+With residency enabled, the last complete 12-second renderer trace spent
+2.00 s in the renderer and 10.00 s between renderer batches. Completed
+main-thread marker waits overlapped 5.71 s of those gaps. Visibility accounted
+for 3.07 s, vehicle completion for 1.90 s, and vertex-buffer completion for
+0.74 s. The rest of the gap still needs attribution. Use the persistent cache
+for the next observed US performance run, with the reference mode available
+for matched checks. See [texture residency](https://github.com/robbe1912/motorstorm-mv-recomp/issues/291)
+and [SRV setup](https://github.com/robbe1912/motorstorm-mv-recomp/issues/332).
+
 Private evidence is in the run-stamped folders under
 `temp/job-timeline-evidence/`. The reports retain binary identities, matched
 slot cohorts, committed marker joins, route receipts and artifact hashes.
