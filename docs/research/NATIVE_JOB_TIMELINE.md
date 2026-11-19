@@ -1014,3 +1014,72 @@ remain the next #282 contract boundaries to attribute before another rewrite.
 Private evidence is in the run-stamped folders under
 `temp/job-timeline-evidence/`. The reports retain binary identities, matched
 slot cohorts, committed marker joins, route receipts and artifact hashes.
+
+
+### Native US occluder plane preparation
+
+The current #282 replacement prepares one aligned occluder after its input
+DMA, from staged `0x50e0` to `0x5404`. It builds face orientation, boundary
+edge parity, normalized edge planes and the final face plane in original
+order. Native arithmetic retains the SPU estimates, refinement and fused
+operation order. Original next-object DMA, sorting, epilogue and job
+completion remain in control. This is CPU visibility work, separate from the
+renderer's CPU vertex expansion and GPU queue budget.
+
+Admission checks the entire original US module on every object, folding
+64-bit words and excluding only the existing mutable orientation slot. It
+also checks the post-DMA edge, aligned-mode registers, stack and geometry
+bounds. At most 17 edges are admitted so edge planes and the final face plane
+fit before the output record's metadata. Unsupported layouts, alternate
+alignment and unsafe IRQ/reservation states retain the interpreter. The
+unbudgeted leaf declines budgeted/stopped interpreter invocations through the
+shared runtime contract. The existing batch opt-in enables this stage;
+`MS_NATIVE_VISIBILITY_OCCLUDERS=0` retains it for comparison.
+
+Private normal-route capture `20261119T180552.006771Z` supplied 96 nonempty
+entries with two to five faces and five to eleven edges. Independent execution
+of original bytes used 746 to 1,383 instructions per object. Scalar and SIMD
+native execution matched every local-store byte for all 96 entries; 93 also
+matched a recorded original exit. Production-adapter checks covered the same
+states, whole-context preservation and read-only admission mutations. A
+167-instruction continuation analysis confirmed all 34 live registers agree
+through the next input boundary or the original caller's next argument setup.
+Temporary full-state capture hooks were removed before the production build.
+Authored public cases cover geometric plane constraints on both camera sides,
+edge parity, reserved metadata and transactional rejection without game bytes.
+
+A CPU-only replay used five alternating samples per implementation, each with
+960 executions over the 96 captured inputs. Both arms used `/O2` and the
+checked CRT. Production native admission, full-module hash, FP scope and
+callback took a median 10.51 microseconds per object (range 10.29-11.24),
+versus 38.12 microseconds (35.60-38.50) for the original production interpreter
+run-until path. Outputs and live loop registers were checked after every
+execution; the first output plane was poisoned beforehand to detect skipped
+work. No native game or build was active; host CPU activity immediately before
+the short replay was 30.3%. These are stage wall times, not exclusive CPU
+attribution or evidence of a repeatable frame-time improvement.
+
+Production executable `a96cb20da3f177bd` completed normal PLAY in private run
+`20261119T182927.541397Z`, with six screen-gated inputs and 60 seconds of target
+observation. Race HUD appeared at 198.84 seconds; at least 2,072,576 native
+occluder preparations and 48,384 native classifiers executed. The run was
+muted, with no resource breach or failed DX12 Present. Its final 15 seconds
+had 40 Present intervals: median 399.9 ms, p95 477.8 ms and maximum 501.2 ms;
+none met the requested 33 ms ceiling. This later race window is not a matched
+comparison to the earlier 18-second observation, and establishes no overall
+frame-time improvement.
+
+In the final 12-second renderer bracket, 10.496 seconds were between batches.
+Completed main-thread marker waits overlapping those gaps covered 3.540
+seconds for vertex work (`0x727258`), 2.122 for vehicle work (`0x8ac670`) and
+1.272 for visibility (`0x87d2d4`), with 6.946 seconds combined. These are wait
+latencies, not exclusive CPU costs. Timestamped direct-queue work had a
+32.987 ms median per complete Present group, with 14 of 29 groups over
+33.3 ms; other GPU and CPU work remain separate. The current leading marker
+stall is vertex work, requiring #155 priority selection and its own producer
+contract rather than further speculative visibility micro-optimization.
+
+Private evidence remains in `temp/occluder-replay-validation.json`,
+`temp/occluder-live-register-proof.json`, `temp/occluder-benchmark-report.json`
+and the run directory. Stable native PLAY against the requested 33 ms ceiling
+remains unachieved.

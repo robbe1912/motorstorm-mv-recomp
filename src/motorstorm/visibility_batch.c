@@ -426,3 +426,133 @@ int motorstorm_us_visibility_classify(uint8_t* ls, unsigned count, uint32_t outp
     }
     return 1;
 }
+
+
+static int occluder_input(unsigned address, unsigned bytes, unsigned temporary) {
+    return address >= 0x27010 && !(address & 15) && address <= 0x40000 &&
+           bytes <= 0x40000 - address &&
+           (address >= temporary + 16 || address + bytes <= temporary);
+}
+
+int motorstorm_us_visibility_occluder_supported(const uint8_t* ls, unsigned index,
+                                               unsigned temporary_normal) {
+    if (!ls || index >= 144 || (temporary_normal & 15) || temporary_normal < 0x27010 ||
+        temporary_normal > 0x40000 - 16 || ls_word(ls, 0x166c0) != pvs_occluders ||
+        index >= ls_word(ls, 0x166b0)) return 0;
+    const unsigned records = ls_word(ls, 0x166a0);
+    if (!occluder_input(records, (index + 1) * 28, temporary_normal)) return 0;
+    const unsigned record = records + index * 28;
+    const unsigned faces = ls_word(ls, record), edges = ls_word(ls, record + 4);
+    const unsigned vertices = ls_word(ls, record + 8);
+    // Eighteen planes fit before the existing output record's metadata.
+    // Retain larger edge lists in the original implementation.
+    if (faces > 15 || edges > 17 || vertices > 0x40000 / 16) return 0;
+    const unsigned face_edges = ls_word(ls, 0x16710), edge_vertices = ls_word(ls, 0x16700);
+    if (!occluder_input(face_edges, faces * 12, temporary_normal) ||
+        !occluder_input(edge_vertices, edges * 8, temporary_normal) ||
+        !occluder_input(ls_word(ls, 0x166f0), faces * 16, temporary_normal) ||
+        !occluder_input(ls_word(ls, 0x166e0), vertices * 16, temporary_normal)) return 0;
+    for (unsigned edge = 0; edge < edges; ++edge)
+        if (ls_word(ls, edge_vertices + edge * 8) >= vertices ||
+            ls_word(ls, edge_vertices + edge * 8 + 4) >= vertices) return 0;
+    for (unsigned face = 0; face < faces; ++face)
+        for (unsigned corner = 0; corner < 3; ++corner)
+            if (ls_word(ls, face_edges + face * 12 + corner * 4) >= edges) return 0;
+    return 1;
+}
+
+static void vis_store_vector(uint8_t* ls, unsigned address, VisibilityVector value) {
+    for (unsigned lane = 0; lane < 4; ++lane)
+        store_ls_word(ls, address + lane * 4, value._u32[lane]);
+}
+
+static VisibilityVector occluder_unit(VisibilityVector normal) {
+    const VisibilityVector length = spu_splat_u32(vis_dot(normal, normal));
+    const VisibilityVector inverse = spu_fi(length, spu_frsqest(length));
+    const VisibilityVector half = spu_fm(inverse, spu_splat_u32(0x3f000000));
+    const VisibilityVector residual = spu_fnms(inverse, spu_fm(inverse, length),
+                                              spu_splat_u32(pvs_refinement));
+    const VisibilityVector scale = spu_fma(residual, half, inverse);
+    const uint32_t fourth = normal._u32[3];
+    normal = spu_fm(normal, scale);
+    normal._u32[3] = fourth;
+    return normal;
+}
+
+static VisibilityVector occluder_plane(VisibilityVector normal, VisibilityVector point) {
+    normal._u32[3] = vis_negate(vis_dot(normal, point));
+    return normal;
+}
+
+int motorstorm_us_visibility_occluder(uint8_t* ls, unsigned index,
+                                     unsigned temporary_normal) {
+    if (!motorstorm_us_visibility_occluder_supported(ls, index, temporary_normal)) return 0;
+    const unsigned record = ls_word(ls, 0x166a0) + index * 28;
+    const unsigned face_count = ls_word(ls, record), edge_count = ls_word(ls, record + 4);
+    const unsigned face_edges = ls_word(ls, 0x16710), edges = ls_word(ls, 0x16700);
+    const unsigned vertices = ls_word(ls, 0x166e0), normals = ls_word(ls, 0x166f0);
+    const VisibilityVector origin = vis_vector(ls, 0x16680);
+    VisibilityVector accumulated = spu_splat_u32(0), planes[18], last_edge_normal;
+    VisibilityVector farthest = vis_vector(ls, 0x16730);
+    VisibilityScalar orientation = pvs_unit, farthest_squared = 0;
+    uint8_t enabled[32] = {0};
+    const VisibilityVector sentinel = spu_and(vis_vector(ls, 0x16750), spu_fsmbi(1));
+    vis_store_vector(enabled, 16, sentinel);
+    unsigned plane_count = 0, edge_planes = 0;
+    // Shared triangle edges cancel, leaving the polygon boundary. Preserve
+    // the original face order, orientation selection and fused accumulation.
+    for (unsigned face = 0; face < face_count; ++face) {
+        const VisibilityVector normal = vis_vector(ls, normals + face * 16);
+        const unsigned first_edge = ls_word(ls, face_edges + face * 12);
+        const unsigned vertex = ls_word(ls, edges + first_edge * 8);
+        const VisibilityVector relative = spu_fs(vis_vector(ls, vertices + vertex * 16), origin);
+        if (vis_greater(0, vis_dot(relative, normal))) orientation = 0xbf800000;
+        accumulated = spu_fma(normal, spu_splat_u32(orientation), accumulated);
+        for (unsigned corner = 0; corner < 3; ++corner)
+            enabled[ls_word(ls, face_edges + face * 12 + corner * 4)] ^= 1;
+    }
+    for (unsigned edge = 0; edge < edge_count; ++edge) {
+        if (!enabled[edge]) continue;
+        const unsigned first = ls_word(ls, edges + edge * 8);
+        const unsigned second = ls_word(ls, edges + edge * 8 + 4);
+        const VisibilityVector point_a = vis_vector(ls, vertices + first * 16);
+        const VisibilityVector point_b = vis_vector(ls, vertices + second * 16);
+        const VisibilityVector a = spu_fs(point_a, origin), b = spu_fs(point_b, origin);
+        VisibilityVector cross = spu_splat_u32(0);
+        for (unsigned lane = 0; lane < 3; ++lane) {
+            const unsigned y = (lane + 1) % 3, z = (lane + 2) % 3;
+            cross._u32[lane] = vis_residual(a._u32[z], b._u32[y],
+                                           spu_sf_mul(a._u32[y], b._u32[z]));
+        }
+        cross = spu_fm(cross, spu_splat_u32(orientation));
+        last_edge_normal = occluder_unit(cross);
+        planes[plane_count++] = occluder_plane(last_edge_normal, origin);
+        ++edge_planes;
+        const VisibilityScalar length_a = vis_dot(a, a), length_b = vis_dot(b, b);
+        const int choose_a = vis_greater(length_a, length_b);
+        const VisibilityScalar length = choose_a ? length_a : length_b;
+        if (vis_greater(length, farthest_squared)) {
+            farthest_squared = length;
+            farthest = choose_a ? point_a : point_b;
+        }
+    }
+    const VisibilityVector normal = occluder_unit(accumulated);
+    planes[plane_count++] = occluder_plane(normal, farthest);
+    // All inputs have been validated and consumed before the first write.
+    const unsigned output = pvs_occluders + index * 304;
+    for (unsigned plane = 0; plane < plane_count; ++plane)
+        vis_store_vector(ls, output + plane * 16, planes[plane]);
+    store_ls_word(ls, output + 0x120, plane_count);
+    vis_store_vector(ls, 0x16580, spu_splat_u32(orientation));
+    vis_store_vector(ls, 0x16720, normal);
+    if (edge_planes) {
+        vis_store_vector(ls, 0x16730, farthest);
+        vis_store_vector(ls, temporary_normal, last_edge_normal);
+    }
+    memcpy(ls + 0x16740, enabled, sizeof(enabled));
+    vis_store_vector(ls, 0x16760, spu_splat_u32(plane_count));
+    vis_store_vector(ls, 0x16770, spu_splat_u32(face_count));
+    for (unsigned face = 0; face < face_count; ++face)
+        store_ls_word(ls, 0x16780 + face * 4, face);
+    return 1;
+}

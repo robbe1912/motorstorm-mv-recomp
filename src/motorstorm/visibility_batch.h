@@ -29,6 +29,14 @@ int motorstorm_us_visibility_nonflushing(const uint8_t* ls, unsigned count);
 int motorstorm_us_visibility_classify(uint8_t* ls, unsigned count, uint32_t output_high,
                                       MotorstormVisibilityPublish publish, void* publication);
 
+// Prepare one debug-US occluder's edge planes from its completed input DMA.
+// Unsupported layouts return zero without writes. The caller retains object
+// iteration, DMA, register ownership and completion.
+int motorstorm_us_visibility_occluder_supported(const uint8_t* ls, unsigned index,
+                                               unsigned temporary_normal);
+int motorstorm_us_visibility_occluder(uint8_t* ls, unsigned index,
+                                     unsigned temporary_normal);
+
 #ifdef __cplusplus
 }
 #endif

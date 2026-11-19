@@ -8,6 +8,8 @@ extern "C" int spu_native_leaf_register_unbudgeted(const spu_native_leaf*) { ret
 extern "C" int motorstorm_us_visibility_nonflushing(const uint8_t*, unsigned) { return 0; }
 extern "C" int motorstorm_us_visibility_classify(uint8_t*, unsigned, uint32_t,
                                                 MotorstormVisibilityPublish, void*) { return 0; }
+extern "C" int motorstorm_us_visibility_occluder_supported(const uint8_t*, unsigned, unsigned) { return 0; }
+extern "C" int motorstorm_us_visibility_occluder(uint8_t*, unsigned, unsigned) { return 0; }
 
 static spu_context state, expected;
 

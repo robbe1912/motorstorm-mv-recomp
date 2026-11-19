@@ -493,6 +493,11 @@ The same opt-in also clears the recognized job's workspace natively before
 its original constructors and input DMA. Set `MS_NATIVE_VISIBILITY_INITIALIZE=0`
 before launching to retain just that initialization loop for a comparison.
 The launcher records this inherited selector in the run identity.
+The opt-in also prepares recognized aligned occluder objects natively after
+input DMA. It preserves the original next-object DMA, sorting and completion.
+Unsupported geometry retains the interpreter. Set
+`MS_NATIVE_VISIBILITY_OCCLUDERS=0` to retain this stage for a same-executable
+comparison; the inherited selector is recorded with the other native options.
 
 A profile may use a `kind: luminance_occupancy` secondary check for an animated
 preview, with explicit `luma_below`, `min_fraction` and `max_fraction` bounds.

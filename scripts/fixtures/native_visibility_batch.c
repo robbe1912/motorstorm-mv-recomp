@@ -86,10 +86,77 @@ static void publication(const MotorstormVisibilityFlush* flush, void* opaque) {
             "full ordered payload before counter reset");
 }
 
+static float read_float(unsigned address) {
+    const uint32_t bits = read_word(ls, address);
+    float value;
+    memcpy(&value, &bits, sizeof(value));
+    return value;
+}
+
+static void authored_occluder(unsigned camera_z) {
+    memset(ls, 0, sizeof(ls));
+    write_word(0x166a0, 0x27400); write_word(0x166b0, 1);
+    write_word(0x166c0, 0x1bbe0); write_word(0x166e0, 0x28000);
+    write_word(0x166f0, 0x28100); write_word(0x16700, 0x28200);
+    write_word(0x16710, 0x28300);
+    write_word(0x27400, 1); write_word(0x27404, 3); write_word(0x27408, 3);
+    write_word(0x16688, camera_z);
+    // One triangle in z=1, with three boundary edges and a +z face normal.
+    write_word(0x28000, 0xbf800000); write_word(0x28004, 0xbf800000);
+    write_word(0x28008, 0x3f800000); write_word(0x28010, 0x3f800000);
+    write_word(0x28014, 0xbf800000); write_word(0x28018, 0x3f800000);
+    write_word(0x28024, 0x3f800000); write_word(0x28028, 0x3f800000);
+    write_word(0x28108, 0x3f800000);
+    write_word(0x28200, 0); write_word(0x28204, 1);
+    write_word(0x28208, 1); write_word(0x2820c, 2);
+    write_word(0x28210, 2); write_word(0x28214, 0);
+    write_word(0x28300, 0); write_word(0x28304, 1); write_word(0x28308, 2);
+    ls[0x1675f] = 0x80;
+    write_word(0x1bd04, 0x12345678);
+}
+
+static void occluder_geometry(unsigned camera_z) {
+    authored_occluder(camera_z);
+    require(motorstorm_us_visibility_occluder(ls, 0, 0x3f000), "triangle preparation admitted");
+    require(read_word(ls, 0x1bd00) == 4 && read_word(ls, 0x16760) == 4 &&
+            read_word(ls, 0x16770) == 1, "three edge planes and one face plane");
+    require(ls[0x16740] == 1 && ls[0x16741] == 1 && ls[0x16742] == 1 &&
+            ls[0x1675f] == 0x80 && read_word(ls, 0x1bd04) == 0x12345678,
+            "edge parity, reserved sentinel and metadata neighbor preserved");
+    const float z = camera_z ? -1.0f : 1.0f;
+    for (unsigned plane = 0; plane < 4; ++plane) {
+        const unsigned address = 0x1bbe0 + plane * 16;
+        const float x = read_float(address), y = read_float(address + 4);
+        const float nz = read_float(address + 8), d = read_float(address + 12);
+        const float length = x*x + y*y + nz*nz;
+        require(length > .99999f && length < 1.00001f, "unit plane normal");
+        require(nz * (1.0f + z) + d > 0, "shadow-side point inside every plane");
+        if (plane < 3) {
+            const unsigned vertex = plane == 0 ? 0 : plane == 1 ? 1 : 2;
+            const unsigned point = 0x28000 + vertex * 16;
+            const float distance = x*read_float(point) + y*read_float(point+4) +
+                                   nz*read_float(point+8) + d;
+            require(distance > -.00001f && distance < .00001f, "edge point lies on its plane");
+        }
+    }
+    require(read_word(ls, 0x16580) == (camera_z ? 0xbf800000u : 0x3f800000u),
+            "orientation follows camera side");
+}
+
+static void reject_occluder(void) {
+    memcpy(original, ls, sizeof(ls));
+    require(!motorstorm_us_visibility_occluder(ls, 0, 0x3f000), "unsupported occluder rejected");
+    require(!memcmp(ls, original, sizeof(ls)), "occluder rejection is transactional");
+}
+
 int main(void) {
+    occluder_geometry(0);
+    occluder_geometry(0x40000000);
     output_order();
     const uint64_t scope = spu_sf_simd_enter();
     output_order();
+    occluder_geometry(0);
+    occluder_geometry(0x40000000);
     spu_sf_simd_leave(scope);
 
     configure();
@@ -113,6 +180,12 @@ int main(void) {
     require(motorstorm_us_visibility_classify(ls, 4, 7, publication, &calls), "flush batch accepted");
     require(calls == 1 && read_word(ls, 0x16870) == 0 && read_word(ls, 0x167c0) == 2 &&
             read_word(ls, secondary + 4) == 101, "counter reset and continued classification");
+    authored_occluder(0); write_word(0x27400, 16); reject_occluder();
+    authored_occluder(0); write_word(0x27404, 18); reject_occluder();
+    authored_occluder(0); write_word(0x28200, 3); reject_occluder();
+    authored_occluder(0); write_word(0x28300, 3); reject_occluder();
+    authored_occluder(0); write_word(0x166e0, 0x3f000); reject_occluder();
+    puts("PASS authored occluder geometry, orientation, edge parity and transactional rejection");
     puts("PASS native visibility batch order, radius, transactional admission and 16 KiB publication");
     return 0;
 }
