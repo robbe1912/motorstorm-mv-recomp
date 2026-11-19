@@ -73,7 +73,7 @@ def instrument(contents):
 production=out/'instrumented-interpreter.c'
 production.write_text(instrument(source))
 exe=build('production',production)
-for mode in ['normal','empty','lookups','cold_workers','prefreeze_trace']:
+for mode in ['normal','empty','lookups','cold_workers','prefreeze_trace','unbudgeted']:
     r=run(exe,mode);assert r.returncode==0,r.stdout+r.stderr
 for mode,message in [('bad','continuation/status'),('plan','invalid plan'),('ambiguous','ambiguous guards')]:
     r=run(exe,mode)
@@ -184,10 +184,12 @@ for name,before,after in [
     ('zero-stop-sentinel','(stop && stop>=leaf->begin && stop<leaf->end)','(stop>=leaf->begin && stop<leaf->end)'),
     ('budget-bypass','if (plan.instructions>remaining) continue;','/* omitted budget admission */'),
     ('legacy-budget-bypass','if (legacy<remaining) remaining=legacy;','/* omitted legacy ceiling */'),
+    ('unbudgeted-ceiling-bypass','local_budget || g_spu_interp_budget,&last,&steps','local_budget!=0,&last,&steps'),
 ]:
     assert source.count(before)==1,name
     path=out/(name+'.c');path.write_text(instrument(source.replace(before,after)),encoding='utf-8')
-    r=run(build(name,path),'lookups' if name=='hot-environment-scan' else 'normal')
+    mode = {'hot-environment-scan': 'lookups', 'unbudgeted-ceiling-bypass': 'unbudgeted'}.get(name, 'normal')
+    r=run(build(name,path),mode)
     message='FAIL no warmed native-option environment reads' if name=='hot-environment-scan' else 'FAIL real host execution count'
     assert r.returncode==1 and message in r.stderr,r.stdout+r.stderr
-print('PASS actual interpreter native-leaf state/stop/budget/IRQ/TLS/FP/thread tests and hash-pinned pre-port equivalence; six unsafe dispatch/environment mutants and faulty TLS callback rejected')
+print('PASS actual interpreter native-leaf state/stop/budget/IRQ/TLS/FP/thread tests and hash-pinned pre-port equivalence; seven unsafe dispatch/environment mutants and faulty TLS callback rejected')

@@ -28,6 +28,15 @@ budget on the drain. Raw diagnostic capture remains the backend default
 rendering, submission order or guest presentation. A presenting manifest still
 requires successful-Present/error checks and semantic image inspection.
 
+With a supported DX12 executable, automatic replay writes the backbuffer and
+a short manifest for periodic screen checks. Explicit `--capture-menu` and
+armed bursts retain the full capture. `--replay-screen-stride 40` samples
+more often than the default stride of 120. PAD_FILE actions still require
+the same observed screen and acknowledgment.
+For a normal step whose caption appears before it accepts input, a private
+profile can set `stable_frames` to require up to four distinct matching
+captures before one press. Intro skip remains a one-time optional action.
+
 Use `--d3d12-debug default|0|1` to select optional DX12 API validation.
 Inherited `D3D12_DBG` is cleared: `default` retains the compiled policy, `0`
 disables validation, and `1` requests it. Assertions and ordinary device,
@@ -472,6 +481,13 @@ The new cache remains experimental pending native race observation and matched
 measurements. Use the existing normal menu route and resource/ownership guards.
 
 The restored native visibility operation uses explicit `--native-visibility 0|shadow|1` during runs. The default `0` overrides inherited `MS_NATIVE_VISIBILITY`; nonzero choices require a matching `--native-visibility` build and recorded executable identity. Shadow/native preserve the original operation fallback and real completion. Treat shadow results and operation timings separately from gameplay frame-rate acceptance.
+
+Build with `--native-visibility-batch` and run with
+`--native-visibility-batch 1` to try the debug-US batch classifier.
+Use `--native-visibility-batch 0` for a reference run with the same executable.
+The batch runs after input DMA for a recognized image and caller. It leaves
+the original epilogue and completion in place. A batch that may reach a
+16 KiB output PUT uses the original interpreter path.
 
 A profile may use a `kind: luminance_occupancy` secondary check for an animated
 preview, with explicit `luma_below`, `min_fraction` and `max_fraction` bounds.

@@ -101,6 +101,8 @@ jobs:
             temp/checks/snapshot-preflight-*/result.json
       - name: Native visibility planes and independent negative controls
         run: python scripts/check_native_visibility_planes.py
+      - name: Native visibility batch and publication checks
+        run: python scripts/check_native_visibility_batch.py
       - name: Native PCM DSP and independent rational oracle
         run: python scripts/check_pcm_cubic.py
       - name: Native particle scan and independent scalar oracle
@@ -470,6 +472,8 @@ jobs:
             temp/checks/snapshot-gpu-*/result.json
       - name: Native visibility planes and independent negative controls
         run: python scripts/check_native_visibility_planes.py
+      - name: Native visibility batch and publication checks
+        run: python scripts/check_native_visibility_batch.py
       - name: Native particle scan and independent scalar oracle
         run: python scripts/check_native_threshold_scan.py
       - name: Private particle code binding and output preservation

@@ -66,6 +66,8 @@ def main():
                    help='Bind verified native cooperative dependency waits (default on)')
     b.add_argument('--native-visibility',action=argparse.BooleanOptionalAction,default=False,
                    help='Bind verified visibility prototype (default off; reference execution remains the runtime default)')
+    b.add_argument('--native-visibility-batch',action='store_true',
+                   help='Build the debug-US native visibility batch trial (default off)')
     b.add_argument('--native-pcm-cubic',action=argparse.BooleanOptionalAction,default=False,
                    help='Bind verified PCM cubic DSP (default off; explicit runtime reference/shadow/native mode)')
     b.add_argument('--native-particle-thresholds',action=argparse.BooleanOptionalAction,default=False,
@@ -138,6 +140,7 @@ def main():
         command.extend([f'-DPORT_NATIVE_WORLD_TRANSFORMS={"ON" if args.native_world_transforms else "OFF"}',
                         f'-DPORT_NATIVE_JOB_WAIT={"ON" if args.native_job_wait else "OFF"}',
                         f'-DPORT_NATIVE_VISIBILITY={"ON" if args.native_visibility else "OFF"}',
+                        f'-DPORT_NATIVE_VISIBILITY_BATCH={"ON" if args.native_visibility_batch else "OFF"}',
                         f'-DPORT_NATIVE_PCM_CUBIC={"ON" if args.native_pcm_cubic else "OFF"}',
                         f'-DPORT_NATIVE_PARTICLE_THRESHOLDS={"ON" if args.native_particle_thresholds else "OFF"}',
                         f'-DPORT_DEFORMATION_DEPTH_OBSERVER={"ON" if args.depth_observer else "OFF"}',
@@ -154,6 +157,11 @@ def main():
                         native_job_wait=args.native_job_wait)
         identity.update(runtime_record)
         identity['native_visibility']=args.native_visibility
+        identity['native_visibility_batch']=args.native_visibility_batch
+        dx12_backend = source_root/'libs/video/rsx_d3d12_backend.c'
+        identity['replay_backbuffer_capture'] = (
+            os.name == 'nt' and dx12_backend.is_file() and
+            'RSX_CAP_BACKBUFFER_ONLY' in dx12_backend.read_text(encoding='utf-8'))
         identity['native_pcm_cubic']=args.native_pcm_cubic
         identity['native_particle_thresholds']=args.native_particle_thresholds
         identity['menu_boot']=menu_boot
@@ -177,7 +185,7 @@ def main():
             identity['native_world_binding']=json.loads((binary/'native-world-binding.json').read_text())
             identity['native_world_sources_sha256']={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in sorted((ROOT/'src/motorstorm').glob('*')) if p.is_file()}
-        elif args.native_particle_thresholds:
+        elif args.native_particle_thresholds or args.native_visibility_batch:
             identity['native_world_sources_sha256']={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in sorted((ROOT/'src/motorstorm').glob('*')) if p.is_file()}
         (binary/'build_identity.json').write_text(json.dumps(identity,indent=2)); print('Build identity:',identity['sha256'])

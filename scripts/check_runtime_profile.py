@@ -500,6 +500,8 @@ class ExecutionProfileTests(unittest.TestCase):
         self.assertTrue(record['native_world_transforms'])
         self.assertTrue(record['native_job_wait'])
         self.assertTrue(record['native_job_wait_profile'])
+        self.assertFalse(record['replay_backbuffer_capture'])
+        self.assertFalse(record['native_visibility_batch'])
         self.assertFalse(record['job_capture'])
         self.assertFalse(record['job_capture_execution_filter'])
         self.assertFalse(record['job_capture_queue_history'])
@@ -513,6 +515,16 @@ class ExecutionProfileTests(unittest.TestCase):
         self.assertFalse(record['native_job_wait'])
         self.assertFalse(record['native_job_wait_profile'])
         self.assertIn('-DPORT_NATIVE_JOB_WAIT=OFF', commands[0])
+
+    def test_build_records_backbuffer_capability_and_visibility_batch(self):
+        backend = self.source / 'libs/video/rsx_d3d12_backend.c'
+        backend.parent.mkdir(parents=True)
+        backend.write_text('/* authored fixture */\ngetenv("RSX_CAP_BACKBUFFER_ONLY");\n',
+                           encoding='utf-8')
+        commands, record = self.build(['--native-visibility-batch'])
+        self.assertEqual(record['replay_backbuffer_capture'], os.name == 'nt')
+        self.assertTrue(record['native_visibility_batch'])
+        self.assertIn('-DPORT_NATIVE_VISIBILITY_BATCH=ON', commands[0])
 
     def test_wait_profile_legacy_paths_and_strict_capability(self):
         digest = '130a5ecc9913fbdcfce80080643aa403e0c4c86bc2e9e62fc2e7f2c5e32bc1f1'

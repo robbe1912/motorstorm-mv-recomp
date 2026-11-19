@@ -4,6 +4,7 @@ get_filename_component(MOTORSTORM_NATIVE_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." 
 option(PORT_NATIVE_WORLD_TRANSFORMS "Bind verified native scene hierarchy work" OFF)
 option(PORT_NATIVE_JOB_WAIT "Bind verified native cooperative job waits" OFF)
 option(PORT_NATIVE_VISIBILITY "Bind verified native box/plane visibility work" OFF)
+option(PORT_NATIVE_VISIBILITY_BATCH "Build the debug-US native visibility batch trial" OFF)
 option(PORT_NATIVE_PCM_CUBIC "Bind verified native PCM cubic resampling" OFF)
 option(PORT_NATIVE_PARTICLE_THRESHOLDS "Bind verified native particle threshold scans" OFF)
 option(PORT_DEFORMATION_DEPTH_OBSERVER "Build opt-in fallback-only depth observer" OFF)
@@ -92,6 +93,20 @@ function(motorstorm_bind_world_transforms)
 endfunction()
 
 function(motorstorm_configure_world_transforms target)
+    if(PORT_NATIVE_VISIBILITY_BATCH)
+        set(batch_source "${MOTORSTORM_NATIVE_SOURCE_DIR}/visibility_batch.c")
+        set(batch_adapter "${MOTORSTORM_NATIVE_SOURCE_DIR}/visibility_batch_adapter.cpp")
+        target_sources(${target} PRIVATE "${batch_source}" "${batch_adapter}")
+        set_source_files_properties("${batch_source}" "${batch_adapter}" PROPERTIES
+            INCLUDE_DIRECTORIES "${PS3RECOMP_DIR}/runtime/spu")
+        if(MSVC)
+            set_source_files_properties("${batch_source}" "${batch_adapter}" PROPERTIES
+                COMPILE_OPTIONS "/O2;/fp:strict;/clang:-O2")
+        else()
+            set_source_files_properties("${batch_source}" "${batch_adapter}" PROPERTIES
+                COMPILE_OPTIONS "-O2;-ffp-contract=off;-frounding-math")
+        endif()
+    endif()
     if(NOT PORT_NATIVE_WORLD_TRANSFORMS AND NOT PORT_NATIVE_JOB_WAIT AND NOT PORT_NATIVE_VISIBILITY AND NOT PORT_NATIVE_PARTICLE_THRESHOLDS AND NOT PORT_NATIVE_PCM_CUBIC AND NOT PORT_DEFORMATION_DEPTH_OBSERVER AND NOT PORT_QUEUE_CALL_OBSERVATION AND NOT PORT_NATIVE_MENU_BOOT)
         return()
     endif()

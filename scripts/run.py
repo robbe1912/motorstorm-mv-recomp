@@ -50,6 +50,7 @@ def main():
     ap.add_argument('--job-capture-execution-pc',type=lambda value:int(value,0),action='append',default=[],help='Retain execution events matching a raw source or target SPU PC; repeat up to 32 times')
     ap.add_argument('--native-pcm-cubic',choices=('0','shadow','1'),default='0',help='Explicit verified PCM DSP mode; requires matching native-enabled build')
     ap.add_argument('--native-visibility',choices=('0','shadow','1'),default='0',help='Explicit verified visibility mode; requires matching native-enabled build')
+    ap.add_argument('--native-visibility-batch',choices=('0','1'),default='0',help='Enable the debug-US native visibility batch trial')
     ap.add_argument('--depth-observer',action='store_true',help='Enable the bounded raw depth observer; requires a matching observer build')
     ap.add_argument('--native-depth',choices=('0','1'),default='0',help='Experimental native depth query; requires --depth-observer and a matching native-query build')
     ap.add_argument('--d3d12-debug',choices=('default','0','1'),default='default',help='Explicit API validation selection; default preserves build policy and assertions stay enabled')
@@ -66,6 +67,8 @@ def main():
     ap.add_argument('--texture-mips',choices=('0','1'),default='0',help='Upload the guest mip chain below level 0 for 2D/cube textures (default 0: level 0 only)')
     ap.add_argument('--profile-renderer',action='store_true',help='CPU renderer phases and GPU timestamps, without broad asset/Havok probes; adds timing overhead')
     ap.add_argument('--replay-observe-seconds',type=int,default=5,help='Observe after the gated replay target (default 5; overall --seconds guard still applies)')
+    ap.add_argument('--replay-screen-stride',type=int,default=120,
+                    help='Renderer batches between screen observations during menu replay (default 120)')
     ap.add_argument('--min-free-commit-gib',type=commit_reserve,default=12,help='Host free-commit reserve, 1..12 GiB (default 12); records budget and preserves other guards')
     ap.add_argument('--jobmod-dispatch-log',action='store_true',help='Diagnostic: log the first 16 and every 64th native job transfer a lift serves ([pm-jobmod] DISPATCH resolver=lift); slows SPU threads')
     ap.add_argument('--native-owned-jobs',action='store_true',help='Opt in to fingerprint-owned native jobs while retaining policy interpretation')
@@ -101,6 +104,8 @@ def main():
     if not 1<=args.seconds<=600: raise SystemExit('Bounded run must be 1..600 seconds')
     if not 1<=args.replay_observe_seconds<=600: raise SystemExit('Replay observation must be 1..600 seconds')
     if args.replay_observe_seconds!=5 and not args.menu_replay: raise SystemExit('Replay observation requires --menu-replay')
+    if not 1<=args.replay_screen_stride<=120 or (args.replay_screen_stride!=120 and not args.menu_replay):
+        raise SystemExit('Replay screen stride must be 1..120 and requires --menu-replay when changed')
     if not 0<=args.trace_task_lifecycle<=4096: raise SystemExit('Task lifecycle trace must be 0..4096 events')
     if args.trace_task_image is not None and (args.trace_task_image<0 or not args.trace_task_lifecycle): raise SystemExit('Task image filter requires an enabled trace and nonnegative image ID')
     if any(p.info['name']=='ms1_recomp.exe' for p in psutil.process_iter(['name'])): raise SystemExit('A native instance already exists; close it first')
@@ -119,7 +124,8 @@ def main():
     if args.menu_replay and replay_profile.get('startup', 'original') != ('menu' if menu_boot else 'original'):
         raise SystemExit('Replay startup differs from selected executable mode; select a menu-start profile or --original-intro')
     for selected,flag,description in ((args.native_pcm_cubic,'native_pcm_cubic','PCM DSP'),
-                                     (args.native_visibility,'native_visibility','Visibility')):
+                                     (args.native_visibility,'native_visibility','Visibility'),
+                                     (args.native_visibility_batch,'native_visibility_batch','Visibility batch')):
         if selected != '0':
             # The selected executable's own admitted build record, not build/native's.
             identity=admitted['build_identity']
@@ -153,6 +159,7 @@ def main():
     env=dict(os.environ)
     env['MS_NATIVE_PCM_CUBIC']=args.native_pcm_cubic
     env['MS_NATIVE_VISIBILITY']=args.native_visibility
+    env['MS_NATIVE_VISIBILITY_BATCH']=args.native_visibility_batch
     env['MS_DEPTH_OBSERVER']='1' if args.depth_observer else '0'
     env['MS_NATIVE_DEPTH']=args.native_depth
     env.pop('D3D12_DBG',None)
@@ -210,7 +217,11 @@ def main():
     (out/'pad.txt').write_text('0\n')
     if args.capture_menu or args.menu_replay:
         (out/'rsx').mkdir()
-        env.update(RSX_CAP='1:100:120',RSX_CAP_DIR=str(out/'rsx'),RSX_CAP_SCREEN_ONLY='1')
+        stride=args.replay_screen_stride
+        env.update(RSX_CAP=f'1:{12000//stride}:{stride}',RSX_CAP_DIR=str(out/'rsx'),RSX_CAP_SCREEN_ONLY='1')
+        if (args.menu_replay and not args.capture_menu and
+                admitted['build_identity'].get('replay_backbuffer_capture') is True):
+            env['RSX_CAP_BACKBUFFER_ONLY']='1'
     if args.capture_burst_frames:
         env.update(RSX_CAP_ARM_FILE=str(out/'capture-burst.arm'),RSX_CAP_BURST=str(args.capture_burst_frames))
     if args.capture_on_pad:

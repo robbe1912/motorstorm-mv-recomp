@@ -912,9 +912,37 @@ state. Replay of the PPU reference needs isolated copies of that state and
 the pointed-to inputs and outputs.
 
 The verified routing gives us a second implementation for comparing ordered
-visibility outputs. Exact input writeback, output capacity and flush
-boundaries still need comparison with the selected SPU path before enabling
-a native batch. The private report is `temp/pvs-ppu-reference.json`.
+visibility outputs. The private report is `temp/pvs-ppu-reference.json`.
+
+### Native US visibility batch
+
+The checked Windows build can opt into the native classifier after the selected
+debug-US job's input DMA. The host classifier updates radii and writes ordered
+lists, depth values and counters. The original epilogue and caller still publish
+the results and complete the job. The live adapter retains the original path
+when a batch could issue a 16 KiB output transfer.
+
+The private differential replay matched 109 captured batches using scalar and
+checked SIMD arithmetic. It followed the original epilogue and five caller
+return paths through the first subsequent DMA command. A forced flush matched
+the descriptor and payload for all 86 captured batches with primary output.
+That check modeled the transfer, with live flushing batches still retained.
+
+Two muted normal-PLAY runs used executable `3d0eb7f9…`, identical renderer
+settings and six screen-gated actions. Their final 15-second Present windows
+had median intervals of 371 ms with the classifier enabled and 624 ms with it
+disabled. The native run logged at least 32,768 batch completions. Each arm ran
+once and race state varied. Neither met the 33.3 ms frame budget.
+
+A subsequent run with the settled ticket screen reached the race HUD in
+239 seconds through six normal actions. Its final 15-second median was 386 ms
+with the classifier on. In its final complete 12-second renderer trace, draw
+preparation consumed 5.95 s. Vehicle and visibility marker waits overlapped
+1.25 s and 0.78 s of the gaps between renderer batches. The race-start camera
+sequence occupied much of the time after confirming the race. The startup
+profile retains direct menu boot and observes normal PLAY. Follow-up issues
+track [DX12 shader-resource setup](https://github.com/robbe1912/motorstorm-mv-recomp/issues/332)
+and [vehicle completion](https://github.com/robbe1912/motorstorm-mv-recomp/issues/327).
 
 Private evidence is in the run-stamped folders under
 `temp/job-timeline-evidence/`. The reports retain binary identities, matched

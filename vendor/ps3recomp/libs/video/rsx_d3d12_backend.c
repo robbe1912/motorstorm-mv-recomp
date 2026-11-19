@@ -1910,7 +1910,8 @@ static void cap_readback_write(ID3D12Resource* res, u32 w, u32 h, u32 dxgi,
     rb->lpVtbl->Release(rb);
 }
 
-static void rsx_capture_frame(u32 fi, u32 ndraws, u32 capidx, unsigned reason, int presenting)
+static void rsx_capture_frame(u32 fi, u32 ndraws, u32 capidx, unsigned reason, int presenting,
+                              int backbuffer_only)
 {
     char dir[300]; const char* base = rsx_env_once("RSX_CAP_DIR");
     if (!base || !*base) base = "rsxcap";
@@ -1926,6 +1927,8 @@ static void rsx_capture_frame(u32 fi, u32 ndraws, u32 capidx, unsigned reason, i
         fprintf(mf, "frame_count=%llu draws=%u backbuffer=%ux%u\n",
                 (unsigned long long)s_d3d.frame_count, ndraws, s_d3d.width, s_d3d.height);
         fprintf(mf, "capture_index=%u capture_reason=%u presenting=%d\n", capidx, reason, presenting);
+    }
+    if (mf && !backbuffer_only) {
         for (int i = 0; i < s_d3d.off_rt_cap; i++)
             if (s_d3d.off_rt[i].res && s_d3d.off_rt[i].used)
                 fprintf(mf, "offrt[%d] off=0x%08X %ux%u dxgi=%u\n", i, s_d3d.off_rt[i].off,
@@ -2028,13 +2031,14 @@ static void rsx_capture_frame(u32 fi, u32 ndraws, u32 capidx, unsigned reason, i
                 }
             }
         }
-        fclose(mf);
     }
+    if (mf) fclose(mf);
 
     /* Backbuffer (in PRESENT state at capture time) + every used offscreen RT. */
     snprintf(path, sizeof path, "%s/backbuffer.bmp", dir);
     cap_readback_write(s_d3d.render_targets[fi], s_d3d.width, s_d3d.height,
                        DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_STATE_PRESENT, fi, path);
+    if (backbuffer_only) return;
     for (int i = 0; i < s_d3d.off_rt_cap; i++) {
         OffRT* r = &s_d3d.off_rt[i];
         if (!r->res || !r->used) continue;
@@ -6945,6 +6949,7 @@ skip_dump_consider: ;
       const char* arm = rsx_env_once("RSX_CAP_ARM_FILE");
       if (cap || arm) {
         static int s_cap_parsed = 0;
+        static int s_cap_backbuffer_only = 0;
         static rsx_capture_schedule s_cap;
         static u32 s_burst_count = 64;
         if (!s_cap_parsed) {
@@ -6957,6 +6962,12 @@ skip_dump_consider: ;
                 fprintf(stderr, "[rsxcap] invalid RSX_CAP_SCREEN_ONLY (expected 0 or 1)\n");
                 abort();
             }
+            const char* mode = rsx_env_once("RSX_CAP_BACKBUFFER_ONLY");
+            if (mode && (strcmp(mode, "0") && (strcmp(mode, "1") || !s_cap.screen_only))) {
+                fprintf(stderr, "[rsxcap] RSX_CAP_BACKBUFFER_ONLY requires 0 or 1 with screen capture enabled\n");
+                abort();
+            }
+            s_cap_backbuffer_only = mode && !strcmp(mode, "1");
             const char* budget = rsx_env_once("RSX_CAP_BURST");
             const char* pad = rsx_env_once("RSX_CAP_PAD_MASK");
             if (pad) {
@@ -7004,7 +7015,8 @@ skip_dump_consider: ;
         u32 index;
         unsigned reason = rsx_capture_schedule_next(&s_cap, s_d3d.frame_count,
             s_dbg_last_draws > 0, s_present_this_frame, &index);
-        if (reason) rsx_capture_frame(fi, s_dbg_last_draws, index, reason, s_present_this_frame);
+        if (reason) rsx_capture_frame(fi, s_dbg_last_draws, index, reason, s_present_this_frame,
+                                      s_cap_backbuffer_only && reason == RSX_CAPTURE_SCHEDULED);
       } }
     if (phase_on()) s_phase.post += perf_now() - ph_post;
     double ph_present = phase_on() ? perf_now() : 0.0;

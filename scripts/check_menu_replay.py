@@ -188,6 +188,30 @@ class PadSendTests(unittest.TestCase):
 
 
 class MenuReplayTests(unittest.TestCase):
+    def test_normal_action_requires_distinct_consecutive_matching_captures(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d).resolve()
+            early, wrong, ready, settled, target = [root / f'{n}.bmp' for n in range(5)]
+            for frame, left in zip((early, wrong, ready, settled, target), (10, 36, 10, 10, 58)):
+                synthetic_bmp(frame, left)
+            profile = dict(
+                schema=1, elf_sha256='authored identity',
+                steps=[dict(reference=str(ready), roi=[0, 0, 80, 40], label='ticket',
+                            mask=0x4000, polls=4, mode='pixels', stable_frames=2)],
+                target=dict(reference=str(target), roi=[0, 0, 80, 40], label='race', mode='pixels'),
+            )
+            path = root / 'profile.json'
+            path.write_text(json.dumps(profile))
+            with patch('menu_replay.owned', return_value={'elf_sha256': 'authored identity'}), \
+                 patch('menu_replay.latest_frame', side_effect=[early, early, wrong, ready, settled, target]), \
+                 patch('menu_replay.send', return_value={'observed_frame': str(settled)}) as send, \
+                 patch('menu_replay.time.sleep'):
+                result = replay(root, path)
+            send.assert_called_once()
+            self.assertEqual(send.call_args.kwargs['expected_frame'], settled)
+            self.assertEqual(result['inputs'], 1)
+            self.assertTrue(result['target_observed'])
+
     def test_reference_variants_choose_observed_gate_and_skip_only_once(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
