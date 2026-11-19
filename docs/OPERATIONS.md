@@ -53,14 +53,15 @@ of a comparison. Texture-call remainder includes several kinds of work and
 must not be reported as allocation time alone.
 
 For a renderer timing trial, add `--profile-renderer` to the normal launcher.
-It enables the existing CPU phase counters and GPU timestamp queries, retaining
+It enables CPU phase counters and two GPU timestamp queries per renderer batch, retaining
 `rsx_phases.csv`, `[PERF]`/`[RSXPHASE]` logs and the exact timing environment in
 launch/final records. It does not enable the broad Havok/asset capture profile.
-Queries add overhead and do not establish exclusive guest CPU cost. Match GPU
-results to their reported `gpu_frame`, and distinguish nonpresenting batches
-from completed display intervals in `frames.csv`.
+The backend logs the active timestamp mode. Match GPU results to their
+reported `gpu_frame` and include nonpresenting batches when summing GPU time
+between Presents. Add `--profile-renderer-draws` for per-draw timing. This
+adds query overhead and populates the small and other draw durations.
 
-For CPU boundary timing without the per-draw GPU queries, set `PERF=1` in
+For CPU boundary timing without GPU queries, set `PERF=1` in
 the launcher environment and leave `--profile-renderer` off. The report counts
 render batches, including nonpresenting drains, and measures the whole render
 function. `outside_render` is unclassified time between batches. The

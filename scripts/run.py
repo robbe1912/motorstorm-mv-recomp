@@ -65,7 +65,8 @@ def main():
     ap.add_argument('--texture-retention',choices=('0','1'),default='0',help='Explicit reference or bounded persistent DX12 texture cache')
     ap.add_argument('--texture-cache-mib',type=int,default=512,help='Default+upload allocation target, 0..4096 MiB; live batch pins may exceed it')
     ap.add_argument('--texture-mips',choices=('0','1'),default='0',help='Upload the guest mip chain below level 0 for 2D/cube textures (default 0: level 0 only)')
-    ap.add_argument('--profile-renderer',action='store_true',help='CPU renderer phases and GPU timestamps, without broad asset/Havok probes; adds timing overhead')
+    ap.add_argument('--profile-renderer',action='store_true',help='CPU renderer phases and per-batch GPU timestamps, without broad asset/Havok probes')
+    ap.add_argument('--profile-renderer-draws',action='store_true',help='Add per-draw GPU timestamps to --profile-renderer; adds timing overhead')
     ap.add_argument('--replay-observe-seconds',type=int,default=5,help='Observe after the gated replay target (default 5; overall --seconds guard still applies)')
     ap.add_argument('--replay-screen-stride',type=int,default=120,
                     help='Renderer batches between screen observations during menu replay (default 120)')
@@ -77,6 +78,8 @@ def main():
     ap.add_argument('--pm-native-services',action='store_true',help='Run the job manager services native jobs call (registered in src/motorstorm/spu_pm_services.cpp) compiled while their LS text is pristine; requires --native-owned-jobs')
     ap.add_argument('--min-free-physical-gib',type=physical_reserve,default=4,help='Host free physical RAM reserve, 1..4 GiB (default 4); lower explicitly for concurrent host work')
     args=ap.parse_args()
+    if args.profile_renderer_draws and not args.profile_renderer:
+        ap.error('--profile-renderer-draws requires --profile-renderer')
     if args.job_capture_execution_pc and (not args.capture_jobs or
             len(args.job_capture_execution_pc) > 32 or
             any(pc < 0 or pc > 0x3fffc or pc % 4 for pc in args.job_capture_execution_pc)):
@@ -204,6 +207,8 @@ def main():
         env.update(VDEC_TRACE='1',FS_READ_ALL='1',SEMTID='1',SEM_WAITDBG='1',PS3_FSLOG='1')
     if args.profile_renderer:
         env.update(PERF='1',RSX_PHASE_STATS='1',RSX_PHASE_CSV=str(out/'rsx_phases.csv'))
+        if args.profile_renderer_draws:
+            env['RSX_PHASE_GPU_DRAWS']='1'
     if args.profile_textures:
         env.update(PERF='1',RSX_TEXTURE_PROFILE='1')
     if args.profile_cpu_surfaces:

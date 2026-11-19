@@ -662,8 +662,9 @@ static int bind_reuse_on(void)
     if (v < 0) { const char* e = getenv("RSX_BIND_REUSE"); v = e ? atoi(e) != 0 : 1; }
     return v;
 }
-/* RSX_PHASE_STATS=1: bounded CPU phase reports and GPU timestamps. The
- * existing frame-start fence supplies readiness; queries add no GPU wait. */
+/* RSX_PHASE_STATS=1: CPU phase reports and two GPU timestamps per batch.
+ * RSX_PHASE_GPU_DRAWS=1 adds per-draw pairs. The frame-start fence supplies
+ * readiness for both modes. */
 #define PHASE_QUERIES (MAX_DRAWS * 2 + 2)
 typedef struct {
     double gap, drain, prep, replay, pso, srv, composite, post, present, next, total;
@@ -677,6 +678,7 @@ static ID3D12QueryHeap* s_phase_queries;
 static ID3D12Resource* s_phase_readback;
 static u64 s_phase_frequency;
 static u32 s_phase_query_n;
+static int s_phase_gpu_draws;
 static u8 s_phase_small[MAX_DRAWS];
 static FILE* s_phase_csv;
 static int s_phase_csv_checked;
@@ -695,11 +697,14 @@ static void phase_gpu_begin(void)
     static int failed;
     if (!phase_on() || failed) return;
     if (!s_phase_queries) {
+        const char* draw_queries = getenv("RSX_PHASE_GPU_DRAWS");
+        s_phase_gpu_draws = draw_queries && !strcmp(draw_queries, "1");
         D3D12_QUERY_HEAP_DESC q = {0};
-        q.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP; q.Count = PHASE_QUERIES;
+        q.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
+        q.Count = s_phase_gpu_draws ? PHASE_QUERIES : 2;
         D3D12_HEAP_PROPERTIES hp = {0}; hp.Type = D3D12_HEAP_TYPE_READBACK;
         D3D12_RESOURCE_DESC rd = {0};
-        rd.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER; rd.Width = PHASE_QUERIES * 8u;
+        rd.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER; rd.Width = q.Count * 8u;
         rd.Height = 1; rd.DepthOrArraySize = 1; rd.MipLevels = 1;
         rd.SampleDesc.Count = 1; rd.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
         if (FAILED(s_d3d.device->lpVtbl->CreateQueryHeap(s_d3d.device, &q,
@@ -712,6 +717,8 @@ static void phase_gpu_begin(void)
             fprintf(stderr, "[RSXPHASE] GPU timestamps unavailable; CPU phases remain enabled\n");
             failed = 1; return;
         }
+        fprintf(stderr, "[RSXPHASE] GPU timestamps mode=%s\n",
+                s_phase_gpu_draws ? "draw" : "batch");
     }
     s_phase_query_n = 1;
     s_phase_gpu_frame = s_d3d.frame_count;
@@ -746,7 +753,7 @@ static void phase_gpu_collect(void)
 }
 static void phase_gpu_draw(int is_small, int end)
 {
-    if (!phase_on() || !s_phase_query_n) return;
+    if (!s_phase_gpu_draws || !s_phase_query_n) return;
     if (!end) s_phase_small[(s_phase_query_n - 1) / 2] = (u8)is_small;
     s_d3d.cmd_list->lpVtbl->EndQuery(s_d3d.cmd_list, s_phase_queries,
                                     D3D12_QUERY_TYPE_TIMESTAMP, s_phase_query_n++);
