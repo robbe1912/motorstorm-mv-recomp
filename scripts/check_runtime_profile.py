@@ -179,6 +179,22 @@ class ExecutionProfileTests(unittest.TestCase):
     def test_eager_surface_submit_enabled_lists_exposure_target(self):
         self.check_eager_surface_submit('1')
 
+    def check_submit_draws(self, count):
+        with patch.dict(os.environ, {'RSX_SUBMIT_DRAWS': 'inherited'}):
+            record, env = self.launch('--submit-draws', count)
+        expected = count if count != '0' else None
+        self.assertEqual(env.get('RSX_SUBMIT_DRAWS'), expected)
+        self.assertEqual(record['environment'].get('RSX_SUBMIT_DRAWS'), expected)
+
+    def test_submit_draws_default_clears_inherited_cap(self):
+        self.check_submit_draws('0')
+
+    def test_submit_draws_sets_cap(self):
+        self.check_submit_draws('256')
+
+    def test_submit_draws_rejects_tiny_cap(self):
+        self.rejected('Submit draw cap must be 0', '--submit-draws', '15')
+
     def test_pm_native_services_default_clears_inherited_selection(self):
         with patch.dict(os.environ, {'SPU_PM_NATIVE_SVC': '1', 'SPU_PM_SVC_VERIFY': '1'}):
             record, env = self.launch('--native-owned-jobs')

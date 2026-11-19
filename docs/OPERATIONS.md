@@ -445,6 +445,20 @@ the selection. `RSX_CPU_SURFACE_PROFILE=1` also prints `[CPUSURFACE_EAGER]`
 submit counts. Game-free coverage:
 [check_cpu_surface_eager.py](../scripts/check_cpu_surface_eager.py).
 
+`--submit-draws N` (default `0`, off) sets `RSX_SUBMIT_DRAWS`. The renderer then
+submits the batch at the first draw boundary where it already holds `N` or
+more draws, through the same nonpresenting capacity path. In MotorStorm races
+the exposure target's write is the last draw of a batch of about 850 draws, and
+the main thread's read waits while the renderer prepares and replays that whole
+batch. Smaller batches leave a shorter tail to replay when the read arrives.
+Reads stay coherent, and each extra batch costs one `render_frame` and one GPU
+retirement. `N` is 16 up to the build's draw-record capacity (`PORT_RSX_MAX_DRAWS`,
+default 2048); the runtime aborts on anything else. On a local build with
+`--eager-surface-submit 1`, 256 measured best (512 and 128 were slightly lower).
+The launcher clears an inherited cap and records the selection. Game-free
+coverage: [check_rsx_submit_draws.py](../scripts/check_rsx_submit_draws.py)
+and the cap case in [check_rsx_record_retire.py](../scripts/check_rsx_record_retire.py).
+
 Use identical cache targets, validation and profiling settings for comparisons.
 Retention validates every uploaded face with full XXH3; the reference retains
 its sparse source checksum. Complete hashing has a measurable cost. Verify the

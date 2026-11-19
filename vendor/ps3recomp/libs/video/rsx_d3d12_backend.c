@@ -7191,6 +7191,31 @@ static int drain_overlap(void)
     const char* value = rsx_env_once("RSX_DRAIN_OVERLAP");
     return value && value[0] == '1' && !value[1];
 }
+/* RSX_SUBMIT_DRAWS=<n> (opt-in, 16..MAX_DRAWS decimal; unset = off): submit
+ * the batch at the first draw boundary at which it holds n or more draws,
+ * through the capacity-drain path. A CPU read waits for the batch that
+ * writes its surface to be recorded and submitted; with smaller batches more
+ * of the frame is submitted earlier and less is left to record when the read
+ * arrives. Reads stay coherent: nothing is served before its write retires.
+ * Each extra batch costs one render_frame and one GPU retirement. */
+static u32 submit_draws_cap(void)
+{
+    static int parsed;
+    static u32 cap;
+    if (parsed) return cap;
+    parsed = 1;
+    const char* value = rsx_env_once("RSX_SUBMIT_DRAWS");
+    if (!value) return 0;
+    u32 n = 0; const char* p = value;
+    while (*p >= '0' && *p <= '9' && n <= MAX_DRAWS) n = n * 10 + (u32)(*p++ - '0');
+    if (p == value || *p || n < 16 || n > MAX_DRAWS) {
+        fprintf(stderr, "[D3D12] RSX_SUBMIT_DRAWS must be a decimal 16..%u, got '%s'\n", (unsigned)MAX_DRAWS, value);
+        abort();
+    }
+    fprintf(stderr, "[D3D12] RSX_SUBMIT_DRAWS=%u: submit at the first draw boundary with %u or more draws\n", n, n);
+    cap = n;
+    return cap;
+}
 static void submit_record_capacity(void* context, int present)
 {
     (void)context;
@@ -7214,6 +7239,11 @@ static void cpu_surface_flush_recorded(int at_pump)
 static void ensure_draw_record_capacity(void)
 {
     cpu_surface_flush_recorded(0);
+    {
+        u32 cap = submit_draws_cap();
+        if (cap && s_d3d.initialized && s_d3d.draw_count >= cap)
+            submit_record_capacity(NULL, 0);
+    }
     if (!rsx_record_batch_room(&s_d3d.draw_count, MAX_DRAWS, NULL, submit_record_capacity)) {
         fprintf(stderr, "[D3D12] Record capacity drain failed (count=%u)\n", s_d3d.draw_count);
         abort();

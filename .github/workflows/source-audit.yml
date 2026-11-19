@@ -99,6 +99,7 @@ jobs:
         run: |
           python scripts/check_rsx_record_batch.py
           python scripts/check_rsx_record_retire.py
+          python scripts/check_rsx_submit_draws.py
           python scripts/check_rsx_triangle_capacity.py
       - name: Actual indexed strip restart regression
         run: python scripts/check_rsx_restart.py
@@ -338,6 +339,7 @@ jobs:
         run: |
           python scripts/check_rsx_record_batch.py
           python scripts/check_rsx_record_retire.py
+          python scripts/check_rsx_submit_draws.py
           python scripts/check_rsx_triangle_capacity.py
       - name: Actual indexed strip restart regression
         run: python scripts/check_rsx_restart.py
