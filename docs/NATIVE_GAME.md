@@ -421,10 +421,14 @@ Each back edge scans eight components in 50 original instructions. The adapter
 materializes all lanes of r2/r4/r5/r6/r7/r8/r9/r15 and the last policy PC; it writes
 no LS memory. Other offsets, wrapping extents and oversized input remain original.
 
-The build option `--native-particle-thresholds` is off by default. When enabled,
-`MS_NATIVE_PARTICLE_THRESHOLDS=reference` (also unset/`0`) retains interpretation,
-`shadow` compares complete cloned contexts and executes the original, and `1`/`native`
-selects the validated operation. Invalid mode values and parity failures abort
+The build option `--native-particle-thresholds` is off by default. In the supported
+runner, select `--native-particle-thresholds 0|shadow|1`: `0` retains interpretation,
+`shadow` compares complete cloned contexts and executes the original, and `1`
+selects the validated operation. The runner overrides inherited
+`MS_NATIVE_PARTICLE_THRESHOLDS`, records the choice, and requires matching build
+capability and executable identity for either nonzero mode. Direct executable
+launches also accept `reference` and `native` through that environment variable.
+Invalid mode values and parity failures abort
 visibly. Unsupported numeric ranges, extents, code identities, IRQ/DMA ownership,
 resident boundaries or instruction budgets retain original execution. Reference
 interpretation policy remains required. The generic fork-native-leaf seam is reused;

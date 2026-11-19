@@ -483,6 +483,17 @@ measurements. Use the existing normal menu route and resource/ownership guards.
 
 The restored native visibility operation uses explicit `--native-visibility 0|shadow|1` during runs. The default `0` overrides inherited `MS_NATIVE_VISIBILITY`; nonzero choices require a matching `--native-visibility` build and recorded executable identity. Shadow/native preserve the original operation fallback and real completion. Treat shadow results and operation timings separately from gameplay frame-rate acceptance.
 
+Build with `--native-particle-thresholds` and select
+`--native-particle-thresholds 0|shadow|1` during runs. The default `0`
+overrides inherited `MS_NATIVE_PARTICLE_THRESHOLDS`; shadow and native require
+the matching capability and executable hash in the adjacent build identity.
+Shadow checks the complete context against original instruction execution;
+native uses the guarded typed scan. Unsupported inputs retain interpretation,
+and original particle publication and completion remain in place. Inspect
+`[native-particle-threshold]` mode, completed, compared and fallback counters
+to verify actual coverage. Shadow checks add substantial diagnostic work;
+use native/reference modes for subsequent timing and keep the settings matched.
+
 Build with `--native-visibility-batch` and run with
 `--native-visibility-batch 1` to try the debug-US batch classifier.
 Use `--native-visibility-batch 0` for a reference run with the same executable.

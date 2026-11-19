@@ -1085,6 +1085,56 @@ and the run directory. Stable native PLAY against the requested 33 ms ceiling
 remains unachieved.
 
 
+### Explicit particle threshold activation
+
+The producer investigation found that executable `a96cb20da3f177bd` had
+`native_particle_thresholds=false`. The typed #204 operation existed, but this
+binary could not execute it. The supported runner now provides
+`--native-particle-thresholds 0|shadow|1`, with build capability/hash admission,
+explicit inherited-environment override and launch identity recording.
+Default reference behavior and unsupported-state fallback remain available.
+Actual-source admission tests cover 1,728 mode combinations and reject an
+inherited particle selector; the 8,192-case scalar oracle, its four unsafe
+mutants and the source-binding output-preservation checks pass.
+
+Build `06eac2623586ac49` enables the existing threshold operation alongside
+native visibility preparation. Muted shadow run
+`20261119T191740.590634Z` completed at least 4,096 whole-context comparisons
+against original instruction execution, representing 3,072,000 original
+instructions. No parity error was reported. Unsupported numeric inputs and
+foreign code retained interpretation. The owned run stopped explicitly after
+135.2 seconds; it is a semantic diagnostic, not a performance sample.
+
+Normal PLAY run `20261119T192213.561155Z` used the same executable in native
+mode, six screen-gated inputs, checked selective optimization, native depth,
+persistent 512 MiB texture retention, batch GPU timestamps, job/renderer
+profiling and 4/2 GiB commit/physical reserves. It reached the race HUD at
+163.3 seconds and ended at 223.8 seconds after a 60-second observation. The
+inspected frame shows the player, opponents and advancing race HUD. It was
+muted, with no resource breach or failed DX12 Present. At least 599,040 scans
+executed natively, accounting for 449,280,000 original instruction equivalents.
+The last 15 seconds still had a 341.8 ms median Present interval, 400.1 ms
+p95 and 461.5 ms maximum over 44 intervals; none met the frame budget.
+This instrumented trial establishes no repeatable end-to-end speedup.
+
+The fixed HUD+20-second capture delivered 43,043 records without pending
+records, drops or append failures. Its 593 selection joins, 589 continuations
+and 588 completion candidates yield ten uniquely joined vertex-marker waits.
+The longest is 38.8572 ms: 30.3297 ms precedes selection, the selected vertex
+call takes 8.2938 ms, return-to-commit takes 0.0253 ms, and observed completion
+follows 0.2084 ms later. In the same context/host dispatch, a preceding
+particle-system call spans publication and lasts 246.1713 ms. Publication to
+vertex selection is 130.7292 ms; host admission itself is 0.0174 ms.
+These are wall-time/lifetime bounds, including scheduling; publication alone
+does not establish input readiness. The remaining upstream particle operation
+still needs a larger typed producer boundary. Smaller tail vertex waits do
+not establish that the long frame gaps are solved.
+
+Private evidence is run-local `particle-shadow-validation.json`,
+`particle-native-validation.json`, and
+`job-capture/particle-upstream-stall.json`. Full graphics/playability and
+the 33 ms goal remain unverified.
+
 ### Native engine comparison and particle producer boundary
 
 A native engine comparison is useful at the level of data flow and scheduling.

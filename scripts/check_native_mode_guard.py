@@ -20,7 +20,8 @@ def main():
     root = Path(__file__).resolve().parents[1]
     body = next(n for n in ast.parse((root/'scripts/run.py').read_text()).body
                 if isinstance(n, ast.FunctionDef) and n.name == 'main').body
-    flags = {'--native-pcm-cubic', '--native-visibility', '--native-visibility-batch'}
+    flags = {'--native-pcm-cubic', '--native-visibility', '--native-visibility-batch',
+             '--native-particle-thresholds'}
     init = next(n for n in body if isinstance(n, ast.Assign)
                 and isinstance(n.targets[0], ast.Name) and n.targets[0].id == 'ap')
     arguments = [n for n in body if isinstance(n, ast.Expr)
@@ -36,7 +37,7 @@ def main():
                  and ast.unparse(n.target) == '(selected, flag, description)')
     environment = [n for n in body if isinstance(n, ast.Assign)
                    and ast.unparse(n.targets[0]) in
-                   ('env', "env['MS_NATIVE_PCM_CUBIC']", "env['MS_NATIVE_VISIBILITY']",
+                   ('env', "env['MS_NATIVE_PCM_CUBIC']", "env['MS_NATIVE_PARTICLE_THRESHOLDS']", "env['MS_NATIVE_VISIBILITY']",
                     "env['MS_NATIVE_VISIBILITY_BATCH']")]
     assert len(environment) == len(flags) + 1
     depth_guard = next(n for n in body if isinstance(n, ast.If)
@@ -62,15 +63,18 @@ def main():
 
         def cases(selected_guard, selected_environment):
             nonlocal count
-            for pcm, visibility, batch in product(('0', 'shadow', '1'), ('0', 'shadow', '1'), ('0', '1')):
-                for pcm_build, visibility_build, batch_build, stale in product((False, True), repeat=4):
+            for pcm, visibility, batch, particle in product(
+                    ('0', 'shadow', '1'), ('0', 'shadow', '1'), ('0', '1'), ('0', 'shadow', '1')):
+                for pcm_build, visibility_build, batch_build, particle_build, stale in product((False, True), repeat=5):
                     metadata = dict(native_pcm_cubic=pcm_build, native_visibility=visibility_build,
                                     native_visibility_batch=batch_build,
+                                    native_particle_thresholds=particle_build,
                                     sha256='stale' if stale else digest)
                     (native/'build_identity.json').write_text(json.dumps(metadata))
                     ns = dict(argparse=argparse, __doc__=__doc__, ROOT=sandbox, exe=exe,
                               hashlib=hashlib, json=json,
                               os=SimpleNamespace(environ={'MS_NATIVE_PCM_CUBIC':'1',
+                                                         'MS_NATIVE_PARTICLE_THRESHOLDS':'1',
                                                          'MS_NATIVE_VISIBILITY':'shadow',
                                                          'MS_NATIVE_VISIBILITY_BATCH':'1'}))
                     # run.py admits the selected executable's adjacent record
@@ -81,9 +85,11 @@ def main():
                     ns['args'] = ns['ap'].parse_args([
                         '--native-pcm-cubic', pcm, '--native-visibility', visibility,
                         '--native-visibility-batch', batch,
+                        '--native-particle-thresholds', particle,
                     ])
                     expected = all(mode == '0' or built and not stale for mode, built in (
                         (pcm, pcm_build), (visibility, visibility_build), (batch, batch_build),
+                        (particle, particle_build),
                     ))
                     try:
                         execute([selected_guard, *selected_environment], ns)
@@ -91,9 +97,10 @@ def main():
                     except SystemExit as error:
                         assert 'matching --native-' in str(error)
                         admitted = False
-                    assert admitted == expected, (pcm, visibility, batch, metadata, admitted)
+                    assert admitted == expected, (pcm, visibility, batch, particle, metadata, admitted)
                     if admitted:
                         assert ns['env']['MS_NATIVE_PCM_CUBIC'] == pcm
+                        assert ns['env']['MS_NATIVE_PARTICLE_THRESHOLDS'] == particle
                         assert ns['env']['MS_NATIVE_VISIBILITY'] == visibility
                         assert ns['env']['MS_NATIVE_VISIBILITY_BATCH'] == batch
                     count += 1
@@ -116,6 +123,8 @@ def main():
         for label, candidate, env in [
                 ('missing build flag', mutant, environment),
                 ('inherited visibility', guard, environment[:-2] + environment[-1:]),
+                ('inherited particle thresholds', guard,
+                 [n for n in environment if ast.unparse(n.targets[0]) != "env['MS_NATIVE_PARTICLE_THRESHOLDS']"]),
                 ('inherited visibility batch', guard, environment[:-1])]:
             try:
                 cases(candidate, env)
@@ -207,7 +216,7 @@ def main():
                 pass
             else:
                 raise AssertionError('Native depth admission mutant escaped')
-    print(f'PASS native-mode admission; {admitted_cases} mode combinations plus 16 native-query combinations, six mutants rejected')
+    print(f'PASS native-mode admission; {admitted_cases} mode combinations plus 16 native-query combinations, unsafe mutants rejected')
 
 
 if __name__ == '__main__':
