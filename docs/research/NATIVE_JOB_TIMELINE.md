@@ -886,6 +886,36 @@ commits. The module inventory identifies image 212. Issue #331 tracks
 joining the producer to timed waits and recovering the typed vertex-buffer
 contract. Matched timing and full native execution remain open.
 
+The follow-up pair used the same checked binary and six acknowledged menu
+inputs with dispatch logging disabled in both arms. The reference and
+image-212 arms each recorded less than 0.02 ms of completed vertex-buffer
+waits over their final roughly 20-second brackets. Completed PVS waits
+totaled 9.542 and 9.219 seconds respectively. Issue #331 retains the earlier
+vertex stall as a separate observation whose trigger remains unverified.
+
+### US PPU reference for visibility output
+
+For [issue #282](https://github.com/robbe1912/motorstorm-mv-recomp/issues/282#issuecomment-6780136092),
+the selected debug-US ELF `3e68c72f…` contains a named PPU reference for the
+visibility work. A private verifier decoded 2,065 instructions across five
+routines, checked eleven control-flow edges and resolved three output
+pointer stores through the original function descriptor's TOC.
+
+At `SceneObjectList::ComputeVisibleSet` (`0x6BE7E8`), the original flag selects
+the SPU submission through `PVSPPUThread::Process` or the synchronous
+`sceneresources::ComputePVS` path at `0x8661C4`. The latter initializes
+visibility state and enters the window loop. Separate original calls handle
+frustum rejection and occluder containment. The output block pointer is
+loaded from `PVSInput+0x1F8`. The initializer installs its first three
+entries as the opaque, blended and Z-pass output pointers in shared PPU
+state. Replay of the PPU reference needs isolated copies of that state and
+the pointed-to inputs and outputs.
+
+The verified routing gives us a second implementation for comparing ordered
+visibility outputs. Exact input writeback, output capacity and flush
+boundaries still need comparison with the selected SPU path before enabling
+a native batch. The private report is `temp/pvs-ppu-reference.json`.
+
 Private evidence is in the run-stamped folders under
 `temp/job-timeline-evidence/`. The reports retain binary identities, matched
 slot cohorts, committed marker joins, route receipts and artifact hashes.
