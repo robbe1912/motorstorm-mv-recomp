@@ -38,6 +38,14 @@ def main():
         assert n['client'] in [1,2] and n['renderer']==2
         assert n['service']==sum(n[k] for k in ['allocation','prior_fence','commands','copy_fence','packing','other'])
         assert [n[k] for k in ['matched','hits','copies','host_bytes','guest_bytes']]==[2,1,1,256,8]
+    # Renderer phases between a queued read's queue and service ticks sum to its queue time.
+    phases=['other','idle','fifo','draw','vertex','submit','submit_drain','submit_prep','submit_replay','submit_post',
+            'submit_present','submit_next','submit_retire','gpu_wait','present','surface']
+    queues=[{k:int(v,16) if k=='address' else int(v) for k,v in re.findall(r'(\w+)=([0-9A-F]+)',line)} for line in run.stderr.splitlines() if line.startswith('[CPUSURFACE_QUEUE]')]
+    assert len(queues)==1,run.stderr
+    queued=[{k:int(v,16) if k=='address' else int(v) for k,v in p.items()} for p in records if int(p['client'])!=int(p['renderer'])]
+    assert len(queued)==1 and queues[0]['queue']==queued[0]['queue']>0
+    assert set(phases)<=set(queues[0]) and sum(queues[0][k] for k in phases)==queues[0]['queue']
     failed=subprocess.run([str(exe),'clock-failure'],capture_output=True,text=True)
     (out/'clock-failure.log').write_text(failed.stdout+failed.stderr)
     assert failed.returncode==2 and 'profile clock' in failed.stderr

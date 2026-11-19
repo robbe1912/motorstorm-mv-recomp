@@ -11,6 +11,7 @@ typedef struct CpuSurfaceRequest {
     int status;
     u64 queued_ms;
     RsxCpuSurfaceProfile profile;
+    u64 phases[RSX_PHASE_COUNT];   /* renderer phase totals at queue time; deltas once served */
 } CpuSurfaceRequest;
 static SRWLOCK s_cpu_surface_lock = SRWLOCK_INIT;
 static _Atomic(CpuSurfaceRequest*) s_cpu_surface_head;
@@ -35,6 +36,36 @@ static u64 cpu_surface_tick(void) {
     LARGE_INTEGER t;if(!QueryPerformanceCounter(&t) || t.QuadPart<0)cpu_surface_fail("profile clock",E_FAIL);
     return (u64)t.QuadPart;
 }
+/* Renderer phase accounting for queue time (profile only). Transitions count
+ * only on the renderer service thread; exits whose enter predates it are
+ * ignored. */
+static RsxRendererPhases s_cpu_surface_phases;
+static void cpu_surface_phase_enter(unsigned phase) {
+    if(!s_cpu_surface_profile || !s_cpu_surface_thread || (LONG)GetCurrentThreadId()!=s_cpu_surface_thread)return;
+    if(!rsx_renderer_phase_enter(&s_cpu_surface_phases,cpu_surface_tick,phase))cpu_surface_fail("renderer phase nesting",E_FAIL);
+}
+static void cpu_surface_phase_exit(void) {
+    if(!s_cpu_surface_profile || !s_cpu_surface_thread || (LONG)GetCurrentThreadId()!=s_cpu_surface_thread)return;
+    rsx_renderer_phase_exit(&s_cpu_surface_phases,cpu_surface_tick);
+}
+/* Relabel an open submit phase with the stage render_frame is entering. */
+static void cpu_surface_phase_submit_stage(unsigned phase) {
+    if(!s_cpu_surface_profile || !s_cpu_surface_thread || (LONG)GetCurrentThreadId()!=s_cpu_surface_thread)return;
+    rsx_renderer_phase_switch(&s_cpu_surface_phases,cpu_surface_tick,phase,RSX_PHASE_SUBMIT,RSX_PHASE_SUBMIT_RETIRE);
+}
+/* Queue tick plus the renderer phase totals as of that tick. */
+static void cpu_surface_phase_queued(CpuSurfaceRequest *request) {
+    if(!s_cpu_surface_profile){request->profile.queued=0;return;}
+    rsx_renderer_phase_snapshot(&s_cpu_surface_phases,cpu_surface_tick,&request->profile.queued,request->phases);
+}
+/* Service tick; the request's phases become the renderer's time per phase
+ * between its queue and service ticks (they sum to the queue time). */
+static void cpu_surface_phase_started(CpuSurfaceRequest *request) {
+    if(!s_cpu_surface_profile){request->profile.started=0;return;}
+    u64 now[RSX_PHASE_COUNT];
+    rsx_renderer_phase_snapshot(&s_cpu_surface_phases,cpu_surface_tick,&request->profile.started,now);
+    for(unsigned i=0;i<RSX_PHASE_COUNT;i++)request->phases[i]=now[i]-request->phases[i];
+}
 static void cpu_surface_profile_emit(CpuSurfaceRequest *request) {
     if(!s_cpu_surface_profile)return;
     RsxCpuSurfaceProfile *p=&request->profile;
@@ -51,13 +82,27 @@ static void cpu_surface_profile_emit(CpuSurfaceRequest *request) {
         (unsigned long long)(p->finished-p->started-stages),(unsigned long long)p->matched,
         (unsigned long long)p->hits,(unsigned long long)p->copies,
         (unsigned long long)p->host_bytes,(unsigned long long)p->guest_bytes);
+    if(request->done) {
+        const u64 *q=request->phases;
+        fprintf(stderr,"[CPUSURFACE_QUEUE] address=%08X client=%lu frequency=%llu queue=%llu other=%llu idle=%llu fifo=%llu draw=%llu vertex=%llu submit=%llu submit_drain=%llu submit_prep=%llu submit_replay=%llu submit_post=%llu submit_present=%llu submit_next=%llu submit_retire=%llu gpu_wait=%llu present=%llu surface=%llu\n",
+            request->address,(unsigned long)request->client_thread,(unsigned long long)s_cpu_surface_profile_frequency,
+            (unsigned long long)(p->started-p->queued),
+            (unsigned long long)q[RSX_PHASE_OTHER],(unsigned long long)q[RSX_PHASE_IDLE],(unsigned long long)q[RSX_PHASE_FIFO],
+            (unsigned long long)q[RSX_PHASE_DRAW],(unsigned long long)q[RSX_PHASE_VERTEX],(unsigned long long)q[RSX_PHASE_SUBMIT],
+            (unsigned long long)q[RSX_PHASE_SUBMIT_DRAIN],(unsigned long long)q[RSX_PHASE_SUBMIT_PREP],(unsigned long long)q[RSX_PHASE_SUBMIT_REPLAY],
+            (unsigned long long)q[RSX_PHASE_SUBMIT_POST],(unsigned long long)q[RSX_PHASE_SUBMIT_PRESENT],(unsigned long long)q[RSX_PHASE_SUBMIT_NEXT],
+            (unsigned long long)q[RSX_PHASE_SUBMIT_RETIRE],
+            (unsigned long long)q[RSX_PHASE_GPU_WAIT],(unsigned long long)q[RSX_PHASE_PRESENT],(unsigned long long)q[RSX_PHASE_SURFACE]);
+    }
 }
 static void cpu_surface_fence_wait(void) {
     u64 value=++s_cpu_surface_fence_value;
     CPU_SURFACE_HR(s_d3d.cmd_queue->lpVtbl->Signal(s_d3d.cmd_queue,s_cpu_surface_fence,value));
     if(s_cpu_surface_fence->lpVtbl->GetCompletedValue(s_cpu_surface_fence)<value) {
         CPU_SURFACE_HR(s_cpu_surface_fence->lpVtbl->SetEventOnCompletion(s_cpu_surface_fence,value,s_cpu_surface_event));
+        cpu_surface_phase_enter(RSX_PHASE_GPU_WAIT);
         if(WaitForSingleObject(s_cpu_surface_event,30000)!=WAIT_OBJECT_0)cpu_surface_fail("GPU fence wait",E_FAIL);
+        cpu_surface_phase_exit();
     }
     CPU_SURFACE_HR(s_d3d.device->lpVtbl->GetDeviceRemovedReason(s_d3d.device));
 }
@@ -74,7 +119,9 @@ static int cpu_surface_fence_reached(ID3D12Fence *fence,u64 value) {
 static void cpu_surface_fence_block(ID3D12Fence *fence,HANDLE event,u64 value,const char *operation) {
     if(cpu_surface_fence_reached(fence,value))return;
     CPU_SURFACE_HR(fence->lpVtbl->SetEventOnCompletion(fence,value,event));
+    cpu_surface_phase_enter(RSX_PHASE_GPU_WAIT);
     if(WaitForSingleObject(event,30000)!=WAIT_OBJECT_0 || !cpu_surface_fence_reached(fence,value))cpu_surface_fail(operation,E_FAIL);
+    cpu_surface_phase_exit();
 }
 /* Prefetched copies of opted-in surfaces. RSX_CPU_SURFACE_PREFETCH lists up
  * to four RSX surface offsets (1-8 hex digits each, comma separated); none by
@@ -385,9 +432,11 @@ static void cpu_surface_service(void) {
     ReleaseSRWLockExclusive(&s_cpu_surface_lock);
     while(request) {
         CpuSurfaceRequest *next=request->next;
-        request->profile.started=cpu_surface_tick();
+        cpu_surface_phase_started(request);
         s_cpu_surface_profile_active=s_cpu_surface_profile?&request->profile:NULL;
+        cpu_surface_phase_enter(RSX_PHASE_SURFACE);
         cpu_surface_read(request->address,request->bytes);request->status=0;
+        cpu_surface_phase_exit();
         s_cpu_surface_profile_active=NULL;
         request->profile.finished=cpu_surface_tick();
         u64 elapsed=GetTickCount64()-request->queued_ms;
@@ -412,7 +461,7 @@ static void cpu_surface_request(u32 address,u32 bytes,void *opaque) {
         cpu_surface_read(address,bytes);s_cpu_surface_profile_active=previous;
         direct.profile.finished=direct.profile.returned=cpu_surface_tick();cpu_surface_profile_emit(&direct);return;
     }
-    CpuSurfaceRequest request={0};request.address=address;request.bytes=bytes;request.client_thread=client_thread;request.status=-1;request.queued_ms=GetTickCount64();request.profile.queued=cpu_surface_tick();
+    CpuSurfaceRequest request={0};request.address=address;request.bytes=bytes;request.client_thread=client_thread;request.status=-1;request.queued_ms=GetTickCount64();cpu_surface_phase_queued(&request);
     request.done=CreateEventA(NULL,FALSE,FALSE,NULL);
     if(!request.done)cpu_surface_fail("CPU read event creation",E_FAIL);
     AcquireSRWLockExclusive(&s_cpu_surface_lock);
@@ -563,9 +612,11 @@ static void cpu_surface_service_ready(void) {
     ReleaseSRWLockExclusive(&s_cpu_surface_lock);
     while(ready) {
         CpuSurfaceRequest *next=ready->next;
-        ready->profile.started=cpu_surface_tick();
+        cpu_surface_phase_started(ready);
         s_cpu_surface_profile_active=s_cpu_surface_profile?&ready->profile:NULL;
+        cpu_surface_phase_enter(RSX_PHASE_SURFACE);
         cpu_surface_read(ready->address,ready->bytes);ready->status=0;
+        cpu_surface_phase_exit();
         s_cpu_surface_profile_active=NULL;
         ready->profile.finished=cpu_surface_tick();
         if(!SetEvent(ready->done))cpu_surface_fail("CPU completion event",E_FAIL);
@@ -634,7 +685,7 @@ static void cpu_surface_shutdown(void) {
     s_cpu_surface_live=0;
     CpuSurfaceRequest *request=s_cpu_surface_head;s_cpu_surface_head=s_cpu_surface_tail=NULL;
     ReleaseSRWLockExclusive(&s_cpu_surface_lock);
-    while(request){CpuSurfaceRequest *next=request->next;request->status=0;request->profile.started=request->profile.finished=cpu_surface_tick();if(!SetEvent(request->done))cpu_surface_fail("shutdown CPU completion",E_FAIL);request=next;}
+    while(request){CpuSurfaceRequest *next=request->next;request->status=0;cpu_surface_phase_started(request);request->profile.finished=request->profile.started;if(!SetEvent(request->done))cpu_surface_fail("shutdown CPU completion",E_FAIL);request=next;}
     if(s_cpu_surface_list)s_cpu_surface_list->lpVtbl->Release(s_cpu_surface_list);
     if(s_cpu_surface_alloc)s_cpu_surface_alloc->lpVtbl->Release(s_cpu_surface_alloc);
     if(s_cpu_surface_fence)s_cpu_surface_fence->lpVtbl->Release(s_cpu_surface_fence);

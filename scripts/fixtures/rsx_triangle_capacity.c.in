@@ -2,6 +2,11 @@
 #include "rsx_commands.h"
 #include "rsx_primitives.h"
 #include "rsx_env_once.h"
+#include "rsx_renderer_phase.h"
+/* Renderer phase accounting (RSX_CPU_SURFACE_PROFILE=1) is a no-op here. */
+void rsx_d3d12_renderer_phase_begin(unsigned phase) { (void)phase; }
+void rsx_d3d12_renderer_phase_end(void) {}
+void rsx_d3d12_renderer_phase_submit_stage(unsigned phase) { (void)phase; }
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

@@ -4,6 +4,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include "rsx_record_batch.h"
+#include "rsx_renderer_phase.h"
+/* Renderer phase accounting (RSX_CPU_SURFACE_PROFILE=1) is a no-op here. */
+void rsx_d3d12_renderer_phase_begin(unsigned phase) { (void)phase; }
+void rsx_d3d12_renderer_phase_end(void) {}
+void rsx_d3d12_renderer_phase_submit_stage(unsigned phase) { (void)phase; }
 typedef uint32_t u32; typedef uint64_t u64; typedef int32_t HRESULT;
 #define S_OK 0
 #define MAX_DRAWS 4

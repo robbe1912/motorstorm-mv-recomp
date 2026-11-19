@@ -14,6 +14,7 @@ typedef uint32_t u32;
 typedef uint64_t u64;
 typedef int32_t HRESULT;
 typedef int32_t LONG;
+static LONG GetCurrentThreadId(void) { return 1; }   /* renderer phase helpers; profiling is off here */
 typedef uint32_t DWORD;
 typedef size_t SIZE_T;
 typedef int DXGI_FORMAT;

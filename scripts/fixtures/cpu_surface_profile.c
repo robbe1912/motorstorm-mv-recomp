@@ -57,6 +57,7 @@ static void cpu_surface_read(u32 address,u32 bytes){
 /* PRODUCTION_REQUEST */
 #define REQUIRE(x,message) do{if(!(x)){fprintf(stderr,"FAIL: %s\n",message);return 1;}}while(0)
 int main(int argc,char **argv){
+    (void)cpu_surface_phase_submit_stage; /* extracted with the helpers; called only from the backend export */
     RsxCpuSurfaceProfile p={0};p.queued=10;p.started=20;p.finished=60;p.returned=70;
     p.allocation=2;p.prior_fence=3;p.commands=5;p.copy_fence=7;p.packing=11;p.matched=2;p.hits=1;p.copies=1;
     REQUIRE(rsx_cpu_surface_profile_valid(&p),"disjoint stages admitted");
@@ -71,9 +72,10 @@ int main(int argc,char **argv){
     REQUIRE(read_calls==1 && clock_calls==0,"default-off has no profiling clocks and still services read");
     s_cpu_surface_profile=1;s_cpu_surface_profile_frequency=1000;
     cpu_surface_request(0x20120,2,NULL);
-    REQUIRE(read_calls==2 && clock_calls==4,"queued request completes with exact timing boundaries");
+    /* queue, start, renderer surface phase enter/exit, finish, return */
+    REQUIRE(read_calls==2 && clock_calls==6,"queued request completes with exact timing boundaries");
     current_thread=2;cpu_surface_request(0x20120,2,NULL);
-    REQUIRE(read_calls==3 && clock_calls==6,"direct renderer path completes and restores active record");
+    REQUIRE(read_calls==3 && clock_calls==8,"direct renderer path completes and restores active record");
     REQUIRE(!s_cpu_surface_profile_active && !s_cpu_surface_head && !s_cpu_surface_tail,"request ownership cleared");
     puts("PASS: actual CPU surface request/service, default-off clocks, direct path and accounting");return 0;
 }

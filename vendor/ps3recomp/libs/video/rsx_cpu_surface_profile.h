@@ -2,6 +2,7 @@
 #ifndef RSX_CPU_SURFACE_PROFILE_H
 #define RSX_CPU_SURFACE_PROFILE_H
 #include <stdint.h>
+#include "rsx_renderer_phase.h"
 typedef struct RsxCpuSurfaceProfile {
     uint64_t queued, started, finished, returned;
     uint64_t allocation, prior_fence, commands, copy_fence, packing;

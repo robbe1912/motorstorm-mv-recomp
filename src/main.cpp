@@ -121,6 +121,10 @@ extern "C" int  rsx_d3d12_backend_pump_messages(void);
 #  define rsx_backend_present rsx_d3d12_backend_present
 #  define rsx_backend_pump    rsx_d3d12_backend_pump_messages
 #  define RSX_BACKEND_NAME    "D3D12"
+/* RSX_CPU_SURFACE_PROFILE=1: renderer phases for CPU surface queue time. */
+#  include "rsx_renderer_phase.h"
+#  define rsx_phase_begin(p)  rsx_d3d12_renderer_phase_begin(p)
+#  define rsx_phase_end()     rsx_d3d12_renderer_phase_end()
 #elif defined(__APPLE__)
 extern "C" int  rsx_metal_backend_init(uint32_t w, uint32_t h, const char* title);
 extern "C" void rsx_metal_backend_present(void);
@@ -129,6 +133,8 @@ extern "C" int  rsx_metal_backend_pump_messages(void);
 #  define rsx_backend_present rsx_metal_backend_present
 #  define rsx_backend_pump    rsx_metal_backend_pump_messages
 #  define RSX_BACKEND_NAME    "Metal"
+#  define rsx_phase_begin(p)  ((void)0)
+#  define rsx_phase_end()     ((void)0)
 #else
 extern "C" int  rsx_null_backend_init(uint32_t w, uint32_t h, const char* title);
 extern "C" void rsx_null_backend_present(void);
@@ -137,6 +143,8 @@ extern "C" int  rsx_null_backend_pump_messages(void);
 #  define rsx_backend_present rsx_null_backend_present
 #  define rsx_backend_pump    rsx_null_backend_pump_messages
 #  define RSX_BACKEND_NAME    "null (headless software)"
+#  define rsx_phase_begin(p)  ((void)0)
+#  define rsx_phase_end()     ((void)0)
 #endif
 
 /* ---------------------------------------------------------------------------
@@ -197,19 +205,27 @@ static int frame_clock_iteration(int rsx_ok)
      * cost a frame's worth of time (wave: six passes -> ~7 fps; the
      * MotorStorm menu sat at 13-26 fps with a ~33 ms gap between submits
      * because every wait landed on the next 16 ms beat). */
+    rsx_phase_begin(RSX_PHASE_FIFO);
     cellGcm_rsx_process_fifo();
+    rsx_phase_end();
     /* Present once the drain has consumed the flipped frame:
      * take_flip_pending_synced only fires at get==put, so the batch held is
      * exactly the completed frame (the guest blocks in WaitFlip after
      * flipping). */
     if (cellGcm_take_flip_pending_synced()) {
+        rsx_phase_begin(RSX_PHASE_PRESENT);
         present_guest_frame();
+        rsx_phase_end();
         cellGcm_flip_lat_present(1);   /* FLIP_LAT=1 diagnostic only */
         return 1;
     }
     /* Boot fallback: before the first flip, present freely so the window is
      * not left blank through a long boot. */
-    if (cellGcm_flip_request_count() == 0) rsx_backend_present();
+    if (cellGcm_flip_request_count() == 0) {
+        rsx_phase_begin(RSX_PHASE_PRESENT);
+        rsx_backend_present();
+        rsx_phase_end();
+    }
     return 1;
 }
 
@@ -249,6 +265,7 @@ static DWORD WINAPI frame_clock(LPVOID)
     if (kick)    waits[n_waits++] = kick;
 
     for (;;) {
+        rsx_phase_begin(RSX_PHASE_IDLE);
         if (hrtimer) {
             LARGE_INTEGER due; due.QuadPart = -10000;   /* 1 ms, 100 ns units */
             SetWaitableTimer(hrtimer, &due, 0, NULL, NULL, FALSE);
@@ -258,6 +275,7 @@ static DWORD WINAPI frame_clock(LPVOID)
         } else {
             Sleep(2);
         }
+        rsx_phase_end();
         QueryPerformanceCounter(&qpc_li);
         ULONGLONG now = (ULONGLONG)qpc_li.QuadPart;
         while ((long long)(now - next_tick) >= 0) {
