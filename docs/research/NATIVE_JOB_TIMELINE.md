@@ -975,6 +975,42 @@ for the next observed US performance run, with the reference mode available
 for matched checks. See [texture residency](https://github.com/robbe1912/motorstorm-mv-recomp/issues/291)
 and [SRV setup](https://github.com/robbe1912/motorstorm-mv-recomp/issues/332).
 
+### Native US visibility workspace initialization
+
+The next bounded #282 replacement clears the selected visibility job's own
+68,016-byte workspace before its original constructors and parameter DMA.
+The original loop executes 17,006 instructions per admitted dispatch. The
+adapter uses the existing full module fingerprint, verifies the preceding
+branch and register bounds, and preserves the remaining register, channel,
+interrupt and completion state. Its counted plan retains exact guest step
+accounting and the original continuation.
+
+Private differential replay matched all register and local-store bytes across
+109 captured states. It preserved the captured relocation register, whose
+unused lanes differ from its effective-address lane. Mutated module bytes,
+address bounds, address-lane relocation and unsafe execution state declined
+admission. The public authored fixture checks the clear bounds and full
+context preservation without distributing original game bytes.
+
+This removes one interpreted setup loop. It does not replace the remaining
+input processing, occluder setup, classification fallbacks or job completion,
+and it does not establish a repeatable gameplay speedup.
+
+An observed debug-US run with executable `fe71a5bae7da15f8` reached the race
+HUD through six acknowledged normal menu inputs. The initializer completed
+at least 25,344 times; the run remained muted, with no resource breach or
+failed DX12 Present. The HUD appeared after 257.7 s. The final 15 s contained
+43 Present intervals, with a 345.7 ms median and no interval at or below
+33.3 ms. This single diagnostic run provides no evidence of an end-to-end
+improvement and does not satisfy playability acceptance.
+
+The checked build retained native and renderer optimization, batch GPU
+timestamps, persistent 512 MiB texture retention and the recorded 4 GiB commit /
+2 GiB physical-memory reserves. Original-loop and live validation reports
+remain private at `temp/pvs-workspace-validation.json` and
+`temp/pvs-workspace-live-validation.json`. Input processing and occluder setup
+remain the next #282 contract boundaries to attribute before another rewrite.
+
 Private evidence is in the run-stamped folders under
 `temp/job-timeline-evidence/`. The reports retain binary identities, matched
 slot cohorts, committed marker joins, route receipts and artifact hashes.

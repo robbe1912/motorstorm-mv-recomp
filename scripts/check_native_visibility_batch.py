@@ -1,4 +1,4 @@
-"""Check the US visibility classifier with authored local-store data."""
+"""Check US visibility classification and initialization with authored data."""
 import os
 from pathlib import Path
 import shutil
@@ -33,6 +33,23 @@ def main():
     with (output / "build.log").open("w", encoding="utf-8") as log:
         subprocess.run(command, cwd=output, stdout=log, stderr=subprocess.STDOUT, check=True)
     subprocess.run([str(executable)], cwd=output, check=True)
+    fixture = root / "scripts/fixtures/native_visibility_initialize.cpp"
+    initializer = output / ("initialize.exe" if windows else "initialize")
+    cxx = compiler if windows else os.environ.get("CXX") or shutil.which("c++")
+    if not cxx:
+        raise RuntimeError("Set CXX to the native C++ compiler")
+    if windows:
+        init_options = ["/nologo", "/std:c++17", "/O2", "/UNDEBUG",
+                        *("/I" + str(path) for path in (source, spu, sdk_include)),
+                        "/Fe:" + str(initializer)]
+    else:
+        init_options = ["-x", "c++", "-std=c++17", "-O2", "-UNDEBUG",
+                        *("-I" + str(path) for path in (source, spu, sdk_include)),
+                        "-o", str(initializer)]
+    with (output / "initialize-build.log").open("w", encoding="utf-8") as log:
+        subprocess.run([cxx, *init_options, str(fixture)], cwd=output,
+                       stdout=log, stderr=subprocess.STDOUT, check=True)
+    subprocess.run([str(initializer)], cwd=output, check=True)
 
 
 if __name__ == "__main__":

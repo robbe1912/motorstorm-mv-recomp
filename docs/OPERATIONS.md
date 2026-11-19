@@ -489,6 +489,10 @@ Use `--native-visibility-batch 0` for a reference run with the same executable.
 The batch runs after input DMA for a recognized image and caller. It leaves
 the original epilogue and completion in place. A batch that may reach a
 16 KiB output PUT uses the original interpreter path.
+The same opt-in also clears the recognized job's workspace natively before
+its original constructors and input DMA. Set `MS_NATIVE_VISIBILITY_INITIALIZE=0`
+before launching to retain just that initialization loop for a comparison.
+The launcher records this inherited selector in the run identity.
 
 A profile may use a `kind: luminance_occupancy` secondary check for an animated
 preview, with explicit `luma_below`, `min_fraction` and `max_fraction` bounds.

@@ -11,6 +11,9 @@ namespace {
 constexpr uint32_t post_dma_branch = 0x88f4, entry = 0x88f8, epilogue = 0x8bf0;
 constexpr uint32_t module_base = 0x4000, module_limit = 0x16640, mutable_slot = 0x16580;
 constexpr uint32_t list_stall_event = 2;
+constexpr uint32_t workspace_begin = 0x16660, workspace_end = 0x27010;
+constexpr uint32_t initialize_entry = 0x1635c, initialize_return = 0x162bc;
+constexpr uint64_t initialize_instructions = 2 + 4 * ((workspace_end - workspace_begin) / 16);
 
 bool debug_us_module(const uint8_t* ls) {
     if (stage_be32(ls + 0x1330) != module_base || stage_be32(ls + 0x4010) != 0x12270)
@@ -28,6 +31,41 @@ bool known_caller(uint32_t continuation) {
     case 0x9860: case 0xaf34: case 0xafd8: case 0xb068: case 0xb0e0: return true;
     default: return false;
     }
+}
+
+bool uniform_register(const spu_context* ctx, unsigned reg, uint32_t value) {
+    for (unsigned lane = 0; lane < 4; ++lane)
+        if (ctx->gpr[reg]._u32[lane] != value) return false;
+    return true;
+}
+
+void initialize(spu_context* ctx, const spu_native_leaf_plan*) {
+    // The selected job clears its own BSS on every dispatch. Keep the real
+    // constructor, parameter DMA, output publication and completion after it.
+    std::memset(ctx->ls + workspace_begin, 0, workspace_end - workspace_begin);
+    for (unsigned lane = 0; lane < 4; ++lane) {
+        ctx->gpr[3]._u32[lane] = workspace_end;
+        ctx->gpr[5]._u32[lane] = 0;
+        ctx->gpr[6]._u32[lane] = 0;
+    }
+    ctx->pc = initialize_return;
+    static std::atomic<unsigned> completed{0};
+    const auto jobs = completed.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (jobs == 1 || jobs % 256 == 0)
+        std::fprintf(stderr, "[native-visibility-initialize] completed=%u\n", jobs);
+}
+
+int prepare_initialize(const spu_context* ctx, uint64_t, spu_native_leaf_plan* plan) {
+    if (!ctx->policy_mode || g_spu_interp_last_pc != 0x162b8 || !ctx->int_enable ||
+        (ctx->event_mask & ~list_stall_event) || ctx->irq_saved ||
+        __atomic_load_n(&ctx->resv_valid, __ATOMIC_ACQUIRE) ||
+        !uniform_register(ctx, 3, workspace_begin) || !uniform_register(ctx, 4, workspace_end) ||
+        spu_preferred_u32(&ctx->gpr[126]) != 0 || !debug_us_module(ctx->ls))
+        return 0;
+    // Exact original instruction accounting keeps step budgets and stop PCs
+    // usable. The shared runtime declines asynchronous events and LS watches.
+    *plan = {initialize_instructions, initialize_return, 0x16370, initialize, nullptr};
+    return 1;
 }
 
 void classify(spu_context* ctx, const spu_native_leaf_plan*) {
@@ -65,6 +103,12 @@ struct Register {
         if (!mode || std::strcmp(mode, "1")) return;
         const spu_native_leaf descriptor{entry, epilogue, prepare};
         if (spu_native_leaf_register_unbudgeted(&descriptor)) std::abort();
+        const char* init_mode = std::getenv("MS_NATIVE_VISIBILITY_INITIALIZE");
+        if (!init_mode || std::strcmp(init_mode, "0")) {
+            const spu_native_leaf initializer{initialize_entry, 0x16374, prepare_initialize};
+            if (spu_native_leaf_register(&initializer)) std::abort();
+            std::fputs("[native-visibility-initialize] registered\n", stderr);
+        }
         std::fputs("[native-visibility-batch] registered\n", stderr);
     }
 } register_batch;
