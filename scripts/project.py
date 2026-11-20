@@ -70,6 +70,8 @@ def main():
                    help='Build the debug-US native visibility batch trial (default off)')
     b.add_argument('--native-pcm-cubic',action=argparse.BooleanOptionalAction,default=False,
                    help='Bind verified PCM cubic DSP (default off; explicit runtime reference/shadow/native mode)')
+    b.add_argument('--native-particle-collisions',action=argparse.BooleanOptionalAction,default=False,
+                   help='Build the verified standalone particle-box collision batch (default off)')
     b.add_argument('--native-particle-thresholds',action=argparse.BooleanOptionalAction,default=False,
                    help='Bind the verified particle scan (default off; runtime reference/shadow/native policy remains explicit)')
     b.add_argument('--depth-observer',action='store_true',
@@ -142,6 +144,7 @@ def main():
                         f'-DPORT_NATIVE_VISIBILITY={"ON" if args.native_visibility else "OFF"}',
                         f'-DPORT_NATIVE_VISIBILITY_BATCH={"ON" if args.native_visibility_batch else "OFF"}',
                         f'-DPORT_NATIVE_PCM_CUBIC={"ON" if args.native_pcm_cubic else "OFF"}',
+                        f'-DPORT_NATIVE_PARTICLE_COLLISIONS={"ON" if args.native_particle_collisions else "OFF"}',
                         f'-DPORT_NATIVE_PARTICLE_THRESHOLDS={"ON" if args.native_particle_thresholds else "OFF"}',
                         f'-DPORT_DEFORMATION_DEPTH_OBSERVER={"ON" if args.depth_observer else "OFF"}',
                         f'-DPORT_TARGET_ELF={c["elf"]}'])
@@ -164,6 +167,7 @@ def main():
             'RSX_CAP_BACKBUFFER_ONLY' in dx12_backend.read_text(encoding='utf-8'))
         identity['native_pcm_cubic']=args.native_pcm_cubic
         identity['native_particle_thresholds']=args.native_particle_thresholds
+        identity['native_particle_collisions']=args.native_particle_collisions
         identity['menu_boot']=menu_boot
         identity['native_job_wait_profile']=args.native_job_wait
         identity['job_capture']=args.capture_jobs
@@ -185,7 +189,7 @@ def main():
             identity['native_world_binding']=json.loads((binary/'native-world-binding.json').read_text())
             identity['native_world_sources_sha256']={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in sorted((ROOT/'src/motorstorm').glob('*')) if p.is_file()}
-        elif args.native_particle_thresholds or args.native_visibility_batch:
+        elif args.native_particle_thresholds or args.native_particle_collisions or args.native_visibility_batch:
             identity['native_world_sources_sha256']={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in sorted((ROOT/'src/motorstorm').glob('*')) if p.is_file()}
         (binary/'build_identity.json').write_text(json.dumps(identity,indent=2)); print('Build identity:',identity['sha256'])

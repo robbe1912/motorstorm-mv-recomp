@@ -483,6 +483,17 @@ measurements. Use the existing normal menu route and resource/ownership guards.
 
 The restored native visibility operation uses explicit `--native-visibility 0|shadow|1` during runs. The default `0` overrides inherited `MS_NATIVE_VISIBILITY`; nonzero choices require a matching `--native-visibility` build and recorded executable identity. Shadow/native preserve the original operation fallback and real completion. Treat shadow results and operation timings separately from gameplay frame-rate acceptance.
 
+Build with `--native-particle-collisions` and select
+`--native-particle-collisions 0|shadow|1`. The default `0` overrides inherited
+`MS_NATIVE_PARTICLE_COLLISIONS`; nonzero modes require matching capability
+and executable identity. Shadow compares the complete local-store result
+against the original collision loop and retains original execution. Native
+uses the standalone typed particle-box operation and preserves the original
+transform preparation, DMA, epilogue, queue publication and marker commit.
+Unsupported images, inputs, ownership or observation/budget boundaries retain
+interpretation. Count actual completed batches and contacts; shadow and stage
+timings do not establish frame-time acceptance. See [the operation contract](NATIVE_GAME.md#particle-box-collision-batch-337).
+
 Build with `--native-particle-thresholds` and select
 `--native-particle-thresholds 0|shadow|1` during runs. The default `0`
 overrides inherited `MS_NATIVE_PARTICLE_THRESHOLDS`; shadow and native require

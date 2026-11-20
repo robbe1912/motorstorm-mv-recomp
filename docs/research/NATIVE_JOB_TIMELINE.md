@@ -1227,3 +1227,129 @@ race HUD observation and private identity/record checks do not establish
 stable 33 ms or complete graphics/playability correctness. Private join,
 assignment and counterexample reports remain under the run's `job-capture/`;
 loop observations are in `temp/particle-threshold-physical-observations.json`.
+
+
+## Standalone particle-box collision batch
+
+[#337](https://github.com/robbe1912/motorstorm-mv-recomp/issues/337) selects
+whole collision batches after checking the broader pipeline and the existing
+[scheduling evidence](NATIVE_SCHEDULING.md). Diagnostic `20261119T232250.573215Z`
+used executable `138aa3855129c43a`, the verified normal route, native threshold
+scan and the existing visibility operations. Its private QPC/thread-cycle
+recorder retained a complete 262,144-record prefix but dropped 474,276 suffix
+attempts. The prefix closes 181 observed jobs, with no pending records; it is
+not full-race coverage or a benchmark. Manual policy-service returns were
+handled explicitly without inventing call frames or completions.
+
+The largest observed SPU function cost was the particle collision operator at
+`0xA700`. One fully closed particle job took 258.4896 ms wall and 912,162,110
+thread cycles. Its 256 correctly paired collision calls consumed 71.652% of
+that job's cycles. Original publication, selected return and host dispatch
+`104909` independently bind that job to the same worker/queue lifetime as a
+real vertex-marker threshold crossing. The later vertex wait was 38.8509 ms;
+its selected vertex call had already begun 0.8168 ms before the wait and took
+38.7028 ms. Publication preceded vertex selection by 121.9505 ms. This supports
+removing the upstream computation, not guessing at scheduler priority or
+bypassing a dependency. Cross-worker sums are not frame costs.
+
+The surrounding pipeline still matters. Separate unsuspended CPU deltas and
+80 main-thread physical walks retain marker, readback, flip and condition-wait
+states. Frame-clock walks include CPU vertex expansion, draw recording and
+GPU waits. Suspended counts are not exclusive elapsed shares. This selection
+identifies the largest observed SPU function on the traced producer chain;
+it does not claim one function explains every frame gap.
+
+The [typed core](../../src/motorstorm/particle_box_collision.c) contains no guest
+memory, interpreter dispatch or completion protocol. Its adapter executes the
+whole backwards record loop from `0xA87C`, after original transforms, and resumes
+the original epilogue at `0xABEC`. Contact append, scratch payload, full-list
+behavior and optional 128-byte swap removal preserve original order. Code,
+input/output extents, count/capacity, saved caller and ownership are qualified;
+unsupported state retains original execution. No original instruction array or
+generated guest source is included publicly.
+
+Private original-byte replay matches every LS byte on 96 captured entries and
+128 constructed cases, including hits, moving/rotated boxes, disabled records,
+removal and full output lists. Those cases plus four non-finite/denormal W-lane stress cases (228 total)
+also pass the production adapter in native and original-shadow modes through the real `0x12188` caller continuation,
+matching saved registers. Twenty-one unsafe admission mutations per case
+decline without context writes; the three mutable bookkeeping regions remain
+admissible. A 220-node original-caller liveness check leaves no
+volatile result live there; original epilogue restores the saved ABI. Public
+fixtures add 4,096 independent double-precision slab checks away from rounding
+boundaries, payload/order/removal/alias/FP checks and whole-context publication
+preservation. The actual-source runner matrix checks 10,368 mode combinations
+plus 16 native-query combinations and rejects unsafe mutants.
+
+Production build `fd7beba9d58c1e13` enables the new optional capability. Live
+shadow `20261120T000222.496540Z` compared at least 1,024 batches covering 112,812
+records and 118 classified contacts without an LS mismatch. It retained original
+execution, was muted and ended through its owned stop after 199.3 s, without a
+resource breach. This is parity coverage, not a timing comparison.
+
+The CPU-only warm-stage comparison uses five alternating samples per arm,
+960 captured 128-record batches per sample, matching completed work/checksums
+and all LS bytes against independently executed original output. Original uses
+the real interpreter wrapper and SIMD scope; native includes production
+admission, whole-module fingerprint and callback. Both are compiled O2 with
+checked CRT, a stronger reference optimization than the game's O1 interpreter.
+Median original time is 439.964 us (434.555–446.776); native 83.994 us
+(82.448–86.355), about 5.24 times faster for this stage. Input reset and full
+output verification are outside the timed operation. CPU use immediately before
+the short test was 12.3%, with no native game or competing build. This excludes
+prologue/epilogue, dispatcher, transfers and other producers; it is not an FPS
+speedup. The first harness incorrectly assumed retained record buffers implied
+unchanged scratch memory; its failed attempt is excluded and the final harness
+checks actual original output, including full-list scratch writes.
+
+Private evidence: `temp/particle-collision-adapter-validation.json`,
+`temp/particle-collision-live-register-proof.json`,
+`temp/particle-collision-benchmark-report.json`, and the run-local
+`job-capture/pipeline-critical-owner.json` / `collision-shadow-validation.json`.
+The full 33 ms goal remains open.
+
+
+Native production run `20261120T003020.855683Z`, executable `fd7beba9d58c1e13`,
+completed the verified six-input normal route and 60-second target observation.
+It was muted, with no resource breach, collision error or failed DX12 Present.
+HUD appeared at 145.1 s; closure was at 207.1 s. The final inspected image shows
+player/opponents, BOOST, lap 0/2, position 15/15 and timer 00:49.57. Counters
+prove at least 61,440 native batches, 7,691,599 records and 4,040 classified
+contacts. Output buffers, appends and genuine marker publication remain owned
+by their original path; counters alone are not completion proof.
+
+The acknowledged HUD+20 s capture retains 42,823 records without drops, pending
+records or append failures. It contains 343 qualified publication selections,
+339 selected returns with real completion candidates, including 19 particle and
+17 vertex jobs. All 768 fully observed collision calls used the native leaf,
+uniquely bound to three complete particle jobs and their actual original atomic
+marker commits. Each job has 256 collision calls; their summed observed collision
+wall times are 28.461–30.397 ms within 88.351–96.472 ms job lifetimes. These wall
+times include scheduling/observation costs; they are diagnostic observations,
+not a controlled old/new job comparison. The 15 fully in-window vertex waits
+finish on their first poll without cooperation: total clipped latency 0.0021 ms,
+maximum 0.0003 ms. No unique in-wait crossing was joined; the actual completion
+records remain separate evidence. This does not prove every future vertex wait
+is solved.
+
+The final 15 seconds still have 46 Present intervals with median 326.9 ms,
+p95 352.5 and maximum 361.5; none meets 33 ms. Separate completed-marker tails
+contain 2.830 s PVS, 2.697 s vehicle and 0.026 s vertex waits. In the last
+12-second renderer bracket, 11.095 s lies between batches; 4.427 s overlaps
+completed main marker waits, leaving about 6.668 s outside those unions.
+Timestamped RTX 3080 direct-queue work has median 49.014 ms per complete Present
+group; all 36 groups exceed 33.3 ms. CPU renderer phases total 0.905 s. The GPU
+scope excludes CPU jobs/recording and work outside the timestamp pairs. These
+observations keep [#155](https://github.com/robbe1912/motorstorm-mv-recomp/issues/155)
+focused on the remaining PVS/vehicle producers and attribution of main-thread
+readback/flip/condition gaps, rather than further speculative collision tuning.
+
+An earlier native attempt reached HUD at 428 s after a long loaded-bike screen
+gate, but its private controller had a 420 s target deadline and the launcher
+closed at its 480 s cap. That attempt is not the qualified completion capture;
+no faster loading or matched gameplay gain is inferred from the retry. The
+standalone five-pair stage result is the established speedup. Overall native
+playability, graphics correctness, driving/audio/saves and the 33 ms goal remain
+unmet or unverified. New private evidence is run-local
+`collision-native-validation.json`, `job-capture/collision-live-functions.json`
+and the original publication/completion reports.

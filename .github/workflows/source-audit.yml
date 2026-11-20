@@ -105,6 +105,8 @@ jobs:
         run: python scripts/check_native_visibility_batch.py
       - name: Native PCM DSP and independent rational oracle
         run: python scripts/check_pcm_cubic.py
+      - name: Standalone particle collision and publication checks
+        run: python scripts/check_native_particle_collision.py
       - name: Native particle scan and independent scalar oracle
         run: python scripts/check_native_threshold_scan.py
       - name: Private particle code binding and output preservation
@@ -474,6 +476,8 @@ jobs:
         run: python scripts/check_native_visibility_planes.py
       - name: Native visibility batch and publication checks
         run: python scripts/check_native_visibility_batch.py
+      - name: Standalone particle collision and publication checks
+        run: python scripts/check_native_particle_collision.py
       - name: Native particle scan and independent scalar oracle
         run: python scripts/check_native_threshold_scan.py
       - name: Private particle code binding and output preservation

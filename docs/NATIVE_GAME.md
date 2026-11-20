@@ -409,7 +409,7 @@ reference/guarded arithmetic practice, without importing its title ABI.
 
 ## Particle threshold scan (#204, acceptance pending)
 
-The next bounded operation under [#155](https://github.com/robbe1912/motorstorm-mv-recomp/issues/155)
+The guarded threshold operation under [#155](https://github.com/robbe1912/motorstorm-mv-recomp/issues/155)
 is the particle module's threshold scan, tracked in [#204](https://github.com/robbe1912/motorstorm-mv-recomp/issues/204).
 `threshold_scan.cpp` operates on typed float records and four thresholds. It reduces
 complete records once, handles partial cyclic views, and retains an already-set
@@ -607,3 +607,38 @@ This diagnostic is not a controlled speed comparison. Its late Present API inter
 The public binding was then validated in run `20261021T170403.252995Z`, executable SHA256 `e0a6fd2ca779b07fa886a87c7a0d883e5034d3c540daff5582b297cfc23916aa`. The build compiled one copied PPU TU and three handwritten sources; original configuration and protected binaries were restored. Original menu assets and a live bike/opponents/terrain/HUD were observed. The last checkpoint recorded 19,968 native operations, 2,653,364 nodes and 12 visible numeric fallbacks. The controller stopped its owned process explicitly after 424.328 seconds; return code 1 is that diagnostic stop.
 
 Matched-PDB main/all-thread sampling succeeded for ten seconds each. The main capture contained vehicle-completion and PVS-visibility marker waits, CPU-surface readback waits and flip waits. Its marker stacks did not contain the former XForm submission caller. Sampling includes waits and perturbs execution; this is a lead for issue 155, not exclusive frame-time attribution or a controlled speedup. The late Present API interval median remained 576.480 ms, with 43 single-flip and two double-flip rows in that window. Sustained 30 FPS and topology-dirty gameplay parity remain unproven.
+
+
+## Particle-box collision batch (#337)
+
+The current measured upstream particle cost is tracked in
+[#337](https://github.com/robbe1912/motorstorm-mv-recomp/issues/337), following
+[#331](https://github.com/robbe1912/motorstorm-mv-recomp/issues/331) and the
+threshold activation. [The standalone core](../src/motorstorm/particle_box_collision.c)
+accepts immutable typed positions, motion, enable flags, prepared box columns,
+extents, step and contact metadata. It returns per-index hits and contact
+payloads for at most 256 records. It owns no guest memory, scheduler or renderer.
+Unsupported inputs/aliases decline without modifying output; its FP scope is
+restored. The arithmetic retains the original estimates, fused order, slab
+predicates and payload formula rather than substituting ideal ray-hit math.
+
+[The adapter](../src/motorstorm/particle_box_collision_adapter.cpp) recognizes
+the original debug-US module on each invocation, excluding only three mutable
+bookkeeping quadwords from its fingerprint. It validates the first iteration,
+owned LS, original saved caller, independent input/output/stack extents,
+counts/capacity, interruption and resident/walk-in boundaries. The native leaf
+runs the complete nonempty record loop, then retains the original epilogue.
+Output visits records backwards, appends only within capacity, and preserves
+optional swap-with-last removal and the temporary payload even when full.
+The caller consumes no volatile register result; the original saved-register
+restoration remains intact. Original DMA and real queue completion are retained.
+
+Build `--native-particle-collisions`, then run with
+`--native-particle-collisions 0|shadow|1`. Defaults remain reference; inherited
+environment choices are overridden and selected executable identity is checked.
+Shadow compares all LS bytes against original execution and keeps original
+register execution. The unbudgeted seam declines step budgets, stop PCs and
+incompatible watches. The authored standalone/adapter fixtures run with
+`python scripts/check_native_particle_collision.py`; original instruction and
+captured-state replay remains private. The [measurement record](research/NATIVE_JOB_TIMELINE.md#standalone-particle-box-collision-batch)
+separates stage evidence from the still-open 33 ms gameplay goal.
