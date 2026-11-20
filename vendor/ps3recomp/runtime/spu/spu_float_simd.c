@@ -1,5 +1,7 @@
 #include "spu_float_simd.h"
 SPU_SF_TLS int g_spu_sf_simd_scope;
+/* Ordinary host environment until a scope records its caller's. */
+SPU_SF_TLS uint32_t g_spu_sf_host_csr=0x1f80u;
 #if SPU_SF_X86_SIMD
 #include <immintrin.h>
 #ifdef __clang__
@@ -25,12 +27,16 @@ static int capability(void) {
 #endif
 
 /* Nested tokens restore both hardware state and the previous enable state.
- * An outer token also restores correctly after an inner drain longjmp. */
+ * An outer token also restores correctly after an inner drain longjmp.
+ * Entry holds SPU mode in the MXCSR for the scope; the outermost entry
+ * records the caller's environment for host-arithmetic helpers. */
 uint64_t spu_sf_simd_enter(void) {
 #if SPU_SF_X86_SIMD
     uint32_t csr=_mm_getcsr();
     uint64_t saved=((uint64_t)(unsigned)g_spu_sf_simd_scope<<32)|csr;
     g_spu_sf_simd_scope=capability();
+    if (!spu_sf_csr_is_spu(csr)) g_spu_sf_host_csr=csr;
+    _mm_setcsr(csr|SPU_SF_CSR_SPU);
     return saved;
 #else
     return 0;
@@ -64,6 +70,8 @@ static int fused_host(uint32_t *out,const uint32_t *a,const uint32_t *b,
     if (spu_sf_simd_extended(av) || spu_sf_simd_extended(bv) || spu_sf_simd_extended(cv)) return 0;
     av=_mm_xor_si128(av,_mm_set1_epi32((int)negate_product));
     cv=_mm_xor_si128(cv,_mm_set1_epi32((int)negate_c));
+    if (spu_sf_csr_is_spu(_mm_getcsr()))   /* held by the scope */
+        return spu_sf_simd_store(out,_mm_fmadd_ps(_mm_castsi128_ps(av),_mm_castsi128_ps(bv),_mm_castsi128_ps(cv)));
     uint32_t saved=spu_sf_simd_round_begin();
     int result=spu_sf_simd_store(out,_mm_fmadd_ps(_mm_castsi128_ps(av),_mm_castsi128_ps(bv),_mm_castsi128_ps(cv)));
     _mm_setcsr(saved);

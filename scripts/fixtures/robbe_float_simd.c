@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <setjmp.h>
+#include <string.h>
+#include <math.h>
 #include "spu_helpers.h"
 static unsigned failures,checks;
 static void check(int ok,const char *name) {
@@ -15,6 +17,43 @@ static uint32_t reference(unsigned op,uint32_t a,uint32_t b,uint32_t c) {
     case 1:return spu_sf_add(a,b^0x80000000u);
     case 2:return spu_sf_mul(a,b);
     default:return spu_sf_madd(a,b,c^(op==4?0x80000000u:0),op==5?0x80000000u:0);
+    }
+}
+
+/* Helpers that compute with ordinary host arithmetic, by index. */
+enum { HOST_OPS=17 };
+static u128 host_op(unsigned k,u128 a,u128 b,u128 c,int imm) {
+    switch(k){
+    case 0:return spu_cflts(a,imm);case 1:return spu_cfltu(a,imm);
+    case 2:return spu_csflt(a,imm);case 3:return spu_cuflt(a,imm);
+    case 4:return spu_dfa(a,b);case 5:return spu_dfs(a,b);case 6:return spu_dfm(a,b);
+    case 7:return spu_dfma(a,b,c);case 8:return spu_dfms(a,b,c);
+    case 9:return spu_dfnms(a,b,c);case 10:return spu_dfnma(a,b,c);
+    case 11:return spu_dfceq(a,b);case 12:return spu_dfcmeq(a,b);
+    case 13:return spu_dfcgt(a,b);case 14:return spu_dfcmgt(a,b);
+    case 15:return spu_fesd(a);default:return spu_frds(a);
+    }
+}
+/* Host IEEE compares, the results the integer compares must keep. */
+static uint32_t host_compare(unsigned k,uint32_t a,uint32_t b) {
+    float x,y;memcpy(&x,&a,4);memcpy(&y,&b,4);
+    switch(k){case 0:return x==y?~0u:0;case 1:return x>y?~0u:0;
+    case 2:return fabsf(x)==fabsf(y)?~0u:0;default:return fabsf(x)>fabsf(y)?~0u:0;}
+}
+static u128 compare_op(unsigned k,u128 a,u128 b) {
+    switch(k){case 0:return spu_fceq(a,b);case 1:return spu_fcgt(a,b);
+    case 2:return spu_fcmeq(a,b);default:return spu_fcmgt(a,b);}
+}
+/* Mixed words: zeros, denormals, normals, infinities, NaN payloads, and
+ * doubles/integers with every exponent. */
+static uint32_t mixed_word(uint32_t *state) {
+    uint32_t w=random_word(state);
+    switch(w>>29){                                 /* high bits: the LCG low bits cycle */
+    case 0:return w&0x807fffffu;                       /* denormal */
+    case 1:return w&0x80000000u;                       /* signed zero */
+    case 2:return (w&0x80000000u)|0x7f800000u|((w>>28)&1 ? w&0x7fffffu : 0); /* inf or NaN */
+    case 3:return (w&0x807fffffu)|0x3f000000u;          /* near one */
+    default:return random_word(state);
     }
 }
 static u128 execute(unsigned op,u128 a,u128 b,u128 c) {
@@ -35,9 +74,13 @@ int main(void) {
         uint32_t caller=0x1fa1u|(mode<<13);_mm_setcsr(caller);
         uint64_t outer=spu_sf_simd_enter();int capability=g_spu_sf_simd_scope;
         check(capability>=1,"SSE scope enabled");
-        check(_mm_getcsr()==caller,"scope preserves rounding of other host services");
-        uint64_t inner=spu_sf_simd_enter();spu_sf_simd_leave(inner);
+        check(_mm_getcsr()==(caller|SPU_SF_CSR_SPU),"scope holds SPU mode and keeps the caller's status flags");
+        check(g_spu_sf_host_csr==caller,"outermost scope records the caller's environment");
+        uint64_t inner=spu_sf_simd_enter();
+        check(g_spu_sf_host_csr==caller,"nested scope keeps the outermost caller environment");
+        spu_sf_simd_leave(inner);
         check(g_spu_sf_simd_scope==capability,"nested scope preserves enable state");
+        check(_mm_getcsr()==(caller|SPU_SF_CSR_SPU),"nested scope restores the held SPU mode");
         u128 one,above_half,constant_result;
         for(unsigned lane=0;lane<4;++lane){one._u32[lane]=0x3f800000u;above_half._u32[lane]=0x33800001u;}
         constant_result=spu_fa(one,above_half);
@@ -69,7 +112,52 @@ int main(void) {
                 : spu_sf_simd_fused(r._u32,a._u32,b._u32,c._u32,op==5?0x80000000u:0,op==4?0x80000000u:0);
         }
         check(!mismatches,"mixed-lane values match exact integer helpers");
-        check(_mm_getcsr()==caller,"every arithmetic operation restores host flags and rounding");
+        check(spu_sf_csr_is_spu(_mm_getcsr()),"arithmetic leaves the scope's SPU mode held");
+        /* An older MXCSR inside a scope (as after a longjmp to a point saved
+         * outside it): the arithmetic switches per operation and stays exact. */
+        _mm_setcsr(caller);
+        unsigned unheld=0;
+        for(unsigned i=0;i<6000;++i) {
+            u128 a,b,c,r;
+            for(unsigned lane=0;lane<4;++lane){a._u32[lane]=mixed_word(&state);b._u32[lane]=mixed_word(&state);c._u32[lane]=mixed_word(&state);}
+            unsigned op=i%6;r=execute(op,a,b,c);
+            for(unsigned lane=0;lane<4;++lane) unheld+=r._u32[lane]!=reference(op,a._u32[lane],b._u32[lane],c._u32[lane]);
+        }
+        check(!unheld,"scope without held SPU mode stays exact");
+        check(_mm_getcsr()==caller,"per-operation switching restores an unheld environment");
+        _mm_setcsr(caller|SPU_SF_CSR_SPU);
+        /* Host-arithmetic helpers and float compares give the caller-environment
+         * results inside the held scope. */
+        unsigned host_diff=0,compare_diff=0,host_mode_lost=0;
+        static const int scale[]={173,155,0,100,200,255,140,190};
+        for(unsigned i=0;i<20000;++i) {
+            u128 a,b,c,inside,outside;
+            for(unsigned lane=0;lane<4;++lane){a._u32[lane]=mixed_word(&state);b._u32[lane]=mixed_word(&state);c._u32[lane]=mixed_word(&state);}
+            unsigned k=i%HOST_OPS;int imm=scale[(i/HOST_OPS)%8];
+            uint32_t held=_mm_getcsr();
+            inside=host_op(k,a,b,c,imm);
+            host_mode_lost+=(_mm_getcsr()&SPU_SF_CSR_SPU)!=(held&SPU_SF_CSR_SPU);
+            _mm_setcsr(caller);outside=host_op(k,a,b,c,imm);_mm_setcsr(held);
+            host_diff+=memcmp(&inside,&outside,sizeof inside)!=0;
+            /* Compare operands: equal, sign-flipped, adjacent or unrelated. */
+            u128 d=b;
+            for(unsigned lane=0;lane<4;++lane) switch((i/4+lane)%4){
+            case 0:d._u32[lane]=a._u32[lane];break;
+            case 1:d._u32[lane]=a._u32[lane]^0x80000000u;break;
+            case 2:d._u32[lane]=a._u32[lane]+((i>>3)&1 ? 1u : ~0u);break;
+            default:break;
+            }
+            unsigned j=i%4;u128 got=compare_op(j,a,d);
+            uint32_t want[4];_mm_setcsr(caller);
+            for(unsigned lane=0;lane<4;++lane) want[lane]=host_compare(j,a._u32[lane],d._u32[lane]);
+            _mm_setcsr(held);
+            for(unsigned lane=0;lane<4;++lane) compare_diff+=got._u32[lane]!=want[lane];
+        }
+        if(host_diff)fprintf(stderr,"host-arithmetic helper results differed inside the scope: %u\n",host_diff);
+        if(compare_diff)fprintf(stderr,"compare lanes differed from host IEEE compares: %u\n",compare_diff);
+        check(!host_diff,"host-arithmetic helpers keep caller-environment results inside the scope");
+        check(!host_mode_lost,"host-arithmetic helpers return to the held SPU mode");
+        check(!compare_diff,"float compares match host IEEE compares inside the scope");
         uint32_t zero[4]={0},out[4];
         g_spu_sf_simd_scope=1;
         check(!spu_sf_simd_fused(out,zero,zero,zero,0,0),"FMA unavailable preserves scalar fallback");

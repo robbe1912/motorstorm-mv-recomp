@@ -195,26 +195,45 @@ static inline u128 spu_rotqbii(u128 a, int sh) { sh&=7; if(!sh) return a;
     uint64_t nhi=(hi<<sh)|(lo>>(64-sh)), nlo=(lo<<sh)|(hi>>(64-sh));
     u128 r; r._u32[0]=(uint32_t)(nhi>>32); r._u32[1]=(uint32_t)nhi; r._u32[2]=(uint32_t)(nlo>>32); r._u32[3]=(uint32_t)nlo; return r; }
 
+/* Helpers that compute with ordinary host arithmetic run between
+ * spu_sf_host_begin/end (spu_float_simd.h); keep the compiler from moving
+ * that arithmetic across the environment switches. */
+#if defined(__clang__)
+#define SPU_SF_HOST_FN static inline
+#define SPU_SF_HOST_ARITHMETIC _Pragma("STDC FENV_ACCESS ON")
+#elif defined(__GNUC__)
+#define SPU_SF_HOST_FN __attribute__((optimize("rounding-math"))) static inline
+#define SPU_SF_HOST_ARITHMETIC
+#else
+#define SPU_SF_HOST_FN static inline
+#define SPU_SF_HOST_ARITHMETIC
+#endif
 /* ---- single-precision float (4 lanes) ---- */
 static inline u128 spu_fa(u128 a, u128 b) { u128 r; if(spu_sf_simd_binary(r._u32,a._u32,b._u32,0)) return r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_add(a._u32[i],b._u32[i]); return r; }
 static inline u128 spu_fs(u128 a, u128 b) { u128 r; if(spu_sf_simd_binary(r._u32,a._u32,b._u32,1)) return r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_add(a._u32[i],b._u32[i]^0x80000000u); return r; }
 
 /* RI8 scale: float-to-int uses 2^(173-i8), int-to-float 2^(i8-155).
  * The canonical immediates 173 and 155 are identity conversions. */
-static inline u128 spu_cflts(u128 a, int i8){ u128 r; double f=exp2((double)(173-i8));
-    for(int i=0;i<4;i++){ double v=(double)a._f32[i]*f; if(v>2147483647.0)v=2147483647.0; if(v<-2147483648.0)v=-2147483648.0; r._s32[i]=(int32_t)v; } return r; }
-static inline u128 spu_cfltu(u128 a, int i8){ u128 r; double f=exp2((double)(173-i8));
-    for(int i=0;i<4;i++){ double v=(double)a._f32[i]*f; if(v<0)v=0; if(v>4294967295.0)v=4294967295.0; r._u32[i]=(uint32_t)v; } return r; }
-static inline u128 spu_csflt(u128 a, int i8){ u128 r; double f=exp2((double)(i8-155));
-    for(int i=0;i<4;i++) r._f32[i]=(float)((double)a._s32[i]*f); return r; }
-static inline u128 spu_cuflt(u128 a, int i8){ u128 r; double f=exp2((double)(i8-155));
-    for(int i=0;i<4;i++) r._f32[i]=(float)((double)a._u32[i]*f); return r; }
+SPU_SF_HOST_FN u128 spu_cflts(u128 a, int i8) { SPU_SF_HOST_ARITHMETIC u128 r; uint32_t env=spu_sf_host_begin(); double f=exp2((double)(173-i8));
+    for(int i=0;i<4;i++){ double v=(double)a._f32[i]*f; if(v>2147483647.0)v=2147483647.0; if(v<-2147483648.0)v=-2147483648.0; r._s32[i]=(int32_t)v; } spu_sf_host_end(env); return r; }
+SPU_SF_HOST_FN u128 spu_cfltu(u128 a, int i8) { SPU_SF_HOST_ARITHMETIC u128 r; uint32_t env=spu_sf_host_begin(); double f=exp2((double)(173-i8));
+    for(int i=0;i<4;i++){ double v=(double)a._f32[i]*f; if(v<0)v=0; if(v>4294967295.0)v=4294967295.0; r._u32[i]=(uint32_t)v; } spu_sf_host_end(env); return r; }
+SPU_SF_HOST_FN u128 spu_csflt(u128 a, int i8) { SPU_SF_HOST_ARITHMETIC u128 r; uint32_t env=spu_sf_host_begin(); double f=exp2((double)(i8-155));
+    for(int i=0;i<4;i++) r._f32[i]=(float)((double)a._s32[i]*f); spu_sf_host_end(env); return r; }
+SPU_SF_HOST_FN u128 spu_cuflt(u128 a, int i8) { SPU_SF_HOST_ARITHMETIC u128 r; uint32_t env=spu_sf_host_begin(); double f=exp2((double)(i8-155));
+    for(int i=0;i<4;i++) r._f32[i]=(float)((double)a._u32[i]*f); spu_sf_host_end(env); return r; }
 static inline u128 spu_fm(u128 a, u128 b) { u128 r; if(spu_sf_simd_binary(r._u32,a._u32,b._u32,2)) return r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_mul(a._u32[i],b._u32[i]); return r; }
 static inline u128 spu_fma(u128 a, u128 b, u128 c)  { u128 r; if(spu_sf_simd_fused(r._u32,a._u32,b._u32,c._u32,0,0)) return r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_madd(a._u32[i],b._u32[i],c._u32[i],0); return r; }
 static inline u128 spu_fms(u128 a, u128 b, u128 c)  { u128 r; if(spu_sf_simd_fused(r._u32,a._u32,b._u32,c._u32,0,0x80000000u)) return r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_madd(a._u32[i],b._u32[i],c._u32[i]^0x80000000u,0); return r; }
 static inline u128 spu_fnms(u128 a, u128 b, u128 c) { u128 r; if(spu_sf_simd_fused(r._u32,a._u32,b._u32,c._u32,0x80000000u,0)) return r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_madd(a._u32[i],b._u32[i],c._u32[i],0x80000000u); return r; }
-static inline u128 spu_fceq(u128 a, u128 b) { u128 r; for(int i=0;i<4;i++) r._u32[i]=(a._f32[i]==b._f32[i])?0xFFFFFFFFu:0; return r; }
-static inline u128 spu_fcgt(u128 a, u128 b) { u128 r; for(int i=0;i<4;i++) r._u32[i]=(a._f32[i]>b._f32[i])?0xFFFFFFFFu:0; return r; }
+/* Float compares in integers: the results of host IEEE compares in an
+ * ordinary environment (exponent-255 with a fraction is unordered and
+ * false, +0 equals -0, denormals compare by value), but independent of the
+ * MXCSR, which holds SPU mode inside a float scope. */
+static inline int spu__f32_unordered(uint32_t x) { return (x & 0x7fffffffu) > 0x7f800000u; }
+static inline int32_t spu__f32_order(uint32_t x) { return (x & 0x80000000u) ? -(int32_t)(x & 0x7fffffffu) : (int32_t)x; }
+static inline u128 spu_fceq(u128 a, u128 b) { u128 r; for(int i=0;i<4;i++) r._u32[i]=(!spu__f32_unordered(a._u32[i]) && !spu__f32_unordered(b._u32[i]) && spu__f32_order(a._u32[i])==spu__f32_order(b._u32[i]))?0xFFFFFFFFu:0; return r; }
+static inline u128 spu_fcgt(u128 a, u128 b) { u128 r; for(int i=0;i<4;i++) r._u32[i]=(!spu__f32_unordered(a._u32[i]) && !spu__f32_unordered(b._u32[i]) && spu__f32_order(a._u32[i])>spu__f32_order(b._u32[i]))?0xFFFFFFFFu:0; return r; }
 
 /* ---- SPU double-precision (2 doubles/reg; dword i = words 2i(high),2i+1(low)).
  * Reassemble via _u32 -- our u128 is host-LE, so a naive _f64[i] would SWAP the
@@ -227,20 +246,20 @@ static inline void spu__dset(u128* r, int i, double d) {
     uint64_t u; memcpy(&u, &d, sizeof u);
     r->_u32[i*2] = (uint32_t)(u >> 32); r->_u32[i*2+1] = (uint32_t)u;
 }
-static inline u128 spu_dfa(u128 a, u128 b) { u128 r; for(int i=0;i<2;i++) spu__dset(&r,i, spu__dget(a,i)+spu__dget(b,i)); return r; }
-static inline u128 spu_dfs(u128 a, u128 b) { u128 r; for(int i=0;i<2;i++) spu__dset(&r,i, spu__dget(a,i)-spu__dget(b,i)); return r; }
-static inline u128 spu_dfm(u128 a, u128 b) { u128 r; for(int i=0;i<2;i++) spu__dset(&r,i, spu__dget(a,i)*spu__dget(b,i)); return r; }
+SPU_SF_HOST_FN u128 spu_dfa(u128 a, u128 b) { SPU_SF_HOST_ARITHMETIC u128 r; uint32_t env=spu_sf_host_begin(); for(int i=0;i<2;i++) spu__dset(&r,i, spu__dget(a,i)+spu__dget(b,i)); spu_sf_host_end(env); return r; }
+SPU_SF_HOST_FN u128 spu_dfs(u128 a, u128 b) { SPU_SF_HOST_ARITHMETIC u128 r; uint32_t env=spu_sf_host_begin(); for(int i=0;i<2;i++) spu__dset(&r,i, spu__dget(a,i)-spu__dget(b,i)); spu_sf_host_end(env); return r; }
+SPU_SF_HOST_FN u128 spu_dfm(u128 a, u128 b) { SPU_SF_HOST_ARITHMETIC u128 r; uint32_t env=spu_sf_host_begin(); for(int i=0;i<2;i++) spu__dset(&r,i, spu__dget(a,i)*spu__dget(b,i)); spu_sf_host_end(env); return r; }
 /* double FMA family: c = rt (accumulator, 3-register). */
-static inline u128 spu_dfma(u128 a, u128 b, u128 t)  { u128 r; for(int i=0;i<2;i++) spu__dset(&r,i, spu__dget(a,i)*spu__dget(b,i)+spu__dget(t,i)); return r; }
-static inline u128 spu_dfms(u128 a, u128 b, u128 t)  { u128 r; for(int i=0;i<2;i++) spu__dset(&r,i, spu__dget(a,i)*spu__dget(b,i)-spu__dget(t,i)); return r; }
-static inline u128 spu_dfnms(u128 a, u128 b, u128 t) { u128 r; for(int i=0;i<2;i++) spu__dset(&r,i, spu__dget(t,i)-spu__dget(a,i)*spu__dget(b,i)); return r; }
-static inline u128 spu_dfnma(u128 a, u128 b, u128 t) { u128 r; for(int i=0;i<2;i++) spu__dset(&r,i, -(spu__dget(a,i)*spu__dget(b,i)+spu__dget(t,i))); return r; }
+SPU_SF_HOST_FN u128 spu_dfma(u128 a, u128 b, u128 t) { SPU_SF_HOST_ARITHMETIC u128 r; uint32_t env=spu_sf_host_begin(); for(int i=0;i<2;i++) spu__dset(&r,i, spu__dget(a,i)*spu__dget(b,i)+spu__dget(t,i)); spu_sf_host_end(env); return r; }
+SPU_SF_HOST_FN u128 spu_dfms(u128 a, u128 b, u128 t) { SPU_SF_HOST_ARITHMETIC u128 r; uint32_t env=spu_sf_host_begin(); for(int i=0;i<2;i++) spu__dset(&r,i, spu__dget(a,i)*spu__dget(b,i)-spu__dget(t,i)); spu_sf_host_end(env); return r; }
+SPU_SF_HOST_FN u128 spu_dfnms(u128 a, u128 b, u128 t) { SPU_SF_HOST_ARITHMETIC u128 r; uint32_t env=spu_sf_host_begin(); for(int i=0;i<2;i++) spu__dset(&r,i, spu__dget(t,i)-spu__dget(a,i)*spu__dget(b,i)); spu_sf_host_end(env); return r; }
+SPU_SF_HOST_FN u128 spu_dfnma(u128 a, u128 b, u128 t) { SPU_SF_HOST_ARITHMETIC u128 r; uint32_t env=spu_sf_host_begin(); for(int i=0;i<2;i++) spu__dset(&r,i, -(spu__dget(a,i)*spu__dget(b,i)+spu__dget(t,i))); spu_sf_host_end(env); return r; }
 /* double compares -> per-lane 64-bit mask (RPCS3 stubs these; sane impl here). */
-static inline u128 spu_dfceq(u128 a, u128 b)  { u128 r; for(int i=0;i<2;i++){ uint64_t m=(spu__dget(a,i)==spu__dget(b,i))?~0ull:0ull; r._u32[i*2]=(uint32_t)(m>>32); r._u32[i*2+1]=(uint32_t)m; } return r; }
-static inline u128 spu_dfcmeq(u128 a, u128 b) { u128 r; for(int i=0;i<2;i++){ double x=spu__dget(a,i),y=spu__dget(b,i); if(x<0)x=-x; if(y<0)y=-y; uint64_t m=(x==y)?~0ull:0ull; r._u32[i*2]=(uint32_t)(m>>32); r._u32[i*2+1]=(uint32_t)m; } return r; }
+SPU_SF_HOST_FN u128 spu_dfceq(u128 a, u128 b) { SPU_SF_HOST_ARITHMETIC u128 r; uint32_t env=spu_sf_host_begin(); for(int i=0;i<2;i++){ uint64_t m=(spu__dget(a,i)==spu__dget(b,i))?~0ull:0ull; r._u32[i*2]=(uint32_t)(m>>32); r._u32[i*2+1]=(uint32_t)m; } spu_sf_host_end(env); return r; }
+SPU_SF_HOST_FN u128 spu_dfcmeq(u128 a, u128 b) { SPU_SF_HOST_ARITHMETIC u128 r; uint32_t env=spu_sf_host_begin(); for(int i=0;i<2;i++){ double x=spu__dget(a,i),y=spu__dget(b,i); if(x<0)x=-x; if(y<0)y=-y; uint64_t m=(x==y)?~0ull:0ull; r._u32[i*2]=(uint32_t)(m>>32); r._u32[i*2+1]=(uint32_t)m; } spu_sf_host_end(env); return r; }
 /* Singles occupy preferred words 0 and 2 when converting doubleword lanes. */
-static inline u128 spu_fesd(u128 a) { u128 r; memset(&r,0,sizeof r); for(int i=0;i<2;i++) spu__dset(&r,i,(double)a._f32[i*2]); return r; }
-static inline u128 spu_frds(u128 a) { u128 r; memset(&r,0,sizeof r); for(int i=0;i<2;i++) r._f32[i*2]=(float)spu__dget(a,i); return r; }
+SPU_SF_HOST_FN u128 spu_fesd(u128 a) { SPU_SF_HOST_ARITHMETIC u128 r; uint32_t env=spu_sf_host_begin(); memset(&r,0,sizeof r); for(int i=0;i<2;i++) spu__dset(&r,i,(double)a._f32[i*2]); spu_sf_host_end(env); return r; }
+SPU_SF_HOST_FN u128 spu_frds(u128 a) { SPU_SF_HOST_ARITHMETIC u128 r; uint32_t env=spu_sf_host_begin(); memset(&r,0,sizeof r); for(int i=0;i<2;i++) r._f32[i*2]=(float)spu__dget(a,i); spu_sf_host_end(env); return r; }
 /* mpyhhu: high-16 x high-16 of each word, unsigned, full 32-bit product. */
 static inline u128 spu_mpyhhu(u128 a, u128 b){ u128 r; for(int i=0;i<4;i++) r._u32[i]=(uint32_t)a._u16[2*i+1]*(uint32_t)b._u16[2*i+1]; return r; }
 /* cgx: extended carry-generate, carry-in = low bit of old rt (RPCS3 CGX). */
@@ -256,8 +275,8 @@ static inline u128 spu_avgb(u128 a, u128 b)   { u128 r; for(int i=0;i<16;i++) r.
 static inline u128 spu_mpyhha(u128 a, u128 b, u128 t)  { u128 r; for(int i=0;i<4;i++) r._s32[i]=t._s32[i]+(int32_t)a._s16[2*i+1]*(int32_t)b._s16[2*i+1]; return r; }
 static inline u128 spu_mpyhhau(u128 a, u128 b, u128 t) { u128 r; for(int i=0;i<4;i++) r._u32[i]=t._u32[i]+(uint32_t)a._u16[2*i+1]*(uint32_t)b._u16[2*i+1]; return r; }
 /* double compare greater (RPCS3 stubs these; sane impl) -> per-lane mask. */
-static inline u128 spu_dfcgt(u128 a, u128 b)  { u128 r; for(int i=0;i<2;i++){ uint64_t m=(spu__dget(a,i)>spu__dget(b,i))?~0ull:0ull; r._u32[i*2]=(uint32_t)(m>>32); r._u32[i*2+1]=(uint32_t)m; } return r; }
-static inline u128 spu_dfcmgt(u128 a, u128 b) { u128 r; for(int i=0;i<2;i++){ double x=spu__dget(a,i),y=spu__dget(b,i); if(x<0)x=-x; if(y<0)y=-y; uint64_t m=(x>y)?~0ull:0ull; r._u32[i*2]=(uint32_t)(m>>32); r._u32[i*2+1]=(uint32_t)m; } return r; }
+SPU_SF_HOST_FN u128 spu_dfcgt(u128 a, u128 b) { SPU_SF_HOST_ARITHMETIC u128 r; uint32_t env=spu_sf_host_begin(); for(int i=0;i<2;i++){ uint64_t m=(spu__dget(a,i)>spu__dget(b,i))?~0ull:0ull; r._u32[i*2]=(uint32_t)(m>>32); r._u32[i*2+1]=(uint32_t)m; } spu_sf_host_end(env); return r; }
+SPU_SF_HOST_FN u128 spu_dfcmgt(u128 a, u128 b) { SPU_SF_HOST_ARITHMETIC u128 r; uint32_t env=spu_sf_host_begin(); for(int i=0;i<2;i++){ double x=spu__dget(a,i),y=spu__dget(b,i); if(x<0)x=-x; if(y<0)y=-y; uint64_t m=(x>y)?~0ull:0ull; r._u32[i*2]=(uint32_t)(m>>32); r._u32[i*2+1]=(uint32_t)m; } spu_sf_host_end(env); return r; }
 /* dftsv: double test special value -- RPCS3 stubs (fatal); 0 = no special. */
 static inline u128 spu_dftsv(u128 a, int32_t imm){ (void)a; (void)imm; u128 r; memset(&r,0,sizeof r); return r; }
 
@@ -331,8 +350,8 @@ static inline u128 spu_mpyh(u128 a, u128 b) { u128 r; for(int i=0;i<4;i++) r._s3
 static inline u128 spu_mpyhh(u128 a, u128 b){ u128 r; for(int i=0;i<4;i++) r._s32[i]=(int32_t)a._s16[2*i+1] * (int32_t)b._s16[2*i+1]; return r; }
 static inline u128 spu_mpys(u128 a, u128 b) { u128 r; for(int i=0;i<4;i++){ int32_t p=(int32_t)a._s16[2*i]*(int32_t)b._s16[2*i]; r._s32[i]=(int16_t)(p>>16); } return r; }
 static inline u128 spu_mpyui(u128 a, int32_t imm) { u128 r; for(int i=0;i<4;i++) r._u32[i]=(uint32_t)a._u16[2*i]*(uint32_t)(uint16_t)imm; return r; }
-static inline u128 spu_fcmeq(u128 a, u128 b){ u128 r; for(int i=0;i<4;i++){ float fa=fabsf(a._f32[i]),fb=fabsf(b._f32[i]); r._u32[i]=(fa==fb)?0xFFFFFFFFu:0; } return r; }
-static inline u128 spu_fcmgt(u128 a, u128 b){ u128 r; for(int i=0;i<4;i++){ float fa=fabsf(a._f32[i]),fb=fabsf(b._f32[i]); r._u32[i]=(fa>fb)?0xFFFFFFFFu:0; } return r; }
+static inline u128 spu_fcmeq(u128 a, u128 b){ u128 r; for(int i=0;i<4;i++) r._u32[i]=(!spu__f32_unordered(a._u32[i]) && !spu__f32_unordered(b._u32[i]) && (a._u32[i]&0x7fffffffu)==(b._u32[i]&0x7fffffffu))?0xFFFFFFFFu:0; return r; }
+static inline u128 spu_fcmgt(u128 a, u128 b){ u128 r; for(int i=0;i<4;i++) r._u32[i]=(!spu__f32_unordered(a._u32[i]) && !spu__f32_unordered(b._u32[i]) && (a._u32[i]&0x7fffffffu)>(b._u32[i]&0x7fffffffu))?0xFFFFFFFFu:0; return r; }
 static const uint32_t spu_frest_fraction_lut[32] = {
     0x7FFBE0, 0x7F87A6, 0x70EF72, 0x708B40, 0x638B12, 0x633AEA, 0x5792C4, 0x574AA0,
     0x4CCA7E, 0x4C9262, 0x430A44, 0x42D62A, 0x3A2E12, 0x39FDFA, 0x3215E4, 0x31F1D2,

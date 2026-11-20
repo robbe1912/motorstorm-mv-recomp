@@ -268,6 +268,11 @@ jobs:
         run: python scripts/check_task_exit_source.py
   capture-observer:
     runs-on: windows-latest
+    env:
+      # Some runner images pair the MSVC 14.52 STL (which requires Clang 22)
+      # with LLVM 20's clang-cl; the STL then stops every C++ check at
+      # STL1000. clang-cl reads CL, so this applies to each check's build.
+      CL: /D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

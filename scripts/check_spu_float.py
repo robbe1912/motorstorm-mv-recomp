@@ -32,6 +32,17 @@ def main():
  text,n=re.subn(pattern,'static inline u128 spu_fm(u128 a, u128 b) { u128 r; for(int i=0;i<4;i++) r._f32[i]=a._f32[i]*b._f32[i]; return r; }',text);assert n==1
  (old/'spu_helpers.h').write_text(text,encoding='utf8');bad=mismatches('historical-ieee-mul',build('historical-ieee-mul',driver,extra_include=out/'ieee'));assert bad>0
  r=run([build('scope',ROOT/'scripts/fixtures/robbe_float_simd.c')]);assert 'failures=0' in r.stdout;print(r.stdout.strip())
- result=dict(passed=True,exact_rational_lanes_per_mode=len(expected),modes=['scalar','scoped SIMD'],historical_ieee_multiply_mismatches=bad,scope_result=r.stdout.strip(),game_launched=False,FPSCR_exception_flags_tested=False,source_sha256={str(x.relative_to(ROOT)):hashlib.sha256(x.read_bytes()).hexdigest() for x in [p for p in [spu/'spu_helpers.h',spu/'spu_float.h',spu/'spu_float_simd.c',spu/'spu_float_simd.h']]})
+ # The scope fixture must reject host-arithmetic helpers left in the held SPU
+ # mode, and float compares that order -0 below +0 (private header copies).
+ rejected={}
+ for name,file,old,new in [('host-arithmetic-in-spu-mode','spu_float_simd.h','if (spu_sf_csr_is_spu(csr)) _mm_setcsr((g_spu_sf_host_csr','if (0) _mm_setcsr((g_spu_sf_host_csr'),
+                           ('signed-zero-order','spu_helpers.h','? -(int32_t)(x & 0x7fffffffu) :','? -(int32_t)(x & 0x7fffffffu)-1 :')]:
+  private=out/(name+'-headers');private.mkdir()   # not out/name: that is the executable on Linux
+  for header in ('spu_helpers.h','spu_float_simd.h'):
+   text=(spu/header).read_text(encoding='utf8')
+   if header==file:assert text.count(old)==1,(name,header);text=text.replace(old,new)
+   (private/header).write_text(text,encoding='utf8')
+  m=run([build(name,ROOT/'scripts/fixtures/robbe_float_simd.c',extra_include=private)],expected=1);assert 'failures=0' not in m.stdout;rejected[name]=m.stdout.strip()
+ result=dict(passed=True,exact_rational_lanes_per_mode=len(expected),modes=['scalar','scoped SIMD'],historical_ieee_multiply_mismatches=bad,scope_result=r.stdout.strip(),rejected_mutants=rejected,game_launched=False,FPSCR_exception_flags_tested=False,source_sha256={str(x.relative_to(ROOT)):hashlib.sha256(x.read_bytes()).hexdigest() for x in [p for p in [spu/'spu_helpers.h',spu/'spu_float.h',spu/'spu_float_simd.c',spu/'spu_float_simd.h']]})
  (out/'result.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf8');print(json.dumps(result,indent=2));print('Evidence:',out)
 if __name__=='__main__':main()
