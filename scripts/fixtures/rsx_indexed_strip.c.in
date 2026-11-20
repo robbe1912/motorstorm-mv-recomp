@@ -3,6 +3,7 @@
 #include "rsx_vertex_fetch.h"
 #include "rsx_index_strip.h"
 #include "rsx_upload_buffer.h"
+#include "rsx_vp_layout.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,6 +12,7 @@
 #define MAX_VERTICES 4096u
 typedef rsx_vertex_value VPSlot;
 static struct { void* vp_vb_mapped; u32 vp_vb_offset, vp_parity, vp_capacity; } s_d3d;
+static rsx_vp_layout s_vp_layout = RSX_VP_LAYOUT_FULL;
 static int upload_allocate(void* c,uint64_t bytes,rsx_upload_buffer* b)
 {(void)c;b->memory=malloc((size_t)bytes);b->resource=b->memory;if(b->memory)memset(b->memory,0xcd,(size_t)bytes);return b->memory!=NULL;}
 static int upload_retire(void* c){(void)c;return 1;}
@@ -19,7 +21,7 @@ static void vp_upload_reserve(u64 n)
 {
     rsx_upload_buffer b={s_d3d.vp_vb_mapped,s_d3d.vp_vb_mapped,s_d3d.vp_capacity};
     const rsx_upload_ops ops={NULL,upload_allocate,upload_retire,upload_dispose};
-    if(!rsx_upload_reserve(&b,s_d3d.vp_vb_offset,n,VP_VERT_STRIDE,&ops))abort();
+    if(!rsx_vp_layout_reserve(&b,s_d3d.vp_vb_offset,n*s_vp_layout.stride,&ops))abort();
     s_d3d.vp_vb_mapped=b.memory;s_d3d.vp_capacity=b.capacity;
 }
 static u8 guest[16*1024*1024];
@@ -59,6 +61,8 @@ static void setup(void)
     }
     state.vertex_attribs[2].frequency=3;
 }
+/* Layout under test, chosen by main and set through rsx_vp_layout_init. */
+static u32 layout_mask=0xFFFFu,layout_stride=256u;
 /* Reference assembly retains the whole segment; it does not call the cursor helper. */
 static u32 segment[4096],segment_n;
 static int check_chunk(u32 first,u32 count,int fan)
@@ -75,10 +79,24 @@ static int check_chunk(u32 first,u32 count,int fan)
         tri[1]=fan?segment[segment_n-2]:segment[segment_n-2-odd];tri[2]=index;
         for(int v=0;v<3;++v)reference_vertex(&state,tri[v],expected+16*expected_count++);
     }
-    u32 old=s_d3d.vp_vb_offset;u32 n=upload_strip_vp_indexed(&state,first,count,fan);
+    u32 old=s_d3d.vp_vb_offset,old_capacity=s_d3d.vp_capacity;
+    /* Guard bytes past the upload: a compact upload must not write a full vertex. */
+    size_t room=(size_t)s_d3d.vp_capacity*VP_VERT_STRIDE-old,span=(size_t)count*3*VP_VERT_STRIDE;
+    if(span>room)span=room;
+    u8* half=(u8*)s_d3d.vp_vb_mapped+(u64)s_d3d.vp_parity*s_d3d.vp_capacity*VP_VERT_STRIDE;
+    memset(half+old,0x5a,span);
+    u32 n=upload_strip_vp_indexed(&state,first,count,fan);
     CHECK(n==expected_count);
+    CHECK(s_d3d.vp_vb_offset==old+n*layout_stride);
     u8* output=(u8*)s_d3d.vp_vb_mapped+(u64)s_d3d.vp_parity*s_d3d.vp_capacity*VP_VERT_STRIDE+old;
-    CHECK(!memcmp(output,expected,(size_t)n*VP_VERT_STRIDE));free(expected);return 0;
+    /* Expected bytes: each attribute bit of the mask, lowest first, 16 bytes. */
+    for(u32 v=0;v<n;++v){u32 k=0;
+        for(u32 a=0;a<16;++a){if(!((layout_mask>>a)&1u))continue;
+            CHECK(!memcmp(output+(size_t)v*layout_stride+(size_t)k*16,&expected[(size_t)v*16+a],16));++k;}
+        CHECK(k*16==layout_stride);}
+    if(s_d3d.vp_capacity==old_capacity)
+        for(size_t i=(size_t)n*layout_stride;i<span;++i)CHECK(output[i]==0x5a);
+    free(expected);return 0;
 }
 static void reset(void){++state.begin_epoch;segment_n=0;s_d3d.vp_vb_offset=0;fetches=0;}
 static int benchmark(u32 count,u32 repeats)
@@ -103,6 +121,15 @@ int main(int argc,char** argv)
         u32 count=argc>2?(u32)strtoul(argv[2],NULL,10):512,repeats=argc>3?(u32)strtoul(argv[3],NULL,10):2000;
         CHECK(count>=3&&count<=512&&repeats>=1&&repeats<=1000000);return benchmark(count,repeats);
     }
+    /* Full layout, then compact layouts: single slots, this title's union,
+     * sparse high/low slots, and a program that reads nothing (slot 0 kept). */
+    const u32 masks[]={0xFFFFu,0x0001u,0x8000u,0xCF8Fu,0x0109u,0x7FFEu,0x0000u};
+    for(u32 mi=0;mi<sizeof masks/sizeof masks[0];++mi){
+    rsx_vp_layout_init(&s_vp_layout,masks[mi]);
+    layout_mask=masks[mi]?masks[mi]:1u;
+    {u32 bits=0;for(u32 a=0;a<16;++a)bits+=(layout_mask>>a)&1u;layout_stride=bits*16u;}
+    CHECK(s_vp_layout.stride==layout_stride);
+    state.frequency_divider_op=0;state.vertex_attribs[1].enabled=1;
     for(int fan=0;fan<2;++fan){
         reset();state.restart_index_enable=0;state.index_array_dma=0;
         for(u32 i=0;i<8;++i)indices[i]=i;
@@ -146,12 +173,14 @@ int main(int argc,char** argv)
         be32(guest+(indices[36]%512)*16+4,0x3f400000u);
         CHECK(!check_chunk(37,91,trial&1));
     }
+    }
+    rsx_vp_layout_init(&s_vp_layout,0xFFFFu);layout_mask=0xFFFFu;layout_stride=256u;
     /* Complete the draw across the old boundary, retaining both parity regions. */
     state.restart_index_enable=0;state.index_array_dma=0;
     for(u32 parity=0;parity<2;++parity){
         free(s_d3d.vp_vb_mapped);s_d3d.vp_capacity=MAX_VERTICES;
         s_d3d.vp_vb_mapped=malloc(2*MAX_VERTICES*VP_VERT_STRIDE);CHECK(s_d3d.vp_vb_mapped);
-        reset();s_d3d.vp_parity=parity;
+        reset();s_d3d.vp_parity=parity;state.frequency_divider_op=0;state.vertex_attribs[1].enabled=1;
         memset(s_d3d.vp_vb_mapped,0xa5,2*MAX_VERTICES*VP_VERT_STRIDE);
         s_d3d.vp_vb_offset=(MAX_VERTICES-3)*VP_VERT_STRIDE;
         for(u32 i=0;i<8;++i)indices[i]=i;
@@ -168,5 +197,30 @@ int main(int argc,char** argv)
             CHECK(bytes[(size_t)p*s_d3d.vp_capacity*VP_VERT_STRIDE+i]==0xa5);
         }
     }
-    free(s_d3d.vp_vb_mapped);puts("PASS: exact production indexed strip/fan bytes; real attributes, restart, split/state changes and bounded fetch count");return 0;
+    /* Compact growth across the boundary: 3 x 48-byte vertices fit before the
+     * end, the rest needs a grown buffer; earlier bytes of both halves kept. */
+    rsx_vp_layout_init(&s_vp_layout,0x0109u);layout_mask=0x0109u;layout_stride=48u;
+    for(u32 parity=0;parity<2;++parity){
+        free(s_d3d.vp_vb_mapped);s_d3d.vp_capacity=MAX_VERTICES;
+        s_d3d.vp_vb_mapped=malloc(2*MAX_VERTICES*VP_VERT_STRIDE);CHECK(s_d3d.vp_vb_mapped);
+        reset();s_d3d.vp_parity=parity;
+        memset(s_d3d.vp_vb_mapped,0xa5,2*MAX_VERTICES*VP_VERT_STRIDE);
+        const u32 start_off=MAX_VERTICES*VP_VERT_STRIDE-3*48-16;  /* not unit-aligned */
+        s_d3d.vp_vb_offset=start_off;
+        for(u32 i=0;i<8;++i)indices[i]=i;
+        CHECK(upload_strip_vp_indexed(&state,0,8,0)==18);
+        CHECK(s_d3d.vp_capacity>MAX_VERTICES);
+        CHECK(s_d3d.vp_vb_offset==start_off+18*48);
+        const u32 order[]={0,1,2,2,1,3,2,3,4,4,3,5,4,5,6,6,5,7};
+        const u8* bytes=s_d3d.vp_vb_mapped;
+        const size_t base=(size_t)parity*s_d3d.vp_capacity*VP_VERT_STRIDE+start_off;
+        for(u32 i=0;i<18;++i){VPSlot full[16];reference_vertex(&state,order[i],full);
+            CHECK(!memcmp(bytes+base+i*48,&full[0],16));CHECK(!memcmp(bytes+base+i*48+16,&full[3],16));
+            CHECK(!memcmp(bytes+base+i*48+32,&full[8],16));}
+        for(u32 p=0;p<2;++p)for(size_t i=0;i<MAX_VERTICES*VP_VERT_STRIDE;++i){
+            if(p==parity&&i>=start_off)continue;
+            CHECK(bytes[(size_t)p*s_d3d.vp_capacity*VP_VERT_STRIDE+i]==0xa5);
+        }
+    }
+    free(s_d3d.vp_vb_mapped);puts("PASS: exact production indexed strip/fan bytes for full and compact layouts; real attributes, restart, split/state changes, growth and bounded fetch count");return 0;
 }

@@ -29,7 +29,7 @@ def main():
     start = compile_vp.index('    D3D12_GRAPHICS_PIPELINE_STATE_DESC pd = {0};')
     creation = compile_vp[start:compile_vp.index('    /* Second PSO:', start)]
     selector = function(source, 'static ID3D12PipelineState* vp_select_draw_pso(')
-    draw = re.search(r'gpu_pso_draw\([^;]+dr->vb_byte_offset / 256\);', source).group(0)
+    draw = re.search(r'gpu_pso_draw\([^;]+dr->vb_byte_offset / dr->vb_stride\);', source).group(0)
     start = source.index('    pd.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;',
                          source.index('static ID3D12PipelineState* vp_get_fp_pso('))
     dynamic = source[start:source.index('    if (pd.DepthStencilState.StencilEnable) {', start)]

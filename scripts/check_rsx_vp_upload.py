@@ -57,7 +57,7 @@ def main():
             env.pop(key)
     result = dict(game_inputs=False, gpu_execution=False, source=str(source),
                   compiler=compiler, checks=[], production_functions=list(NAMES)+['vp_upload_retire', 'rsx_upload_reserve'])
-    paths = [source, video/'rsx_upload_buffer.h', video/'rsx_index_strip.h',
+    paths = [source, video/'rsx_upload_buffer.h', video/'rsx_vp_layout.h', video/'rsx_index_strip.h',
              fixtures/'rsx_vp_upload.c.in', fixtures/'rsx_vp_retire.c.in', fixtures/'rsx_upload_buffer.c', Path(__file__)]
     result['source_sha256'] = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
 
@@ -87,6 +87,8 @@ def main():
     try:
         template = (fixtures / 'rsx_vp_upload.c.in').read_text(encoding='utf-8')
         bodies = '\n'.join(function(text, 'static u32 '+name+'(') for name in NAMES)
+        if 'vp_put_vertex' in bodies:
+            bodies = function(text, 'static void vp_put_vertex(') + '\n' + bodies
         build_run('all-uploads', template.replace('@UPLOAD_FUNCTIONS@', bodies))
         buffer = (fixtures / 'rsx_upload_buffer.c').read_text(encoding='utf-8')
         build_run('buffer', buffer)

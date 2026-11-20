@@ -2,6 +2,7 @@
 #include "rsx_commands.h"
 #include "rsx_primitives.h"
 #include "rsx_env_once.h"
+#include "rsx_vp_layout.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,19 +18,26 @@ typedef struct { u32 address, filter, control0, border; } rsx_guest_sampler_regs
 @RECORD@
 /* Sampler-state merge rules are exercised by check_rsx_sampler_tables.py. */
 static int guest_sampler_matches(const D3D12DrawRecord* dr){(void)dr;return 1;}
-static struct { int pipeline_ready,tex_bound,merge_prev_draw; void *vb_mapped,*vp_root_sig,*vp_vb_mapped; u32 vb_offset,vp_vb_offset,draw_count,merge_first_end,vp_parity; rsx_state* current_rsx_state; D3D12DrawRecord draws[MAX_DRAWS]; struct {u32 off,raw,w,h,fmt,ctrl1,cube,mips,depth;int set;} cur_texs[4]; } s_d3d;
-static unsigned vertices[8192], output[8192], output_n, drains, cb_calls;
-static void submit(void) { for(u32 d=0;d<s_d3d.draw_count;d++){D3D12DrawRecord*r=&s_d3d.draws[d]; if(!r->is_vp)continue; for(u32 v=0;v<r->vertex_count/3*3;v++) output[output_n++]=vertices[r->vb_byte_offset/256+v];} s_d3d.draw_count=0;s_d3d.vp_vb_offset=0;s_d3d.vp_parity^=1; }
+static struct { int pipeline_ready,tex_bound,merge_prev_draw; void *vb_mapped,*vp_root_sig,*vp_vb_mapped; u32 vb_offset,vp_vb_offset,draw_count,merge_first_end,vp_parity; rsx_state* current_rsx_state; D3D12DrawRecord draws[MAX_DRAWS]; int vp_vs_n; struct {u32 input_mask,refs;} vp_vs[2]; struct {u32 off,raw,w,h,fmt,ctrl1,cube,mips,depth;int set;} cur_texs[4]; } s_d3d;
+/* vertices[] is keyed by byte offset / 16, so records of different strides
+ * can share the buffer and each is read back at its own stride. */
+static unsigned vertices[65536], output[8192], output_n, drains, cb_calls;
+static u32 program_masks[2] = {0xFFFFu, 0xFFFFu};
+/* Layout under test: main runs the full one and a 48-byte compact one. */
+static rsx_vp_layout s_vp_layout = RSX_VP_LAYOUT_FULL;
+static void vp_upload_reserve_bytes(u64 bytes){if(s_d3d.vp_vb_offset+bytes>sizeof vertices/sizeof vertices[0]*16)abort();}
+static void submit(void) { for(u32 d=0;d<s_d3d.draw_count;d++){D3D12DrawRecord*r=&s_d3d.draws[d]; if(!r->is_vp)continue; { /* stride = 16 per attribute the record's program reads */ u32 m=program_masks[r->vs_idx]?program_masks[r->vs_idx]:1u,b=0; while(m){b+=m&1u;m>>=1;} if(r->vb_stride!=16u*b)abort(); } for(u32 v=0;v<r->vertex_count/3*3;v++) { if(r->vb_byte_offset%r->vb_stride)abort(); output[output_n++]=vertices[(r->vb_byte_offset+v*r->vb_stride)/16]; } } s_d3d.draw_count=0;s_d3d.vp_vb_offset=0;s_d3d.vp_parity^=1; }
 static void ensure_draw_record_capacity(void){if(s_d3d.draw_count==MAX_DRAWS){drains++;submit();}}
 static u32 rsx_record_color_masks(const rsx_state*s){return s?s->color_mask:0;}
 static u32 rsx_blend_key(const rsx_state*s,int b){(void)s;return b;}
 static u32 rsx_cull_key(const rsx_state*s){(void)s;return 0;}
 static u64 rsx_polygon_offset_key(const rsx_state*s){(void)s;return 0;}
-static int vp_get_vs(const rsx_state*s){(void)s;return 0;}
+/* Program identity = shader_program parity; each slot has its own layout. */
+static int vp_get_vs(const rsx_state*s){int i=(int)(s->shader_program&1u);s_d3d.vp_vs_n=2;s_d3d.vp_vs[i].input_mask=program_masks[i];s_d3d.vp_vs[i].refs++;return i;}
 static void vp_record_cb(u32 i,int vs,D3D12DrawRecord*r){(void)i;(void)vs;(void)r;cb_calls++;}
 static u32 current_rt_off(u32*w,u32*h,u32*m){*w=*h=1;memset(m,0,12);return 0;}
 static void cpu_surface_capture(D3D12DrawRecord*r){(void)r;}
-static u32 upload_tris_vp(const rsx_state*s,u32 first,u32 n){(void)s;for(u32 v=0;v<n;v++)vertices[s_d3d.vp_vb_offset/256+v]=first+v;s_d3d.vp_vb_offset+=n*256;return n;}
+static u32 upload_tris_vp(const rsx_state*s,u32 first,u32 n){(void)s;for(u32 v=0;v<n;v++)vertices[(s_d3d.vp_vb_offset+v*s_vp_layout.stride)/16]=first+v;s_d3d.vp_vb_offset+=n*s_vp_layout.stride;return n;}
 static u32 upload_tris_vp_indexed(const rsx_state*s,u32 f,u32 n){return upload_tris_vp(s,f,n);}
 static u32 upload_quads_vp(const rsx_state*s,u32 f,u32 n){return upload_tris_vp(s,f,n);}
 static u32 upload_quads_vp_indexed(const rsx_state*s,u32 f,u32 n){return upload_tris_vp(s,f,n);}
@@ -42,8 +50,11 @@ static u32 vp_fp_snap_for(u32 address){return address;}
 static u64 rsx_depth_stencil_key(const rsx_state*s){(void)s;return 0;}
 
 @HELPER@
+@LAYOUT@
 @CALLBACKS@
-static int run_case(int indexed, u32 first_count, unsigned changed)
+/* start = records already held: MAX_DRAWS-1 exercises the capacity drain,
+ * 0 keeps both draws in one submission (mixed strides when change 1). */
+static int run_case(int indexed, u32 first_count, unsigned changed, u32 start)
 {
     rsx_state state;
     memset(&state, 0, sizeof state);
@@ -55,7 +66,7 @@ static int run_case(int indexed, u32 first_count, unsigned changed)
     s_d3d.current_rsx_state = &state;
     s_d3d.pipeline_ready = 1;
     s_d3d.vb_mapped = s_d3d.vp_vb_mapped = s_d3d.vp_root_sig = (void*)1;
-    s_d3d.draw_count = MAX_DRAWS - 1;
+    s_d3d.draw_count = start;
     output_n = drains = cb_calls = 0;
     void (*draw)(void*,u32,u32,u32) = indexed ? d3d12_draw_indexed : d3d12_draw_arrays;
     draw(NULL, RSX_PRIMITIVE_TRIANGLES, 0, first_count);
@@ -68,8 +79,10 @@ static int run_case(int indexed, u32 first_count, unsigned changed)
     if (changed == 7) state.alpha_test_enable = 1;
     if (changed == 8) state.alpha_ref++;
     draw(NULL, RSX_PRIMITIVE_TRIANGLES, first_count, 256);
-    if ((!changed && (drains || s_d3d.draw_count != MAX_DRAWS || cb_calls != 1)) ||
-        (changed && (drains != 1 || s_d3d.draw_count != 1 || cb_calls != 2))) {
+    const int full = start == MAX_DRAWS - 1;
+    if ((!changed && (drains || s_d3d.draw_count != start + 1 || cb_calls != 1)) ||
+        (changed && (drains != (full ? 1u : 0u) || s_d3d.draw_count != (full ? 1u : start + 2) || cb_calls != 2)) ||
+        s_d3d.vp_vs[0].refs + s_d3d.vp_vs[1].refs != cb_calls) {   /* references = records */
         fprintf(stderr, "FAIL record ownership indexed=%d change=%u drains=%u cb=%u\n", indexed, changed, drains, cb_calls);
         return 1;
     }
@@ -88,12 +101,23 @@ static int run_case(int indexed, u32 first_count, unsigned changed)
 int main(int argc, char** argv)
 {
     int only = argc > 1 ? atoi(argv[1]) : -1;
+    for (u32 layout=0; layout<2; layout++) {
+    /* Full layout; then compact programs of 48 and 160 bytes, so a program
+     * change (change 1) moves to a stride the current offset is not aligned to. */
+    program_masks[0] = layout ? 0xCF8Fu : 0xFFFFu;
+    program_masks[1] = layout ? 0x0109u : 0xFFFFu;
     for (int indexed=0; indexed<2; indexed++) {
         if (only >= 0 && only != indexed) continue;
         const u32 chunks[] = {127,128,129,256};
-        for (unsigned c=0; c<4; c++) if (run_case(indexed, chunks[c], 0)) return 1;
+        for (unsigned c=0; c<4; c++) if (run_case(indexed, chunks[c], 0, MAX_DRAWS - 1)) return 1;
         for (unsigned changed=1; changed<=(indexed ? 5u : 8u); changed++)
-            if (run_case(indexed, 129, changed)) return 1;
+            if (run_case(indexed, 129, changed, MAX_DRAWS - 1)) return 1;
+        if (MAX_DRAWS > 2) {
+            for (unsigned c=0; c<4; c++) if (run_case(indexed, chunks[c], 0, 0)) return 1;
+            /* Separate records end on whole triangles, so the split is 3-aligned. */
+            if (run_case(indexed, 129, 1, 0)) return 1;
+        }
+    }
     }
     printf("PASS exact triangle output across full record capacity\n");
     return 0;

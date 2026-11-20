@@ -72,7 +72,13 @@ def main():
         prefix = prefix.replace('const rsx_state*s,u32 i,VPSlot*out', 'const rsx_state*s,const rsx_vertex_fetch_batch*b,u32 i,VPSlot*out')
         prefix = prefix.replace('out[0].v[0]=(float)i;', 'if(b->state!=s)abort();out[0].v[0]=(float)i;')
         prefix += '\nu32 cellGcmResolveOffset(u32 o){(void)o;abort();}\nu32 cellGcmResolveLocated(int l,u32 o){(void)l;(void)o;abort();}\n'
-    c.write_text(prefix + include + body + CHECK, encoding='utf-8')
+    layout = ''
+    if 'rsx_vp_layout_' in body or 'vp_put_vertex' in body:
+        put_start = text.index('static void vp_put_vertex(')
+        put = text[put_start:text.index('\n}\n', put_start) + 3]
+        layout = ('#include "' + source.with_name('rsx_vp_layout.h').as_posix() + '"\n'
+                  'static rsx_vp_layout s_vp_layout = RSX_VP_LAYOUT_FULL;\n' + put)
+    c.write_text(prefix + layout + include + body + CHECK, encoding='utf-8')
     env = os.environ.copy()
     if os.name == 'nt' and not env.get('CC'):
         from project import build_environment

@@ -45,9 +45,9 @@ def main():
     with (out / 'build.log').open('wb') as log:
         build = subprocess.run(cmd, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=120)
     inputs = [source, fixture, fetch, VIDEO / 'rsx_vertex_fetch.h', VIDEO / 'rsx_commands.h',
-              VIDEO / 'rsx_index_strip.h', VIDEO / 'rsx_upload_buffer.h', Path(__file__)]
+              VIDEO / 'rsx_index_strip.h', VIDEO / 'rsx_upload_buffer.h', VIDEO / 'rsx_vp_layout.h', Path(__file__)]
     result = dict(command=cmd, build_returncode=build.returncode, game_inputs=False,
-                  production_functions=['upload_strip_vp_indexed', 'read_vp_vertex', 'rsx_vertex_fetch_prepare', 'rsx_fetch_vertex_prepared', 'rsx_fetch_attrib'],
+                  production_functions=['upload_strip_vp_indexed', 'read_vp_vertex', 'vp_put_vertex', 'rsx_vertex_fetch_prepare', 'rsx_fetch_vertex_prepared', 'rsx_fetch_attrib'],
                   source_hashes={str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs})
     if build.returncode:
         print((out / 'build.log').read_text(encoding='utf-8', errors='replace'))

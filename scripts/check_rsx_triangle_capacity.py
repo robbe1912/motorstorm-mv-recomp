@@ -15,7 +15,14 @@ def expand(source):
     helper = source.find('static int vp_triangle_can_merge(')
     functions = source[helper if helper >= 0 else first:last]
     template = (ROOT / 'scripts/fixtures/rsx_triangle_capacity.c.in').read_text()
-    return template.replace('@RECORD@', source[start:end]).replace('@HELPER@', '').replace('@CALLBACKS@', functions)
+    layout = ''
+    if 'vp_layout_begin(' in functions:
+        # The production layout selection and reference return, not stubs.
+        for signature in ('static void vp_vs_unref(', 'static void vp_layout_begin('):
+            at = source.index(signature)
+            layout += source[at:source.index('\n}\n', at) + 3]
+    return (template.replace('@RECORD@', source[start:end]).replace('@HELPER@', '')
+            .replace('@LAYOUT@', layout).replace('@CALLBACKS@', functions))
 
 def main():
     parser = argparse.ArgumentParser()
