@@ -725,6 +725,7 @@ static void phase_gpu_begin(void)
     s_d3d.cmd_list->lpVtbl->EndQuery(s_d3d.cmd_list, s_phase_queries,
                                     D3D12_QUERY_TYPE_TIMESTAMP, 0);
 }
+static void phase_draw_rows_write(const u64* ticks, u32 query_n, u64 batch, u64 frequency);
 static void phase_gpu_collect(void)
 {
     s_phase_gpu_valid = 0;
@@ -749,6 +750,7 @@ static void phase_gpu_collect(void)
         D3D12_RANGE no_write = {0, 0};
         s_phase_readback->lpVtbl->Unmap(s_phase_readback, 0, &no_write);
     }
+    phase_draw_rows_write(ticks, s_phase_query_n, s_phase_gpu_frame, s_phase_frequency);
     s_phase_query_n = 0;
 }
 static void phase_gpu_draw(int is_small, int end)
@@ -767,6 +769,170 @@ static void phase_gpu_end(void)
         D3D12_QUERY_TYPE_TIMESTAMP, 0, s_phase_query_n, s_phase_readback, 0);
 }
 
+/* RSX draw CSV. RSX_PHASE_GPU_DRAWS=1 and a RSX_PHASE_CSV path start it.
+ * The backend holds one row per timestamped draw of a batch. It writes the
+ * rows when phase_gpu_collect reads the timestamps of that batch. The file
+ * is rsx_draws.csv next to rsx_phases.csv. The file stops at
+ * PHASE_DRAW_ROWS_MAX rows and the log says so. */
+#ifndef PHASE_DRAW_ROWS_MAX
+#define PHASE_DRAW_ROWS_MAX 2000000u
+#endif
+#define PHASE_DRAW_TARGETS  1u   /* OMSetRenderTargets is issued for this draw */
+#define PHASE_DRAW_VIEWPORT 2u   /* viewport or scissor differs from the last issue */
+#define PHASE_DRAW_PSO      4u   /* SetPipelineState is issued */
+#define PHASE_DRAW_SRV      8u   /* root descriptor table 1 is issued */
+typedef struct {
+    u32 draw;         /* record index in the batch */
+    u32 verts;        /* VertexCount of DrawInstanced */
+    u32 prim;         /* rsx_topology of the record */
+    u32 rt[4];        /* rt_off, rt_mrt[0..2]; 0 = display target */
+    u32 zeta;         /* zeta_off */
+    u32 vp_w, vp_h;   /* guest viewport size */
+    int  vs;          /* vs_idx: vertex program slot, -1 = primary */
+    u32 fp;           /* fp_addr: guest fragment program address */
+    u32 fp_snap;      /* content snapshot index + 1, 0 = none */
+    u32 flags;
+    u32 barriers;     /* transition barriers of this draw */
+    u32 query;        /* index of the start timestamp */
+} PhaseDrawRow;
+static PhaseDrawRow s_draw_rows[MAX_DRAWS];
+static u32 s_draw_rows_n;
+static FILE* s_draw_csv;
+static int s_draw_csv_checked, s_draw_csv_stopped;
+static u64 s_draw_csv_rows;
+static float s_draw_last_vp[4];
+static long s_draw_last_sc[4];
+static int s_draw_last_valid;
+/* rsx_draws.csv in the directory of RSX_PHASE_CSV. The result is NULL when
+ * RSX_PHASE_CSV is unset or the path is too long. */
+static const char* phase_draw_csv_path(void)
+{
+    static char path[1024];
+    static int checked;
+    if (!checked) {
+        checked = 1;
+        const char* phases = rsx_env_once("RSX_PHASE_CSV");
+        const char* name = phases ? strrchr(phases, '\\') : NULL;
+        const char* other = phases ? strrchr(phases, '/') : NULL;
+        if (other && (!name || other > name)) name = other;
+        size_t dir = name ? (size_t)(name - phases) + 1 : 0;
+        if (phases && *phases && dir + sizeof "rsx_draws.csv" <= sizeof path) {
+            memcpy(path, phases, dir);
+            memcpy(path + dir, "rsx_draws.csv", sizeof "rsx_draws.csv");
+        }
+    }
+    return path[0] ? path : NULL;
+}
+static int phase_draw_csv_on(void)
+{
+    static int v = -1;
+    if (v < 0) {
+        const char* path = phase_draw_csv_path();
+        v = s_phase_gpu_draws && s_phase_readback && path != NULL;
+        if (v) fprintf(stderr, "[RSXPHASE] Draw CSV %s (stops at %u rows)\n", path, PHASE_DRAW_ROWS_MAX);
+        else if (s_phase_gpu_draws)
+            fprintf(stderr, "[RSXPHASE] Draw CSV off: RSX_PHASE_CSV gives no path\n");
+    }
+    return v;
+}
+/* Forget the rows of the previous batch. The next row has no earlier draw. */
+static void phase_draw_batch_begin(void)
+{
+    s_draw_rows_n = 0;
+    s_draw_last_valid = 0;
+}
+/* Remember the viewport and scissor that the command list gets. Returns 1
+ * when a value differs from the previous issue. */
+static int phase_draw_viewport(float x, float y, float w, float h,
+                               long left, long top, long right, long bottom)
+{
+    if (!phase_draw_csv_on()) return 0;
+    int changed = !s_draw_last_valid || s_draw_last_vp[0] != x || s_draw_last_vp[1] != y ||
+                  s_draw_last_vp[2] != w || s_draw_last_vp[3] != h ||
+                  s_draw_last_sc[0] != left || s_draw_last_sc[1] != top ||
+                  s_draw_last_sc[2] != right || s_draw_last_sc[3] != bottom;
+    s_draw_last_vp[0] = x; s_draw_last_vp[1] = y; s_draw_last_vp[2] = w; s_draw_last_vp[3] = h;
+    s_draw_last_sc[0] = left; s_draw_last_sc[1] = top;
+    s_draw_last_sc[2] = right; s_draw_last_sc[3] = bottom;
+    s_draw_last_valid = 1;
+    return changed;
+}
+/* Depth attachments that the draw reads as a shader resource. Each one makes
+ * two transitions around the draw (rsx_d3d12_native_depth.inc). Depth alias
+ * conversions make more barriers; this count does not include them. */
+static u32 phase_draw_depth_slots(const D3D12DrawRecord* dr)
+{
+    u32 n = 0;
+    for (u32 unit = 0; unit < 16; unit++) {
+        if (!(dr->depth_sample_mask & (1u << unit))) continue;
+        u32 earlier;
+        for (earlier = 0; earlier < unit; earlier++)
+            if ((dr->depth_sample_mask & (1u << earlier)) &&
+                dr->depth_sampled_slot[earlier] == dr->depth_sampled_slot[unit]) break;
+        if (earlier == unit) n++;
+    }
+    return n;
+}
+/* Start the row of one draw. Call it after phase_gpu_draw(is_small, 0), which
+ * writes the start timestamp. barriers counts the transitions before that
+ * timestamp. */
+static void phase_draw_row(const D3D12DrawRecord* dr, u32 draw, u32 flags, u32 barriers)
+{
+    if (!phase_draw_csv_on() || !s_phase_query_n || s_draw_rows_n >= MAX_DRAWS) return;
+    PhaseDrawRow* row = &s_draw_rows[s_draw_rows_n++];
+    row->draw = draw; row->verts = dr->vertex_count; row->prim = dr->topology;
+    row->rt[0] = dr->rt_off; row->rt[1] = dr->rt_mrt[0];
+    row->rt[2] = dr->rt_mrt[1]; row->rt[3] = dr->rt_mrt[2];
+    row->zeta = dr->zeta_off; row->vp_w = dr->vp_w; row->vp_h = dr->vp_h;
+    row->vs = dr->vs_idx; row->fp = dr->fp_addr; row->fp_snap = dr->fp_snap;
+    row->flags = flags; row->barriers = barriers + 2u * phase_draw_depth_slots(dr);
+    row->query = s_phase_query_n - 1;
+}
+/* Write the rows of one batch with its timestamps. frequency converts ticks
+ * to seconds. ticks is NULL when the readback failed; the rows are then
+ * dropped. gap_us is the time from the previous timestamp to the start of the
+ * draw. The first draw of a batch starts at the batch timestamp. idx is
+ * always 0: gpu_pso_draw issues DrawInstanced, and guest index lists are
+ * expanded to vertices at record time. */
+static void phase_draw_rows_write(const u64* ticks, u32 query_n, u64 batch, u64 frequency)
+{
+    if (!s_draw_rows_n) return;
+    if (!ticks || s_draw_csv_stopped) { s_draw_rows_n = 0; return; }
+    if (!s_draw_csv_checked) {
+        s_draw_csv_checked = 1;
+        const char* path = phase_draw_csv_path();
+        s_draw_csv = fopen(path, "w");
+        if (s_draw_csv) {
+            setvbuf(s_draw_csv, NULL, _IOFBF, 16384);
+            fprintf(s_draw_csv, "batch,draw,verts,idx,prim,rt0,rt1,rt2,rt3,zeta,vp_w,vp_h,vs,fp,fp_snap,"
+                "rt_chg,vp_chg,pso_chg,srv_chg,barriers,gap_us,gpu_us\n");
+        } else fprintf(stderr, "[RSXPHASE] Cannot open draw CSV: %s\n", path);
+    }
+    double scale = 1e6 / (double)frequency;
+    for (u32 i = 0; s_draw_csv && i < s_draw_rows_n; i++) {
+        const PhaseDrawRow* row = &s_draw_rows[i];
+        if (row->query + 2 >= query_n) continue;   /* no end timestamp in the batch */
+        if (s_draw_csv_rows >= PHASE_DRAW_ROWS_MAX) {
+            fprintf(stderr, "[RSXPHASE] Draw CSV stopped at %u rows: %s\n",
+                    PHASE_DRAW_ROWS_MAX, phase_draw_csv_path());
+            fflush(s_draw_csv);
+            s_draw_csv_stopped = 1;
+            break;
+        }
+        u64 before = i ? ticks[s_draw_rows[i - 1].query + 1] : ticks[0];
+        fprintf(s_draw_csv, "%llu,%u,%u,0,%u,%08X,%08X,%08X,%08X,%08X,%u,%u,%d,%08X,%u,%u,%u,%u,%u,%u,%.3f,%.3f\n",
+            (unsigned long long)batch, row->draw, row->verts, row->prim,
+            row->rt[0], row->rt[1], row->rt[2], row->rt[3], row->zeta, row->vp_w, row->vp_h,
+            row->vs, row->fp, row->fp_snap,
+            (row->flags & PHASE_DRAW_TARGETS) != 0, (row->flags & PHASE_DRAW_VIEWPORT) != 0,
+            (row->flags & PHASE_DRAW_PSO) != 0, (row->flags & PHASE_DRAW_SRV) != 0,
+            row->barriers, (double)(ticks[row->query] - before) * scale,
+            (double)(ticks[row->query + 1] - ticks[row->query]) * scale);
+        s_draw_csv_rows++;
+    }
+    s_draw_rows_n = 0;
+}
+/* End of the RSX draw CSV block. */
 
 /* DBG_LOCK: running clip-space centroid of the tracked mesh (RSX_DBG_VTX's
  * texture), so the debug camera can follow it. The ducks are driven by the
@@ -4881,6 +5047,9 @@ static void srv_finish_table(u32 d)
 }
 
 
+/* Transitions of offscreen targets issued to the command list. The draw CSV
+ * takes the difference over one draw. */
+static u32 s_rt_barriers;
 static void off_rt_transition(int slot, D3D12_RESOURCE_STATES to)
 {
     OffRT* r = &s_d3d.off_rt[slot];
@@ -4892,6 +5061,7 @@ static void off_rt_transition(int slot, D3D12_RESOURCE_STATES to)
     b.Transition.StateAfter  = to;
     b.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     s_d3d.cmd_list->lpVtbl->ResourceBarrier(s_d3d.cmd_list, 1, &b);
+    s_rt_barriers++;
     r->st = to;
 }
 
@@ -6169,9 +6339,12 @@ static void render_frame(void)
             if (bind_reuse_on()) bound_pso->lpVtbl->AddRef(bound_pso);
             u64 bound_srv = gh.ptr;
             u32 bound_depth_slot = UINT32_MAX;   /* force the first bind */
+            phase_draw_batch_begin();
             for (u32 d = 0; d < s_d3d.draw_count && d < MAX_DRAWS; d++) {
                 const D3D12DrawRecord* dr = &s_d3d.draws[d];
                 if (!dr->is_vp) continue;
+                /* Draw CSV: state changes and transitions of this record. */
+                u32 row_flags = 0, row_barriers = s_rt_barriers;
                 /* No depth use: bind no DSV, and leave every guest depth
                  * surface (and its initialization state) untouched. */
                 const D3D12_CPU_DESCRIPTOR_HANDLE* dsv = NULL;
@@ -6254,6 +6427,9 @@ static void render_frame(void)
                     bound_depth_slot = dr->depth_slot;
                     s_d3d.cmd_list->lpVtbl->RSSetViewports(s_d3d.cmd_list, 1, &vp);
                     s_d3d.cmd_list->lpVtbl->RSSetScissorRects(s_d3d.cmd_list, 1, &sc);
+                    row_flags |= PHASE_DRAW_TARGETS;
+                    phase_draw_viewport(vp.TopLeftX, vp.TopLeftY, vp.Width, vp.Height,
+                                        sc.left, sc.top, sc.right, sc.bottom);
                     /* RT_CLEARDBG=2: magenta-clear the surface the DRAWS bind,
                      * at the moment they bind it. The guest's own clears may go
                      * to a different surface entirely (they do here: clears to
@@ -6374,6 +6550,7 @@ static void render_frame(void)
                     s_d3d.cmd_list->lpVtbl->SetPipelineState(s_d3d.cmd_list, next_pso);
                     bound_pso = next_pso;
                     s_pso_binds++;
+                    row_flags |= PHASE_DRAW_PSO;
                 }
                 /* Guest stencil ref (NV4097_SET_STENCIL_FUNC_REF): OM state,
                  * not PSO state, so it is set per bind rather than keyed. */
@@ -6402,6 +6579,9 @@ static void render_frame(void)
                     D3D12_RECT dsc = {(LONG)dvp.TopLeftX, (LONG)dvp.TopLeftY,
                                       (LONG)(dvp.TopLeftX + dvp.Width),
                                       (LONG)(dvp.TopLeftY + dvp.Height)};
+                    if (phase_draw_viewport(dvp.TopLeftX, dvp.TopLeftY, dvp.Width, dvp.Height,
+                                            dsc.left, dsc.top, dsc.right, dsc.bottom))
+                        row_flags |= PHASE_DRAW_VIEWPORT;
                     s_d3d.cmd_list->lpVtbl->RSSetViewports(s_d3d.cmd_list, 1, &dvp);
                     s_d3d.cmd_list->lpVtbl->RSSetScissorRects(s_d3d.cmd_list, 1, &dsc);
                 }
@@ -6423,6 +6603,7 @@ static void render_frame(void)
                     s_d3d.cmd_list->lpVtbl->SetGraphicsRootDescriptorTable(s_d3d.cmd_list, 1, gh);
                     bound_srv = gh.ptr;
                     s_srv_binds++;
+                    row_flags |= PHASE_DRAW_SRV;
                 }
                 /* Per-draw constants: this draw's vp_cb (b0) + PSConstants (b1). */
                 s_d3d.cmd_list->lpVtbl->SetGraphicsRootConstantBufferView(s_d3d.cmd_list, 0,
@@ -6558,6 +6739,7 @@ static void render_frame(void)
                             dr->vp_w <= 320 && dr->vp_h <= 180;
                 if (phase_on()) { s_phase.draws++; s_phase.small_draws += is_small; }
                 phase_gpu_draw(is_small, 0);
+                phase_draw_row(dr, d, row_flags, s_rt_barriers - row_barriers);
                 cpu_surface_written(cur_rt,cur_m);
                 native_depth_begin(dr, next_pso);
                 gpu_pso_draw(next_pso, dr->vertex_count, dr->vb_byte_offset / 256);
