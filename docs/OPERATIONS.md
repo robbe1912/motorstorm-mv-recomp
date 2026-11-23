@@ -479,6 +479,40 @@ the selection. `RSX_CPU_SURFACE_PROFILE=1` also prints `[CPUSURFACE_EAGER]`
 submit counts. Game-free coverage:
 [check_cpu_surface_eager.py](../scripts/check_cpu_surface_eager.py).
 
+`--eager-surface OFFSET` (hex, repeatable, at most 3) adds RSX surface
+offsets to the eager list of `--eager-surface-submit 1`. The default list
+holds only the 64x64 HDR exposure target (`02A30480`). The launcher clears an
+inherited list and records the selection.
+
+`--cpu-surface-fast 0|1` (default `1`) selects the coherent read fast path.
+A client read of a surface with no recorded write since its last copy is
+served on the calling thread from that copy. `0` queues every read for the
+renderer; use it only for a matched comparison on the same executable. A
+read that needs a copy still waits. Measured in a race: no gain (#326).
+
+`--cpu-surface-snapshot-fast 0|1` (default `0`) serves a snapshot request on
+its calling thread when no recorded draw targets a range and each range lies
+in one current surface that holds it fully, or in no surface. The client
+repeats the check after the read. Other requests take the FIFO boundary
+path. Measured in a race: it serves 95 percent of the requests and does not
+cut the frame time (#326). Game-free coverage:
+[check_cpu_surface_snapshot_fast.py](../scripts/check_cpu_surface_snapshot_fast.py).
+
+`--profile-cpu-surfaces` prints one `[CPUSURFACE_PROFILE]` line per request:
+address, bytes, match and copy counts, and the times in QPC ticks (queue,
+service, copy fence, packing). With `--cpu-surface-snapshot-fast 1` it also
+prints the `[CPUSURFACE_SNAPSHOT_FAST]` served and queued counters. It adds
+timing and logging overhead: use it to find the slow requests, then run the
+timing arm without it.
+
+`--profile-renderer-draws` needs `--profile-renderer`. It adds a GPU timestamp
+pair to each draw and writes `rsx_draws.csv` next to `rsx_phases.csv` (at most
+2,000,000 rows). The `rt0` to `rt3` columns are RSX surface offsets: a row
+with `rt0` equal to a listed offset selects the draws into that surface. The
+readback of a row is ready at the start of the next batch, and the timestamps
+add overhead. Game-free coverage:
+[check_rsx_draw_profile.py](../scripts/check_rsx_draw_profile.py).
+
 Use identical cache targets, validation and profiling settings for comparisons.
 Retention validates every uploaded face with full XXH3; the reference retains
 its sparse source checksum. Complete hashing has a measurable cost. Verify the
@@ -566,6 +600,14 @@ profile. Configure with `python scripts/project.py build --optimize
 record capture and queue-wrapper capabilities. Lifted SPU inputs and all three
 toolkit observation options are required. A subsequent ordinary build explicitly
 turns those capture options off.
+
+Never time a capture build. Its capture filter stays on the SPU path for the
+whole run and keeps every SPU job in the interpreter
+([#345](https://github.com/robbe1912/motorstorm-mv-recomp/issues/345)). The
+launcher refuses `--native-owned-jobs` on a capture build. For timing, build
+without `--capture-jobs` and pass `--native-owned-jobs --jobmod-header-fnv`.
+Report the frame-interval spread with every FPS number: the median and the
+95th percentile of `dt` in `frames.csv`. An average hides uneven motion.
 
 Run with `--capture-jobs --job-capture-seconds 0.1 --menu-replay <private-profile>`
 and the selected native-depth, diagnostic and resource settings. The inherited
