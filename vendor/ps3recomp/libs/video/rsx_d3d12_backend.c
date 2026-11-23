@@ -7027,6 +7027,8 @@ skip_dump_consider: ;
       } }
     if (phase_on()) s_phase.post += perf_now() - ph_post;
     double ph_present = phase_on() ? perf_now() : 0.0;
+    /* Presented frames since the last title refresh. Only a Present counts. */
+    static u64 s_tframes = 0;
 
     /* Present */
     if (s_present_this_frame) {
@@ -7040,6 +7042,7 @@ skip_dump_consider: ;
          * delta measures the real on-screen cadence, not submit time. */
         rsx_fps_stats_on_present();
         if (phase_on()) s_phase.presents++;
+        s_tframes++;
     }
     if (phase_on()) s_phase.present = perf_now() - ph_present;
     double ph_next = phase_on() ? perf_now() : 0.0;
@@ -7053,8 +7056,6 @@ skip_dump_consider: ;
      * draw count of the last frame, and the backbuffer size. */
     {
         static ULONGLONG s_tt0 = 0;
-        static u64 s_tframes = 0;
-        s_tframes++;
         ULONGLONG tnow = GetTickCount64();
         if (s_tt0 == 0) s_tt0 = tnow;
         if (tnow - s_tt0 >= 1000 && s_d3d.hwnd) {
