@@ -132,6 +132,12 @@ Linux and Windows). Without that source, only this optional historical check is
 skipped, and the skip is reported. No game
 inputs or original instructions are used by either check.
 
+Use `--prompt-flip` to let the guest waiter consume the completion of its
+own drained frame when the renderer takes it for presentation. This enables
+both GCM completion switches and preserves the refresh limit. Use
+`--profile-flip` to log latency in groups of 64 waits. The launcher records
+each explicit selection. Both options default to off.
+
 CPU surface dependency diagnostics use `scripts/run.py --profile-cpu-surfaces`.
 This explicitly enables and records the existing `RSX_CPU_SURFACE_PROFILE=1`
 backend diagnostics after inherited RSX settings are cleared. Each completed

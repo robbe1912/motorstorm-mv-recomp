@@ -63,6 +63,8 @@ def main():
     ap.add_argument('--eager-surface-submit',choices=('0','1'),default='0',help='Submit the batch as soon as the game stops drawing into the race exposure target (02A30480), ahead of its coherent CPU read (default 0: submit at the read or frame end)')
     ap.add_argument('--cpu-surface-prompt',choices=('default','0','1'),default='default',help='Prompt disjoint CPU surface reads; default preserves backend policy, 0 uses batch-end service')
     ap.add_argument('--cpu-surface-flush',choices=('default','0','1'),default='default',help='Submit recorded writes needed by queued CPU reads at the next draw boundary or idle pump')
+    ap.add_argument('--prompt-flip',action='store_true',help='Deliver the drained frame completion at take and wake its guest waiter at the original refresh limit')
+    ap.add_argument('--profile-flip',action='store_true',help='Record flip wait, vblank and guest delivery latency in groups of 64 waits')
     ap.add_argument('--drain-overlap',choices=('default','0','1'),default='default',help='Overlap recording with a submitted capacity batch; default preserves backend policy')
     ap.add_argument('--texture-retention',choices=('0','1'),default='0',help='Explicit reference or bounded persistent DX12 texture cache')
     ap.add_argument('--texture-cache-mib',type=int,default=512,help='Default+upload allocation target, 0..4096 MiB; live batch pins may exceed it')
@@ -176,7 +178,7 @@ def main():
     if args.d3d12_debug != 'default':env['D3D12_DBG']=args.d3d12_debug
     # Clear inherited diagnostics before applying the documented booting configuration.
     for key in list(env):
-        if key.startswith(('SPU_','FLOW_','RSX_','GCM_','PAD_','FPS_','PM_','CAP_HAVOK','CAP_BIKE','LOADTIME_','AUDIO_','TEX_')) or key in ('FP_PICK','SCREEN_AS_TEX','RD_WWSJOB_SHIM','VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG','MS_JOB_CAPTURE_DIR','MS_JOB_CAPTURE_EXECUTION_PCS','MS_BOOT_MENU','MS_NATIVE_JOB_WAIT','MS_NATIVE_JOB_WAIT_PROFILE'):env.pop(key)
+        if key.startswith(('SPU_','FLOW_','RSX_','GCM_','PAD_','FPS_','PM_','CAP_HAVOK','CAP_BIKE','LOADTIME_','AUDIO_','TEX_')) or key in ('FLIP_LAT','FP_PICK','SCREEN_AS_TEX','RD_WWSJOB_SHIM','VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG','MS_JOB_CAPTURE_DIR','MS_JOB_CAPTURE_EXECUTION_PCS','MS_BOOT_MENU','MS_NATIVE_JOB_WAIT','MS_NATIVE_JOB_WAIT_PROFILE'):env.pop(key)
     env.update(PATH=str(c['ffmpeg']/'bin')+os.pathsep+env.get('PATH',''),PS3_VFS_ROOT=str(c['disc']),PS3_HDD0_ROOT=str(c['userdata']),PS3_SAVEDATA_ROOT=str(c['userdata']/'home/00000001/savedata'),AUDIO_MUTE='1',SCREEN_AS_TEX='0',PAD_FILE=str(out/'pad.txt'),FPS_STATS='1',FPS_STATS_CSV=str(out/'frames.csv'),RECOMP_TITLE='MotorStorm MV native')
     env.update(admitted['execution_environment'])
     env['MS_BOOT_MENU'] = '1' if menu_boot else '0'
@@ -223,6 +225,10 @@ def main():
     if args.surface_prefetch=='1':env['RSX_CPU_SURFACE_PREFETCH']=SURFACE_PREFETCH
     if args.eager_surface_submit=='1':env['RSX_CPU_SURFACE_EAGER']=SURFACE_EAGER
     if args.cpu_surface_flush != 'default':env['RSX_CPU_SURFACE_FLUSH']=args.cpu_surface_flush
+    if args.profile_flip:
+        env['FLIP_LAT'] = '1'
+    if args.prompt_flip:
+        env.update(GCM_FLIP_PROMPT='1', GCM_FLIP_AT_TAKE='1')
     if args.drain_overlap != 'default':env['RSX_DRAIN_OVERLAP']=args.drain_overlap
     env.update(RSX_TEXTURE_RETENTION=args.texture_retention,RSX_TEXTURE_CACHE_MIB=str(args.texture_cache_mib),RSX_TEX_MIPS=args.texture_mips)
     (out/'pad.txt').write_text('0\n')
@@ -269,7 +275,7 @@ def main():
     record['profile_textures']=args.profile_textures
     record['d3d12_debug']=args.d3d12_debug
     record['replay_observe_seconds']=args.replay_observe_seconds
-    record['environment'].update({k:v for k,v in env.items() if k in ('PERF','D3D12_DBG','RSX_TEXTURE_RETENTION','RSX_TEXTURE_CACHE_MIB','RSX_TEX_MIPS','RSX_CPU_SURFACE_PROFILE','MS_DEPTH_OBSERVER') or k.startswith('MS_NATIVE_')})
+    record['environment'].update({k:v for k,v in env.items() if k in ('FLIP_LAT','GCM_FLIP_PROMPT','GCM_FLIP_AT_TAKE','PERF','D3D12_DBG','RSX_TEXTURE_RETENTION','RSX_TEXTURE_CACHE_MIB','RSX_TEX_MIPS','RSX_CPU_SURFACE_PROFILE','MS_DEPTH_OBSERVER') or k.startswith('MS_NATIVE_')})
     record['environment'].update({k:env[k] for k in ('SPU_TASK_LIFECYCLE_TRACE','SPU_TASK_LIFECYCLE_IMAGE') if k in env})
     (out/'launch.json').write_text(json.dumps(record,indent=2)); print('Owned native PID',p.pid,'output',out,flush=True)
     window_ready=False

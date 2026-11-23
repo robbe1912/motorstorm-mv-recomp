@@ -1353,3 +1353,39 @@ playability, graphics correctness, driving/audio/saves and the 33 ms goal remain
 unmet or unverified. New private evidence is run-local
 `collision-native-validation.json`, `job-capture/collision-live-functions.json`
 and the original publication/completion reports.
+
+## Flip delivery and deformation readback in the native race
+
+On executable `fd7beba9d58c1e13`, both normal menu replays reached the race
+after six acknowledged inputs. Final images showed the rider, opponents and
+the race HUD at 50 seconds. With the original flip settings, the final three
+64-wait groups averaged 39.22, 35.82 and 29.19 ms with 45, 36 and 24 timeouts.
+With `--prompt-flip`, the corresponding tail groups averaged 0.08, 0.05 and
+0.11 ms, all with zero timeouts. Both used batch GPU timestamps, prompt
+surface reads, native particle collisions, the same texture cache settings
+and CPU-surface profiling. The original-setting run also sampled the main
+thread for 20 seconds. The final 15-second median Present intervals were
+321.0 and 288.8 ms respectively. A single diagnostic trial per setting
+leaves the repeatable frame-time effect open.
+
+The final 12 seconds of the original-setting run contained 492 four-byte
+requests to the same deformation sample address on the publication thread.
+They took 4.118 s, of which 3.998 s elapsed before renderer service began.
+The 474 generation hits spent 2.059 s queued and 0.002 s in service.
+The other 18 requests each copied a surface and spent 1.939 s queued and
+0.115 s in service. In the prompt-flip run, the 29 copies for that address
+still had a median request latency of 117.2 ms. The renderer can submit
+offscreen draw batches during a request. Overlapping these intervals with
+other waits would double count frame time.
+
+The original debug-US ELF names the caller at `0x4612f8` as
+`WheelCollisionCallback(WheelCollision&)`. It calls `GetDepth` at
+`0x4614d0`, saves the returned float at `0x4614dc` and uses it in a
+fused arithmetic operation at `0x461520` before the callback returns.
+The wheel raycast and test routines dispatch callbacks indirectly.
+A reusable surface view for [#326](https://github.com/robbe1912/motorstorm-mv-recomp/issues/326)
+must preserve the value at each query and order it against pending and
+submitted work. Matching sample addresses alone cannot establish freshness.
+
+Private runs: `temp/runs/20261120T005324.676022Z` and
+`temp/runs/20261120T005727.464651Z`.

@@ -224,6 +224,28 @@ class ExecutionProfileTests(unittest.TestCase):
         for key, value in expected.items():
             self.assertEqual(record['environment'][key], value)
 
+    def check_flip_selection(self, prompt=False, profile=False):
+        keys = ('GCM_FLIP_PROMPT', 'GCM_FLIP_AT_TAKE', 'FLIP_LAT')
+        options = (['--prompt-flip'] if prompt else []) + (['--profile-flip'] if profile else [])
+        with patch.dict(os.environ, dict.fromkeys(keys, '1')):
+            record, env = self.launch(*options)
+        for key, enabled in zip(keys, (prompt, prompt, profile)):
+            expected = '1' if enabled else None
+            self.assertEqual(env.get(key), expected)
+            self.assertEqual(record['environment'].get(key), expected)
+
+    def test_flip_default(self):
+        self.check_flip_selection()
+
+    def test_flip_wait_only(self):
+        self.check_flip_selection(prompt=True)
+
+    def test_flip_diagnostics_only(self):
+        self.check_flip_selection(profile=True)
+
+    def test_flip_wait_and_diagnostics(self):
+        self.check_flip_selection(prompt=True, profile=True)
+
     def check_surface_prompt_selection(self, mode):
         with patch.dict(os.environ, {'RSX_CPU_SURFACE_PROMPT': 'inherited'}):
             record, env = self.launch('--cpu-surface-prompt', mode)
