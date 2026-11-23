@@ -23,7 +23,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 BEGIN = "/* RSX draw CSV."
 END = "/* End of the RSX draw CSV block. */"
-HEADER = ("batch,draw,verts,idx,prim,rt0,rt1,rt2,rt3,zeta,vp_w,vp_h,vs,fp,fp_snap,"
+HEADER = ("batch,draw,verts,idx,prim,rt0,rt1,rt2,rt3,zeta,vp_w,vp_h,vs,vs_hash,fp,fp_snap,"
           "rt_chg,vp_chg,pso_chg,srv_chg,barriers,gap_us,gpu_us")
 ROW_CALL = "phase_draw_row(dr, d, row_flags, s_rt_barriers - row_barriers);\n"
 WRITE_CALL = "phase_draw_rows_write(ticks, s_phase_query_n, s_phase_gpu_frame, s_phase_frequency);"
@@ -51,6 +51,8 @@ typedef struct {
 static int s_phase_gpu_draws;
 static void* s_phase_readback;
 static u32 s_phase_query_n;
+/* Vertex program cache of the backend: slot 2 holds a known program. */
+static struct { struct { u32 hash; } vp_vs[3]; int vp_vs_n; } s_d3d = {{{0u}, {0u}, {0x11223344u}}, 3};
 static const char* g_phase_csv;
 static const char* rsx_env_once(const char* name)
 {
@@ -86,7 +88,7 @@ static void row_b(void)
 static void row_c(void)
 {
     D3D12DrawRecord dr = {0};
-    dr.vertex_count = 6; dr.topology = 4;
+    dr.vertex_count = 6; dr.topology = 4; dr.vs_idx = 9;   /* slot 9 does not exist */
     phase_draw_row(&dr, 5, PHASE_DRAW_VIEWPORT | PHASE_DRAW_SRV, 0);
 }
 /* One timestamped draw: start timestamp, row, then the end timestamp. */
@@ -150,11 +152,11 @@ int main(int argc, char** argv)
         check(s_draw_csv_rows == PHASE_DRAW_ROWS_MAX && s_draw_rows_n == 0, "a stopped file takes no rows");
         const char* expected[] = {
             "@HEADER@",
-            "7,3,12,0,4,01BE0000,0000AB00,00000000,00000000,0C000000,1280,720,2,036CC2C1,9,0,0,0,0,0,100.000,100.000",
-            "7,4,300,0,4,00000000,00000000,00000000,00000000,00000000,320,180,-1,00000010,0,1,0,1,0,7,100.000,200.000",
-            "7,5,6,0,4,00000000,00000000,00000000,00000000,00000000,0,0,0,00000000,0,0,1,0,1,0,200.000,200.000",
-            "8,5,6,0,4,00000000,00000000,00000000,00000000,00000000,0,0,0,00000000,0,0,1,0,1,0,100.000,100.000",
-            "9,3,12,0,4,01BE0000,0000AB00,00000000,00000000,0C000000,1280,720,2,036CC2C1,9,0,0,0,0,0,100.000,100.000"};
+            "7,3,12,0,4,01BE0000,0000AB00,00000000,00000000,0C000000,1280,720,2,11223344,036CC2C1,9,0,0,0,0,0,100.000,100.000",
+            "7,4,300,0,4,00000000,00000000,00000000,00000000,00000000,320,180,-1,00000000,00000010,0,1,0,1,0,7,100.000,200.000",
+            "7,5,6,0,4,00000000,00000000,00000000,00000000,00000000,0,0,9,00000000,00000000,0,0,1,0,1,0,200.000,200.000",
+            "8,5,6,0,4,00000000,00000000,00000000,00000000,00000000,0,0,9,00000000,00000000,0,0,1,0,1,0,100.000,100.000",
+            "9,3,12,0,4,01BE0000,0000AB00,00000000,00000000,0C000000,1280,720,2,11223344,036CC2C1,9,0,0,0,0,0,100.000,100.000"};
         FILE* file = fopen(phase_draw_csv_path(), "r");
         check(file != NULL, "the file exists next to the phase CSV");
         if (file) {
@@ -209,7 +211,7 @@ def balanced(text, at, pattern):
 
 
 def function(source, name):
-    match = re.search(r"\bstatic\s+(?:void|int|u32|const char\*)\s+" + re.escape(name) + r"\s*\([^)]*\)\s*\{", source)
+    match = re.search(r"\b(?:static\s+)?(?:void|int|u32|const char\*)\s+" + re.escape(name) + r"\s*\([^)]*\)\s*\{", source)
     assert match, "missing actual helper: " + name
     return balanced(source, match.start(), name)
 
@@ -266,6 +268,13 @@ def audit(source, launcher):
     assert collect.count(WRITE_CALL) == 1, "one write per readback"
     assert collect.index("->Unmap(") < collect.index(WRITE_CALL) < collect.index("s_phase_query_n = 0;"), \
         "the rows are written with the readback timestamps"
+    row_function = function(text, "phase_draw_row")
+    assert "row->vs_hash = dr->vs_idx >= 0 && dr->vs_idx < s_d3d.vp_vs_n ? s_d3d.vp_vs[dr->vs_idx].hash : 0;" \
+        in row_function, "the row takes the vertex program hash from the slot of the record"
+    backend = function(source, "rsx_d3d12_backend_shutdown")
+    assert backend.count("fclose(s_draw_csv);") == 1 and \
+        backend.index("fclose(s_phase_csv);") < backend.index("fclose(s_draw_csv);"), \
+        "shutdown closes the draw CSV next to the phase CSV"
     switch = "env['RSX_PHASE_GPU_DRAWS']='1'"
     assert switch in launcher and launcher.index("if args.profile_renderer_draws:") < launcher.index(switch), \
         "the launcher sets RSX_PHASE_GPU_DRAWS with --profile-renderer-draws"
@@ -315,6 +324,8 @@ def main():
         moved(source, "    s_rt_barriers++;\n", "    OffRT* r = &s_d3d.off_rt[slot];\n"),
         source.replace(ROW_CALL.strip(), "phase_draw_row(dr, d, row_flags, 0);", 1),
         source.replace(text, text.replace('rsx_env_once("RSX_PHASE_CSV")', 'getenv("RSX_PHASE_CSV")'), 1),
+        source.replace("fclose(s_draw_csv); ", "", 1),
+        source.replace("dr->vs_idx >= 0 && dr->vs_idx < s_d3d.vp_vs_n ? s_d3d.vp_vs[dr->vs_idx].hash : 0;", "0;", 1),
     ]
     for index, mutant in enumerate(mutants):
         try:

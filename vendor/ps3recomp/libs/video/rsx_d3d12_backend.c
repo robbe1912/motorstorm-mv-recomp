@@ -789,6 +789,7 @@ typedef struct {
     u32 zeta;         /* zeta_off */
     u32 vp_w, vp_h;   /* guest viewport size */
     int  vs;          /* vs_idx: vertex program slot, -1 = primary */
+    u32 vs_hash;      /* FNV-1a of the vertex program ucode, 0 = primary */
     u32 fp;           /* fp_addr: guest fragment program address */
     u32 fp_snap;      /* content snapshot index + 1, 0 = none */
     u32 flags;
@@ -885,6 +886,9 @@ static void phase_draw_row(const D3D12DrawRecord* dr, u32 draw, u32 flags, u32 b
     row->rt[2] = dr->rt_mrt[1]; row->rt[3] = dr->rt_mrt[2];
     row->zeta = dr->zeta_off; row->vp_w = dr->vp_w; row->vp_h = dr->vp_h;
     row->vs = dr->vs_idx; row->fp = dr->fp_addr; row->fp_snap = dr->fp_snap;
+    /* The record holds its slot until the batch is submitted, so the hash is
+     * the one the draw was recorded with. */
+    row->vs_hash = dr->vs_idx >= 0 && dr->vs_idx < s_d3d.vp_vs_n ? s_d3d.vp_vs[dr->vs_idx].hash : 0;
     row->flags = flags; row->barriers = barriers + 2u * phase_draw_depth_slots(dr);
     row->query = s_phase_query_n - 1;
 }
@@ -904,7 +908,7 @@ static void phase_draw_rows_write(const u64* ticks, u32 query_n, u64 batch, u64 
         s_draw_csv = fopen(path, "w");
         if (s_draw_csv) {
             setvbuf(s_draw_csv, NULL, _IOFBF, 16384);
-            fprintf(s_draw_csv, "batch,draw,verts,idx,prim,rt0,rt1,rt2,rt3,zeta,vp_w,vp_h,vs,fp,fp_snap,"
+            fprintf(s_draw_csv, "batch,draw,verts,idx,prim,rt0,rt1,rt2,rt3,zeta,vp_w,vp_h,vs,vs_hash,fp,fp_snap,"
                 "rt_chg,vp_chg,pso_chg,srv_chg,barriers,gap_us,gpu_us\n");
         } else fprintf(stderr, "[RSXPHASE] Cannot open draw CSV: %s\n", path);
     }
@@ -920,10 +924,10 @@ static void phase_draw_rows_write(const u64* ticks, u32 query_n, u64 batch, u64 
             break;
         }
         u64 before = i ? ticks[s_draw_rows[i - 1].query + 1] : ticks[0];
-        fprintf(s_draw_csv, "%llu,%u,%u,0,%u,%08X,%08X,%08X,%08X,%08X,%u,%u,%d,%08X,%u,%u,%u,%u,%u,%u,%.3f,%.3f\n",
+        fprintf(s_draw_csv, "%llu,%u,%u,0,%u,%08X,%08X,%08X,%08X,%08X,%u,%u,%d,%08X,%08X,%u,%u,%u,%u,%u,%u,%.3f,%.3f\n",
             (unsigned long long)batch, row->draw, row->verts, row->prim,
             row->rt[0], row->rt[1], row->rt[2], row->rt[3], row->zeta, row->vp_w, row->vp_h,
-            row->vs, row->fp, row->fp_snap,
+            row->vs, row->vs_hash, row->fp, row->fp_snap,
             (row->flags & PHASE_DRAW_TARGETS) != 0, (row->flags & PHASE_DRAW_VIEWPORT) != 0,
             (row->flags & PHASE_DRAW_PSO) != 0, (row->flags & PHASE_DRAW_SRV) != 0,
             row->barriers, (double)(ticks[row->query] - before) * scale,
@@ -9075,6 +9079,7 @@ void rsx_d3d12_backend_shutdown(void)
     s_phase_query_n = 0; s_phase_last_end = s_phase_report_start = 0;
     memset(&s_phase_sum, 0, sizeof s_phase_sum);
     if (s_phase_csv) { fclose(s_phase_csv); s_phase_csv = NULL; }
+    if (s_draw_csv) { fclose(s_draw_csv); s_draw_csv = NULL; }
     s_phase_csv_checked = 0; s_phase_gpu_valid = 0;
     if (s_d3d.vertex_buffer) {
         s_d3d.vertex_buffer->lpVtbl->Unmap(s_d3d.vertex_buffer, 0, NULL);
