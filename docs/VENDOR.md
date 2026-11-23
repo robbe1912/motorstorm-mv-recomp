@@ -11,6 +11,79 @@ The setup, the workflow and the current limits are in
 [runtime changes](RUNTIME_CHANGES.md). The sections below stay the
 record of both hashes and the measured result of each change.
 
+## Per-draw GPU record (#333)
+
+Fork draft PR robbe1912/ps3recomp#11, branch `codex/rsx-draw-gpu-record` on
+`combined` `79e7bb4c`: `27f0ec96` (record), `6c36c810` (check), `6bbf4fcd`
+(depth column), `b5251494` (name fix). Game: `5688bcb`, `ce5b40d`,
+`88bee86`. The game commits name the same change on the stacked branch
+`codex/frame60-draw-gpu-record`: `fe840910`, `09bbeb44`, `b96b844b`,
+`9654c5f4`.
+
+`RSX_PHASE_GPU_DRAWS=1` with a `RSX_PHASE_CSV` path writes `rsx_draws.csv`
+next to `rsx_phases.csv`: one row per timestamped draw, off by default, at
+most 2,000,000 rows. The launcher option is `--profile-renderer-draws`.
+
+Checks: `python tests/check_rsx_draw_record.py` in the fork rejects 14
+mutants; `python scripts/check_rsx_draw_profile.py` here rejects 21. Both pass.
+
+Measured result: none. The record has no run in the game yet.
+
+## Title counts presents (#343)
+
+Fork draft PR robbe1912/ps3recomp#10, branch `codex/rsx-title-counts-presents`
+(`84f0d07f`). Game `bea35dd`.
+
+The window title counted each pass of the present code. A race frame has
+about four passes. The counter now increments only in the Present branch.
+
+Measured result: before the fix the title showed 22.26 against 5.40 presents
+per second in a race (#343). No run read the title after the fix. Use
+`frames.csv` until then.
+
+## Snapshot fast path (#326)
+
+Fork draft PR robbe1912/ps3recomp#9, branch `codex/frame60-snapshot-read-fastpath`
+on the branch of PR #8: `2c343073` (code), `0f4b903d` (check). Game
+`37f4d031a6`, `31243ced06`; launcher `1466cd380d` (`--cpu-surface-snapshot-fast`,
+default off).
+
+`RSX_CPU_SURFACE_SNAPSHOT_FAST=1` serves a snapshot request on its calling
+thread when no recorded draw targets a range and each range lies in one
+current surface that holds it fully, or in no surface. The client repeats the
+check after the read. Other requests take the FIFO boundary path.
+
+Check: `python scripts/check_cpu_surface_snapshot_fast.py` passes. It rejects
+18 behavior mutants and 10 wiring mutants.
+
+Measured result (run `20261123T231436.539891Z`, exe `e8bba906ecd56785`,
+lifted jobs, race proper, last 12 s): 36,864 requests served at once, 1,969
+queued (about one per frame). CPU surface reads stay at 62.9 ms per frame (70
+frames, median 165.8 ms). One request per frame still waits 64 to 108 ms: the
+clamped read at guest `0x4237F500` needs bytes of mip level 1 of the
+deformation texture, which the mip pass re-renders every frame. The change is
+correct and gives no gain. It stays a draft. The fix for this producer is the
+CPU deformation buffer (#346).
+
+## Coherent read fast path (#326)
+
+Fork draft PR robbe1912/ps3recomp#8, branch `codex/frame60-coherent-read-fastpath`
+(`622274a9`). Game `a65cb75`. Default on; `--cpu-surface-fast 0` queues every
+read.
+
+A client read of a surface with no recorded write since its last copy is
+served on the calling thread from that copy. The renderer keeps one view for
+each slot of the surface pool: its guest range and whether a copy would be a
+hit.
+
+Check: `python scripts/check_cpu_surface_fast_read.py` passes. It rejects 25
+behavior mutants and 5 wiring mutants.
+
+Measured result (run `20261123T220742.148077Z`, exe `714ef6f3a198`, lifted
+jobs, last 60 s): fewer than 1,024 reads served at once; the snapshot reads
+still cost 42.4 ms per frame. No gain: the slow requests need a copy or match
+no surface (#326, comment of 2026-11-23).
+
 ## Image-scoped native job admission (#219)
 
 The existing fork carries the selector on `codex/native-owned-image-scope`
