@@ -325,6 +325,19 @@ class ExecutionProfileTests(unittest.TestCase):
     def test_cpu_surface_snapshot_fast_enabled(self):
         self.check_cpu_surface_snapshot_fast('1')
 
+    def check_spurs_kernel_notify(self, mode):
+        with patch.dict(os.environ, {'SPURS_KERNEL_NOTIFY': '1'}):
+            record, env = self.launch('--spurs-kernel-notify', mode)
+        expected = '1' if mode == '1' else None
+        self.assertEqual(env.get('SPURS_KERNEL_NOTIFY'), expected)
+        self.assertEqual(record['environment'].get('SPURS_KERNEL_NOTIFY'), expected)
+
+    def test_spurs_kernel_notify_default_clears_inherited_switch(self):
+        self.check_spurs_kernel_notify('0')
+
+    def test_spurs_kernel_notify_enabled(self):
+        self.check_spurs_kernel_notify('1')
+
     def test_owned_jobs_rejected_on_capture_build(self):
         self.record['job_capture'] = True
         self.save_record()
