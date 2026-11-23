@@ -1,5 +1,16 @@
 # Vendor provenance and upstream
 
+## One source of edits: the fork (2026-11-23)
+
+Every change to the ps3recomp runtime is an atomic commit on its own
+branch of [our fork](https://github.com/robbe1912/ps3recomp), based on
+`combined`. A change that helps in the game goes into `combined`. The
+copy under `vendor/ps3recomp` receives the same change in matching
+commits until it becomes a scripted snapshot of `combined` (#347).
+The setup, the workflow and the current limits are in
+[runtime changes](RUNTIME_CHANGES.md). The sections below stay the
+record of both hashes and the measured result of each change.
+
 ## Image-scoped native job admission (#219)
 
 The existing fork carries the selector on `codex/native-owned-image-scope`

@@ -5,6 +5,8 @@ Work in progress: Windows runner, translation tools, a modified [ps3recomp](http
 **You must supply your own legally obtained game files.** The source license covers this tooling, not the game. Setup and generation run locally; this repository provides no game downloads.
 
 Start with [setup and build](docs/BUILDING.md), then [running and capturing](docs/OPERATIONS.md). Track atomic work in [GitHub issues](https://github.com/robbe1912/motorstorm-mv-recomp/issues). [Documentation index](docs/README.md) groups the research by topic.
+Changes to the ps3recomp runtime go through our fork first, on one branch for each change. See [change the ps3recomp runtime](docs/RUNTIME_CHANGES.md).
+
 
 [Asset extraction and reconstruction](docs/assets/README.md) records reusable texture, mesh and material contracts, with a [MotorStorm worked example](docs/assets/MOTORSTORM.md) and notes for a future Rust implementation.
 
