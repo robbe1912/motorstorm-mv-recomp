@@ -299,6 +299,23 @@ class ExecutionProfileTests(unittest.TestCase):
     def test_eager_surface_submit_enabled_lists_exposure_target(self):
         self.check_eager_surface_submit('1')
 
+    def test_eager_surface_extra_lists_both_targets(self):
+        with patch.dict(os.environ, {'RSX_CPU_SURFACE_EAGER': 'inherited'}):
+            record, env = self.launch('--eager-surface-submit', '1', '--eager-surface', '01A80500', '--eager-surface', '0x00A80500')
+        expected = '02A30480,01A80500,00A80500'
+        self.assertEqual(env.get('RSX_CPU_SURFACE_EAGER'), expected)
+        self.assertEqual(record['environment'].get('RSX_CPU_SURFACE_EAGER'), expected)
+
+    def test_eager_surface_extra_requires_submit(self):
+        with self.assertRaises(SystemExit):
+            self.launch('--eager-surface', '01A80500')
+
+    def test_eager_surface_rejects_bad_values(self):
+        for offsets in (['0'], ['123456789'], ['01A80500', '0x1A80500'], ['1', '2', '3', '4'], ['02A30480']):
+            options = ['--eager-surface-submit', '1'] + [item for offset in offsets for item in ('--eager-surface', offset)]
+            with self.subTest(offsets=offsets), self.assertRaises(SystemExit):
+                self.launch(*options)
+
     def test_pm_native_services_default_clears_inherited_selection(self):
         with patch.dict(os.environ, {'SPU_PM_NATIVE_SVC': '1', 'SPU_PM_SVC_VERIFY': '1'}):
             record, env = self.launch('--native-owned-jobs')
