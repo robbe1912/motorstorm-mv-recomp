@@ -299,6 +299,24 @@ class ExecutionProfileTests(unittest.TestCase):
     def test_eager_surface_submit_enabled_lists_exposure_target(self):
         self.check_eager_surface_submit('1')
 
+    def check_cpu_surface_fast(self, mode):
+        with patch.dict(os.environ, {'RSX_CPU_SURFACE_FAST': '0'}):
+            record, env = self.launch('--cpu-surface-fast', mode)
+        expected = '0' if mode == '0' else None
+        self.assertEqual(env.get('RSX_CPU_SURFACE_FAST'), expected)
+        self.assertEqual(record['environment'].get('RSX_CPU_SURFACE_FAST'), expected)
+
+    def test_cpu_surface_fast_default_clears_inherited_switch(self):
+        self.check_cpu_surface_fast('1')
+
+    def test_cpu_surface_fast_off_queues_every_read(self):
+        self.check_cpu_surface_fast('0')
+
+    def test_owned_jobs_rejected_on_capture_build(self):
+        self.record['job_capture'] = True
+        self.save_record()
+        self.rejected('--native-owned-jobs has no effect', '--native-owned-jobs')
+
     def test_eager_surface_extra_lists_both_targets(self):
         with patch.dict(os.environ, {'RSX_CPU_SURFACE_EAGER': 'inherited'}):
             record, env = self.launch('--eager-surface-submit', '1', '--eager-surface', '01A80500', '--eager-surface', '0x00A80500')
