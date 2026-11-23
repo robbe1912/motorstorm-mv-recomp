@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BEGIN = "/* RSX draw CSV."
 END = "/* End of the RSX draw CSV block. */"
 HEADER = ("batch,draw,verts,idx,prim,rt0,rt1,rt2,rt3,zeta,vp_w,vp_h,vs,vs_hash,fp,fp_snap,"
-          "rt_chg,vp_chg,pso_chg,srv_chg,barriers,gap_us,gpu_us")
+          "rt_chg,vp_chg,pso_chg,srv_chg,barriers,depth,gap_us,gpu_us")
 ROW_CALL = "phase_draw_row(dr, d, row_flags, s_rt_barriers - row_barriers);\n"
 WRITE_CALL = "phase_draw_rows_write(ticks, s_phase_query_n, s_phase_gpu_frame, s_phase_frequency);"
 RESET = "phase_draw_batch_begin();"
@@ -152,11 +152,11 @@ int main(int argc, char** argv)
         check(s_draw_csv_rows == PHASE_DRAW_ROWS_MAX && s_draw_rows_n == 0, "a stopped file takes no rows");
         const char* expected[] = {
             "@HEADER@",
-            "7,3,12,0,4,01BE0000,0000AB00,00000000,00000000,0C000000,1280,720,2,11223344,036CC2C1,9,0,0,0,0,0,100.000,100.000",
-            "7,4,300,0,4,00000000,00000000,00000000,00000000,00000000,320,180,-1,00000000,00000010,0,1,0,1,0,7,100.000,200.000",
-            "7,5,6,0,4,00000000,00000000,00000000,00000000,00000000,0,0,9,00000000,00000000,0,0,1,0,1,0,200.000,200.000",
-            "8,5,6,0,4,00000000,00000000,00000000,00000000,00000000,0,0,9,00000000,00000000,0,0,1,0,1,0,100.000,100.000",
-            "9,3,12,0,4,01BE0000,0000AB00,00000000,00000000,0C000000,1280,720,2,11223344,036CC2C1,9,0,0,0,0,0,100.000,100.000"};
+            "7,3,12,0,4,01BE0000,0000AB00,00000000,00000000,0C000000,1280,720,2,11223344,036CC2C1,9,0,0,0,0,0,0,100.000,100.000",
+            "7,4,300,0,4,00000000,00000000,00000000,00000000,00000000,320,180,-1,00000000,00000010,0,1,0,1,0,7,2,100.000,200.000",
+            "7,5,6,0,4,00000000,00000000,00000000,00000000,00000000,0,0,9,00000000,00000000,0,0,1,0,1,0,0,200.000,200.000",
+            "8,5,6,0,4,00000000,00000000,00000000,00000000,00000000,0,0,9,00000000,00000000,0,0,1,0,1,0,0,100.000,100.000",
+            "9,3,12,0,4,01BE0000,0000AB00,00000000,00000000,0C000000,1280,720,2,11223344,036CC2C1,9,0,0,0,0,0,0,100.000,100.000"};
         FILE* file = fopen(phase_draw_csv_path(), "r");
         check(file != NULL, "the file exists next to the phase CSV");
         if (file) {
@@ -271,6 +271,9 @@ def audit(source, launcher):
     row_function = function(text, "phase_draw_row")
     assert "row->vs_hash = dr->vs_idx >= 0 && dr->vs_idx < s_d3d.vp_vs_n ? s_d3d.vp_vs[dr->vs_idx].hash : 0;" \
         in row_function, "the row takes the vertex program hash from the slot of the record"
+    assert "row->depth = phase_draw_depth_slots(dr);" in row_function and \
+        "row->barriers = barriers + 2u * row->depth;" in row_function, \
+        "the row counts the depth reads of the draw apart from the other transitions"
     backend = function(source, "rsx_d3d12_backend_shutdown")
     assert backend.count("fclose(s_draw_csv);") == 1 and \
         backend.index("fclose(s_phase_csv);") < backend.index("fclose(s_draw_csv);"), \
@@ -326,6 +329,8 @@ def main():
         source.replace(text, text.replace('rsx_env_once("RSX_PHASE_CSV")', 'getenv("RSX_PHASE_CSV")'), 1),
         source.replace("fclose(s_draw_csv); ", "", 1),
         source.replace("dr->vs_idx >= 0 && dr->vs_idx < s_d3d.vp_vs_n ? s_d3d.vp_vs[dr->vs_idx].hash : 0;", "0;", 1),
+        source.replace("row->depth = phase_draw_depth_slots(dr);", "row->depth = 0;", 1),
+        source.replace("row->barriers = barriers + 2u * row->depth;", "row->barriers = barriers;", 1),
     ]
     for index, mutant in enumerate(mutants):
         try:

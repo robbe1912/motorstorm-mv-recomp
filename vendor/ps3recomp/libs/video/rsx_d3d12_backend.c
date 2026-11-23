@@ -793,7 +793,8 @@ typedef struct {
     u32 fp;           /* fp_addr: guest fragment program address */
     u32 fp_snap;      /* content snapshot index + 1, 0 = none */
     u32 flags;
-    u32 barriers;     /* transition barriers of this draw */
+    u32 depth;        /* depth attachments the draw reads: two transitions each, inside gpu_us */
+    u32 barriers;     /* offscreen target transitions before the draw plus 2 * depth */
     u32 query;        /* index of the start timestamp */
 } PhaseDrawRow;
 static PhaseDrawRow s_draw_rows[MAX_DRAWS];
@@ -889,15 +890,19 @@ static void phase_draw_row(const D3D12DrawRecord* dr, u32 draw, u32 flags, u32 b
     /* The record holds its slot until the batch is submitted, so the hash is
      * the one the draw was recorded with. */
     row->vs_hash = dr->vs_idx >= 0 && dr->vs_idx < s_d3d.vp_vs_n ? s_d3d.vp_vs[dr->vs_idx].hash : 0;
-    row->flags = flags; row->barriers = barriers + 2u * phase_draw_depth_slots(dr);
+    row->flags = flags; row->depth = phase_draw_depth_slots(dr);
+    row->barriers = barriers + 2u * row->depth;
     row->query = s_phase_query_n - 1;
 }
 /* Write the rows of one batch with its timestamps. frequency converts ticks
  * to seconds. ticks is NULL when the readback failed; the rows are then
- * dropped. gap_us is the time from the previous timestamp to the start of the
- * draw. The first draw of a batch starts at the batch timestamp. idx is
- * always 0: gpu_pso_draw issues DrawInstanced, and guest index lists are
- * expanded to vertices at record time. */
+ * dropped. gap_us is the time from the previous timestamp to the start of
+ * the draw: target, viewport and pipeline changes and the offscreen target
+ * transitions, barriers - 2 * depth of them. gpu_us holds the depth
+ * transitions around the draw and the draw itself. The first draw of a batch
+ * starts at the batch timestamp. idx is always 0: gpu_pso_draw issues
+ * DrawInstanced, and guest index lists are expanded to vertices at record
+ * time. */
 static void phase_draw_rows_write(const u64* ticks, u32 query_n, u64 batch, u64 frequency)
 {
     if (!s_draw_rows_n) return;
@@ -909,7 +914,7 @@ static void phase_draw_rows_write(const u64* ticks, u32 query_n, u64 batch, u64 
         if (s_draw_csv) {
             setvbuf(s_draw_csv, NULL, _IOFBF, 16384);
             fprintf(s_draw_csv, "batch,draw,verts,idx,prim,rt0,rt1,rt2,rt3,zeta,vp_w,vp_h,vs,vs_hash,fp,fp_snap,"
-                "rt_chg,vp_chg,pso_chg,srv_chg,barriers,gap_us,gpu_us\n");
+                "rt_chg,vp_chg,pso_chg,srv_chg,barriers,depth,gap_us,gpu_us\n");
         } else fprintf(stderr, "[RSXPHASE] Cannot open draw CSV: %s\n", path);
     }
     double scale = 1e6 / (double)frequency;
@@ -924,13 +929,13 @@ static void phase_draw_rows_write(const u64* ticks, u32 query_n, u64 batch, u64 
             break;
         }
         u64 before = i ? ticks[s_draw_rows[i - 1].query + 1] : ticks[0];
-        fprintf(s_draw_csv, "%llu,%u,%u,0,%u,%08X,%08X,%08X,%08X,%08X,%u,%u,%d,%08X,%08X,%u,%u,%u,%u,%u,%u,%.3f,%.3f\n",
+        fprintf(s_draw_csv, "%llu,%u,%u,0,%u,%08X,%08X,%08X,%08X,%08X,%u,%u,%d,%08X,%08X,%u,%u,%u,%u,%u,%u,%u,%.3f,%.3f\n",
             (unsigned long long)batch, row->draw, row->verts, row->prim,
             row->rt[0], row->rt[1], row->rt[2], row->rt[3], row->zeta, row->vp_w, row->vp_h,
             row->vs, row->vs_hash, row->fp, row->fp_snap,
             (row->flags & PHASE_DRAW_TARGETS) != 0, (row->flags & PHASE_DRAW_VIEWPORT) != 0,
             (row->flags & PHASE_DRAW_PSO) != 0, (row->flags & PHASE_DRAW_SRV) != 0,
-            row->barriers, (double)(ticks[row->query] - before) * scale,
+            row->barriers, row->depth, (double)(ticks[row->query] - before) * scale,
             (double)(ticks[row->query + 1] - ticks[row->query]) * scale);
         s_draw_csv_rows++;
     }
