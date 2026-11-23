@@ -63,6 +63,7 @@ def main():
     ap.add_argument('--eager-surface-submit',choices=('0','1'),default='0',help='Submit the batch as soon as the game stops drawing into the race exposure target (02A30480), ahead of its coherent CPU read (default 0: submit at the read or frame end)')
     ap.add_argument('--eager-surface',type=lambda value:int(value,16),action='append',default=[],metavar='OFFSET',help='Add an RSX surface offset (hex) to the eager list; repeatable, needs --eager-surface-submit 1, 3 extra offsets at most')
     ap.add_argument('--cpu-surface-fast',choices=('0','1'),default='1',help='Serve current-generation CPU surface reads on the calling thread (default 1); 0 queues every read')
+    ap.add_argument('--cpu-surface-snapshot-fast',choices=('0','1'),default='0',help='Serve a snapshot CPU read on the calling thread when no recorded draw targets its range and its surfaces are current (default 0: wait for the renderer FIFO boundary)')
     ap.add_argument('--cpu-surface-prompt',choices=('default','0','1'),default='default',help='Prompt disjoint CPU surface reads; default preserves backend policy, 0 uses batch-end service')
     ap.add_argument('--cpu-surface-flush',choices=('default','0','1'),default='default',help='Submit recorded writes needed by queued CPU reads at the next draw boundary or idle pump')
     ap.add_argument('--prompt-flip',action='store_true',help='Deliver the drained frame completion at take and wake its guest waiter at the original refresh limit')
@@ -234,6 +235,7 @@ def main():
         raise SystemExit('--eager-surface takes up to 3 distinct RSX offsets of 1-8 hex digits, other than 02A30480')
     if args.eager_surface_submit=='1':env['RSX_CPU_SURFACE_EAGER']=','.join('%08X'%off for off in eager)
     if args.cpu_surface_fast=='0':env['RSX_CPU_SURFACE_FAST']='0'
+    if args.cpu_surface_snapshot_fast=='1':env['RSX_CPU_SURFACE_SNAPSHOT_FAST']='1'
     if args.cpu_surface_flush != 'default':env['RSX_CPU_SURFACE_FLUSH']=args.cpu_surface_flush
     if args.profile_flip:
         env['FLIP_LAT'] = '1'

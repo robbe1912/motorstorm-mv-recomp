@@ -312,6 +312,19 @@ class ExecutionProfileTests(unittest.TestCase):
     def test_cpu_surface_fast_off_queues_every_read(self):
         self.check_cpu_surface_fast('0')
 
+    def check_cpu_surface_snapshot_fast(self, mode):
+        with patch.dict(os.environ, {'RSX_CPU_SURFACE_SNAPSHOT_FAST': '1'}):
+            record, env = self.launch('--cpu-surface-snapshot-fast', mode)
+        expected = '1' if mode == '1' else None
+        self.assertEqual(env.get('RSX_CPU_SURFACE_SNAPSHOT_FAST'), expected)
+        self.assertEqual(record['environment'].get('RSX_CPU_SURFACE_SNAPSHOT_FAST'), expected)
+
+    def test_cpu_surface_snapshot_fast_default_clears_inherited_switch(self):
+        self.check_cpu_surface_snapshot_fast('0')
+
+    def test_cpu_surface_snapshot_fast_enabled(self):
+        self.check_cpu_surface_snapshot_fast('1')
+
     def test_owned_jobs_rejected_on_capture_build(self):
         self.record['job_capture'] = True
         self.save_record()
