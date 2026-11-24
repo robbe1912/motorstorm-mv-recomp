@@ -773,7 +773,9 @@ static void phase_gpu_end(void)
  * The backend holds one row per timestamped draw of a batch. It writes the
  * rows when phase_gpu_collect reads the timestamps of that batch. The file
  * is rsx_draws.csv next to rsx_phases.csv. The file stops at
- * PHASE_DRAW_ROWS_MAX rows and the log says so. */
+ * PHASE_DRAW_ROWS_MAX rows and the log says so. cmd, vc_sig, fc_sig and
+ * state_eq tell whether a draw has the GPU state of the previous draw of
+ * the batch. The rule is in the comment at phase_draw_rows_write. */
 #ifndef PHASE_DRAW_ROWS_MAX
 #define PHASE_DRAW_ROWS_MAX 2000000u
 #endif
@@ -781,6 +783,11 @@ static void phase_gpu_end(void)
 #define PHASE_DRAW_VIEWPORT 2u   /* viewport or scissor differs from the last issue */
 #define PHASE_DRAW_PSO      4u   /* SetPipelineState is issued */
 #define PHASE_DRAW_SRV      8u   /* root descriptor table 1 is issued */
+#define PHASE_DRAW_CMD_CAPTURE    1u   /* the mid-batch snapshot and its target rebind sit before the draw */
+#define PHASE_DRAW_CMD_CLEAR      2u   /* a clear record sits before the draw */
+#define PHASE_DRAW_CMD_SAMPLERS   4u   /* another sampler table (root parameter 3) sits before the draw */
+#define PHASE_DRAW_CMD_STENCIL    8u   /* another stencil reference sits before the draw */
+#define PHASE_DRAW_CMD_DEPTHCLEAR 16u  /* the first use of a depth surface, its clear, sits before the draw */
 typedef struct {
     u32 draw;         /* record index in the batch */
     u32 verts;        /* VertexCount of DrawInstanced */
@@ -796,6 +803,9 @@ typedef struct {
     u32 depth;        /* depth attachments the draw reads: two transitions each, inside gpu_us */
     u32 barriers;     /* offscreen target transitions before the draw plus 2 * depth */
     u32 query;        /* index of the start timestamp */
+    u32 cmds;        /* PHASE_DRAW_CMD_* between the previous draw and this draw */
+    u64 vc_sig;      /* signature of the b0 slot: vertex constants and viewport epilogue */
+    u64 fc_sig;      /* signature of the b1 slot that the fragment shader reads; 0 = no b1 buffer */
 } PhaseDrawRow;
 static PhaseDrawRow s_draw_rows[MAX_DRAWS];
 static u32 s_draw_rows_n;
@@ -805,6 +815,11 @@ static u64 s_draw_csv_rows;
 static float s_draw_last_vp[4];
 static long s_draw_last_sc[4];
 static int s_draw_last_valid;
+static u32 s_draw_cmds;               /* PHASE_DRAW_CMD_* up to the next row */
+static const void* s_draw_samplers;   /* sampler table of the last draw */
+static u32 s_draw_stencil;            /* stencil reference of the last draw with a stencil pipeline */
+static u64 s_draw_sign[2];            /* signatures of the slots of the current draw */
+static const unsigned char* s_draw_previous[2];   /* slots of the previous draw */
 /* rsx_draws.csv in the directory of RSX_PHASE_CSV. The result is NULL when
  * RSX_PHASE_CSV is unset or the path is too long. */
 static const char* phase_draw_csv_path(void)
@@ -842,6 +857,8 @@ static void phase_draw_batch_begin(void)
 {
     s_draw_rows_n = 0;
     s_draw_last_valid = 0;
+    s_draw_cmds = 0; s_draw_samplers = NULL; s_draw_stencil = 0;
+    s_draw_previous[0] = s_draw_previous[1] = NULL;
 }
 /* Remember the viewport and scissor that the command list gets. Returns 1
  * when a value differs from the previous issue. */
@@ -875,6 +892,63 @@ static u32 phase_draw_depth_slots(const D3D12DrawRecord* dr)
     }
     return n;
 }
+/* Signature of the bytes that a constant slot holds for one draw: the
+ * signature of the previous draw when its bytes are equal (most draws repeat
+ * their constants), else FNV-1a of the 8-byte words. */
+static u64 phase_draw_sig(const unsigned char* bytes, const unsigned char* previous,
+                          u64 previous_sig, u32 size)
+{
+    if (previous && !memcmp(bytes, previous, size)) return previous_sig;
+    u64 h = 1469598103934665603ull;
+    for (u32 i = 0; i < size; i += 8) {
+        u64 word;
+        memcpy(&word, bytes + i, sizeof word);
+        h ^= word; h *= 1099511628211ull;
+    }
+    return h;
+}
+/* The bytes of b0 that vp_record_cb writes: the vertex constants and the
+ * 8 floats of the viewport epilogue. */
+#define PHASE_DRAW_B0_BYTES (RSX_MAX_VERTEX_CONSTANTS * 16 + 32)
+/* Signatures of the constant slots of one draw. Call it before the start
+ * timestamp of the draw, after the last write to the slots of the draw. b0
+ * holds the vertex constants and the viewport epilogue. The fragment shader
+ * reads fp_constants[0..n) of b1, n = fp_const_n (n = 0 reads one), and
+ * fp_alpha after them (vp_record_fp_b1). A refused slot (n = 0xFFFF) covers
+ * the whole slot. The record reads the mapped upload buffers, never guest
+ * memory. */
+static void phase_draw_sign(const D3D12DrawRecord* dr)
+{
+    if (!phase_draw_csv_on() || !s_phase_query_n) return;
+    const unsigned char* b0 = (const unsigned char*)s_d3d.vp_cb_mapped +
+        ((u64)s_d3d.vp_parity * MAX_DRAWS + dr->cb_slot) * VP_CB_STRIDE;
+    const unsigned char* b1 = s_d3d.vp_fpcb_mapped ? (const unsigned char*)s_d3d.vp_fpcb_mapped +
+        ((u64)s_d3d.vp_parity * MAX_DRAWS + dr->cb_slot) * VP_FPCB_STRIDE : NULL;
+    u32 n = dr->fp_const_n;
+    u32 bytes = n >= VP_FPCB_MAX_CONSTS ? VP_FPCB_STRIDE : (n ? n + 1u : 2u) * 16u;
+    s_draw_sign[0] = phase_draw_sig(b0, s_draw_previous[0], s_draw_sign[0], PHASE_DRAW_B0_BYTES);
+    s_draw_sign[1] = b1 ? phase_draw_sig(b1, s_draw_previous[1], s_draw_sign[1], bytes) : 0;
+    s_draw_previous[0] = b0; s_draw_previous[1] = b1;
+}
+/* The sampler table that a draw issued to root parameter 3. The tables are
+ * deduplicated by content and immutable for a batch
+ * (rsx_d3d12_sampler_tables.inc), so the pointer is the identity of the
+ * table. */
+static void phase_draw_samplers(const void* table)
+{
+    if (!phase_draw_csv_on() || !s_phase_query_n) return;
+    if (table == s_draw_samplers) return;
+    s_draw_samplers = table;
+    s_draw_cmds |= PHASE_DRAW_CMD_SAMPLERS;
+}
+/* The stencil reference of a draw with a stencil pipeline. The backend
+ * issues OMSetStencilRef for each such draw and has no flag for it. */
+static void phase_draw_stencil(u32 reference)
+{
+    if (!phase_draw_csv_on() || !s_phase_query_n) return;
+    if (s_draw_stencil != reference) s_draw_cmds |= PHASE_DRAW_CMD_STENCIL;
+    s_draw_stencil = reference;
+}
 /* Start the row of one draw. Call it after phase_gpu_draw(is_small, 0), which
  * writes the start timestamp. barriers counts the transitions before that
  * timestamp. */
@@ -892,6 +966,8 @@ static void phase_draw_row(const D3D12DrawRecord* dr, u32 draw, u32 flags, u32 b
     row->vs_hash = dr->vs_idx >= 0 && dr->vs_idx < s_d3d.vp_vs_n ? s_d3d.vp_vs[dr->vs_idx].hash : 0;
     row->flags = flags; row->depth = phase_draw_depth_slots(dr);
     row->barriers = barriers + 2u * row->depth;
+    row->cmds = s_draw_cmds; s_draw_cmds = 0;
+    row->vc_sig = s_draw_sign[0]; row->fc_sig = s_draw_sign[1];
     row->query = s_phase_query_n - 1;
 }
 /* Write the rows of one batch with its timestamps. frequency converts ticks
@@ -902,7 +978,22 @@ static void phase_draw_row(const D3D12DrawRecord* dr, u32 draw, u32 flags, u32 b
  * transitions around the draw and the draw itself. The first draw of a batch
  * starts at the batch timestamp. idx is always 0: gpu_pso_draw issues
  * DrawInstanced, and guest index lists are expanded to vertices at record
- * time. */
+ * time.
+ *
+ * cmd: 1 = the mid-batch snapshot and its target rebind, 2 = a clear record,
+ * 4 = another sampler table, 8 = another stencil reference, 16 = the first
+ * use of a depth surface, each between the previous draw and this draw.
+ * vc_sig and fc_sig are FNV-1a of the 8-byte words of the b0 and the b1
+ * constant slot of the draw (phase_draw_sign).
+ *
+ * state_eq is 1 when this draw has the GPU state of the previous draw of the
+ * batch: the row has no flag and cmd is 0, so the backend issued no state
+ * command between the two draws, and vc_sig and fc_sig equal those of the
+ * previous row of the file. The first row of a batch has state_eq = 0. The
+ * draws of the pass share the vertex buffer, the input layout, the triangle
+ * list and the instance count 1. For two draws with state_eq = 1 only the
+ * vertex data that they read can differ. barriers is not part of state_eq: a
+ * barrier changes a resource state, not a binding. */
 static void phase_draw_rows_write(const u64* ticks, u32 query_n, u64 batch, u64 frequency)
 {
     if (!s_draw_rows_n) return;
@@ -914,7 +1005,7 @@ static void phase_draw_rows_write(const u64* ticks, u32 query_n, u64 batch, u64 
         if (s_draw_csv) {
             setvbuf(s_draw_csv, NULL, _IOFBF, 16384);
             fprintf(s_draw_csv, "batch,draw,verts,idx,prim,rt0,rt1,rt2,rt3,zeta,vp_w,vp_h,vs,vs_hash,fp,fp_snap,"
-                "rt_chg,vp_chg,pso_chg,srv_chg,barriers,depth,gap_us,gpu_us\n");
+                "rt_chg,vp_chg,pso_chg,srv_chg,barriers,depth,gap_us,gpu_us,cmd,vc_sig,fc_sig,state_eq\n");
         } else fprintf(stderr, "[RSXPHASE] Cannot open draw CSV: %s\n", path);
     }
     double scale = 1e6 / (double)frequency;
@@ -929,14 +1020,20 @@ static void phase_draw_rows_write(const u64* ticks, u32 query_n, u64 batch, u64 
             break;
         }
         u64 before = i ? ticks[s_draw_rows[i - 1].query + 1] : ticks[0];
-        fprintf(s_draw_csv, "%llu,%u,%u,0,%u,%08X,%08X,%08X,%08X,%08X,%u,%u,%d,%08X,%08X,%u,%u,%u,%u,%u,%u,%u,%.3f,%.3f\n",
+        /* The previous row: a row without an end timestamp is the last of a batch. */
+        const PhaseDrawRow* prior = i ? &s_draw_rows[i - 1] : NULL;
+        int same = prior && !row->flags && !row->cmds &&
+                   row->vc_sig == prior->vc_sig && row->fc_sig == prior->fc_sig;
+        fprintf(s_draw_csv, "%llu,%u,%u,0,%u,%08X,%08X,%08X,%08X,%08X,%u,%u,%d,%08X,%08X,%u,%u,%u,%u,%u,%u,%u,%.3f,%.3f,"
+            "%u,%016llX,%016llX,%u\n",
             (unsigned long long)batch, row->draw, row->verts, row->prim,
             row->rt[0], row->rt[1], row->rt[2], row->rt[3], row->zeta, row->vp_w, row->vp_h,
             row->vs, row->vs_hash, row->fp, row->fp_snap,
             (row->flags & PHASE_DRAW_TARGETS) != 0, (row->flags & PHASE_DRAW_VIEWPORT) != 0,
             (row->flags & PHASE_DRAW_PSO) != 0, (row->flags & PHASE_DRAW_SRV) != 0,
             row->barriers, row->depth, (double)(ticks[row->query] - before) * scale,
-            (double)(ticks[row->query + 1] - ticks[row->query]) * scale);
+            (double)(ticks[row->query + 1] - ticks[row->query]) * scale,
+            row->cmds, (unsigned long long)row->vc_sig, (unsigned long long)row->fc_sig, same != 0);
         s_draw_csv_rows++;
     }
     s_draw_rows_n = 0;
@@ -6373,6 +6470,7 @@ static void render_frame(void)
                             dsv_handle, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
                             1.0f, 0, 0, NULL);
                         depth_surface->initialized = 1;
+                        s_draw_cmds |= PHASE_DRAW_CMD_DEPTHCLEAR;
                     }
                 }
                 /* The reduced-viewport passes (this title's reflection, drawn
@@ -6390,6 +6488,7 @@ static void render_frame(void)
                         subvp_capture(fi);
                         s_d3d.cmd_list->lpVtbl->OMSetRenderTargets(
                             s_d3d.cmd_list, 1, &rtv_handle, FALSE, dsv);
+                        s_draw_cmds |= PHASE_DRAW_CMD_CAPTURE;
                     }
                 }
                 /* Color and depth attachments have independent identities. */
@@ -6490,6 +6589,7 @@ static void render_frame(void)
                     for (int _m = 0; _m < 3; _m++) cur_m[_m] = wantm[_m];
                 }
                 if (dr->is_clear) {
+                    s_draw_cmds |= PHASE_DRAW_CMD_CLEAR;
                     cpu_surface_written(cur_rt,cur_m);
                     D3D12_CPU_DESCRIPTOR_HANDLE rh =
                         (cur_rt >= 0) ? off_rt_rtv(cur_rt) : rtv_handle;
@@ -6568,9 +6668,11 @@ static void render_frame(void)
                 }
                 /* Guest stencil ref (NV4097_SET_STENCIL_FUNC_REF): OM state,
                  * not PSO state, so it is set per bind rather than keyed. */
-                if (dpso && (dr->ds_key & RSX_DSK_STENCIL_EN))
+                if (dpso && (dr->ds_key & RSX_DSK_STENCIL_EN)) {
                     s_d3d.cmd_list->lpVtbl->OMSetStencilRef(s_d3d.cmd_list,
                                                             dr->stencil_ref);
+                    phase_draw_stencil(dr->stencil_ref);
+                }
                 /* Per-draw viewport: the guest rect when sane, else the
                  * full target. Scissor tracks the same rect. */
                 {
@@ -6611,6 +6713,7 @@ static void render_frame(void)
                 /* Guest sampler table (s0-s15). A heap change invalidates the
                  * bound SRV table, so force it to be set again. */
                 if (guest_sampler_bind(dr, dpso ? dsampler_mask : 0u)) bound_srv = 0;
+                phase_draw_samplers(s_sampler_table);
                 D3D12_GPU_DESCRIPTOR_HANDLE gh = gh_base;
                 gh.ptr += (u64)s_draw_srv_base[d] * s_d3d.srv_inc;
                 if (!bind_reuse_on() || gh.ptr != bound_srv) {
@@ -6752,6 +6855,7 @@ static void render_frame(void)
                 int is_small = dr->vp_w && dr->vp_h &&
                             dr->vp_w <= 320 && dr->vp_h <= 180;
                 if (phase_on()) { s_phase.draws++; s_phase.small_draws += is_small; }
+                phase_draw_sign(dr);
                 phase_gpu_draw(is_small, 0);
                 phase_draw_row(dr, d, row_flags, s_rt_barriers - row_barriers);
                 cpu_surface_written(cur_rt,cur_m);

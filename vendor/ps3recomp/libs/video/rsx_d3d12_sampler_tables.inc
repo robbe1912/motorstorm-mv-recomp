@@ -22,6 +22,7 @@ typedef struct GuestSamplerHeap {
 static GuestSamplerHeap* s_sampler_base;
 static GuestSamplerHeap* s_sampler_overflow;
 static ID3D12DescriptorHeap* s_sampler_bound;
+static const D3D12_SAMPLER_DESC* s_sampler_table;   /* table of the last bind; the draw CSV record compares it */
 static unsigned s_sampler_guest_units, s_sampler_tables_made;
 /* Sampled-unit masks by FP structural hash (filled by vp_get_fp_pso). */
 static rsx_guest_sampler_mask_slot s_sampler_masks[RSX_GUEST_SAMPLER_MASKS];
@@ -199,6 +200,7 @@ static int guest_sampler_bind(const D3D12DrawRecord* dr, unsigned mask)
         }
         s_sampler_tables_made++;
     }
+    s_sampler_table = h->tables[slot];
     int changed = s_sampler_bound != h->heap;
     if (changed) {
         ID3D12DescriptorHeap* heaps[] = {s_d3d.srv_heap, h->heap};
