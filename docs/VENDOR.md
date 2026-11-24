@@ -195,7 +195,15 @@ vendor backend syntax-only. In the fork,
 painter, mip row, sampler and shadow comparison, and rejects 18 mutants.
 `python scripts/check_deformation_query.py` passes with the new header.
 
-Measured result: none. No run yet.
+Measured result (exe `8856e66571f07c3e`, clean arms with lifted SPU jobs,
+`RSX_DEFORM_TARGETS=00A80500`): the median dt drops from 165.5, 163.7 and
+166.5 ms (control, run `20261124T065129.423997Z`) to 98.6, 98.9 and 96.1 ms
+(buffer on, run `20261124T065827.621038Z`) in the windows 200 to 212 s, 300
+to 312 s and 390 to 402 s. The p95 is 105.0, 106.4 and 102.2 ms with the
+buffer on. The surface reads of the deformation data are gone. The shadow
+arm S1 (`20261124T061644.583391Z`) shows a difference between the CPU bytes
+and the GPU bytes: 68 to 89 percent of the painted texels are equal, and
+half of the mip texels differ. The fix is in progress. 30 FPS is not reached.
 
 ## SPURS lane count override (#327)
 
