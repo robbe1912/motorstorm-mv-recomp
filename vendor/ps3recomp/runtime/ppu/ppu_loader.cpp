@@ -1647,6 +1647,10 @@ static void ppu_spin_yield(void)
  * -----------------------------------------------------------------------*/
 extern "C" volatile uint32_t ppu_fm_diag = 0;
 
+/* Hot-spin detector switch of the inline fast paths: 1 = the detector runs.
+ * Only the exact value PPU_FM_SPINDET=0 turns it off. */
+extern "C" volatile uint32_t ppu_fm_spin_det = 1;
+
 /* Any of these in the environment routes every memory access through the
  * out-of-line family, exactly as before the fast paths existed. PPU_FM=0 is
  * the runtime kill switch: same routing, no rebuild -- the one-binary A/B
@@ -1654,6 +1658,8 @@ extern "C" volatile uint32_t ppu_fm_diag = 0;
 extern "C" void ppu_fm_arm(void)
 {
     if (ppu_fm_diag) return;
+    const char* spindet = getenv("PPU_FM_SPINDET");
+    if (spindet && spindet[0] == '0' && !spindet[1]) ppu_fm_spin_det = 0;
     static const char* const knobs[] = {
         "PPU_RWATCH", "PPU_FORCE_READ_ADDR", "PPU_HOTMAP", "PPU_RVAL",
         "PPU_RVAL64", "YDKJ_RWATCH", "PT", "PPU_WVAL", "PPU_WVAL_LO",

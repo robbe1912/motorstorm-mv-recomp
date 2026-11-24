@@ -24,6 +24,7 @@
  * stays inline in the fast path: it is fair-share behavior, not a diagnostic,
  * and ppu_spin_yield() is what keeps a hard-spinning guest thread from
  * starving the render pump. Its fire half is out-of-line (ppu_fm_hotread*).
+ * ppu_fm_spin_det turns the detector off; it is set once at boot.
  *
  * The lifted sources cannot be edited, so the per-game ppu_recomp.h redirects
  * the accessor NAMES to these inline bodies after including this header:
@@ -127,8 +128,13 @@ extern uint32_t  ppu_hle_inject_base; /* VM_HLE_INJECT_BASE: GCM control block b
  * call, not removing the load. */
 extern volatile uint32_t ppu_fm_diag;
 
+/* Hot-spin detector switch. 1 by default: the detector runs. ppu_fm_arm sets
+ * it to 0 only for PPU_FM_SPINDET=0. volatile: see ppu_fm_diag. */
+extern volatile uint32_t ppu_fm_spin_det;
+
 /* Decide at boot (ppu_hle_init) whether any memory diagnostic is armed;
  * sets ppu_fm_diag when one is. PPU_FM=0 is honored as a kill switch.
+ * PPU_FM_SPINDET=0 turns the hot-spin detector off.
  * Defined in ppu_loader.cpp. */
 void ppu_fm_arm(void);
 
@@ -140,6 +146,22 @@ extern volatile uint32_t g_barrier_sync_watch;
  * volatile: flips at RUNTIME mid-session (see above). */
 extern volatile int    g_spu_coh_armed;
 extern int       spu_coh_is_reserved(uint32_t addr);
+
+/* Reserved-line bitmap of runtime/spu/spu_coherency.h, declared here without
+ * its include chain: that header pulls the SPU context into lifted guest
+ * units. When the header is in scope, its test is the test. */
+#ifndef SPU_COH_BITMAP_BYTES
+#define PPU_FM_COH_LINE_SHIFT   7
+#define PPU_FM_COH_BITMAP_BYTES (1u << ((32 - PPU_FM_COH_LINE_SHIFT) - 3))
+extern unsigned char g_spu_coh_bitmap[PPU_FM_COH_BITMAP_BYTES];
+
+/* Same text as spu_coh_bitmap_test. The caller tests g_spu_coh_armed first. */
+static __inline int spu_coh_bitmap_test(uint32_t addr)
+{
+    uint32_t line = addr >> PPU_FM_COH_LINE_SHIFT;
+    return (g_spu_coh_bitmap[line >> 3] >> (line & 7)) & 1u;
+}
+#endif
 
 /* LV1 dual-mapping alias window normalize (rare: descriptors carrying
  * base|0x05000000 style VAs). */
@@ -201,9 +223,11 @@ static __inline int ppu_fm_oob(uint32_t ea, uint32_t n)
 
 /* Hot-spin detector bookkeeping, one TLS compare on the steady path. Mirrors
  * the slow paths: 200000 consecutive same-EA accesses through this width
- * fire once (yield + report), then restart the count. */
+ * fire once (yield + report), then restart the count. It runs only while
+ * ppu_fm_spin_det is non-zero. */
 #define PPU_FM_SPIN_DET(ea, fire_args)                                     \
     do {                                                                   \
+        if (PPU_FM_LIKELY(!ppu_fm_spin_det)) break;                        \
         static PPU_FM_TLS uint32_t fm_last = 0xFFFFFFFFu;                  \
         static PPU_FM_TLS uint32_t fm_n = 0;                               \
         if ((uint32_t)(ea) == fm_last) {                                   \
@@ -268,7 +292,7 @@ static __inline void ppu_fm_write8(uint64_t a, uint8_t v)
     if (PPU_FM_UNLIKELY(ppu_fm_oob(ea, 1))) { vm_write8(a, v); return; }
     if (PPU_FM_UNLIKELY(ppu_fm_diag || g_barrier_sync_watch)) { vm_write8(a, v); return; }
     if (PPU_FM_UNLIKELY(ea < 0x1000u)) { vm_write8(a, v); return; } /* null-store report/drop */
-    if (PPU_FM_UNLIKELY(g_spu_coh_armed && spu_coh_is_reserved(ea))) {
+    if (PPU_FM_UNLIKELY(g_spu_coh_armed && spu_coh_bitmap_test(ea))) {
         vm_write8(a, v); return;    /* locked-line path */
     }
     PPU_FM_ST8(vm_base + ea, v);
@@ -280,7 +304,7 @@ static __inline void ppu_fm_write16(uint64_t a, uint16_t v)
     if (PPU_FM_UNLIKELY(ppu_fm_oob(ea, 2))) { vm_write16(a, v); return; }
     if (PPU_FM_UNLIKELY(ppu_fm_diag || g_barrier_sync_watch)) { vm_write16(a, v); return; }
     if (PPU_FM_UNLIKELY(ea < 0x1000u)) { vm_write16(a, v); return; }
-    if (PPU_FM_UNLIKELY(g_spu_coh_armed && spu_coh_is_reserved(ea))) {
+    if (PPU_FM_UNLIKELY(g_spu_coh_armed && spu_coh_bitmap_test(ea))) {
         vm_write16(a, v); return;
     }
     uint16_t b = (uint16_t)PPU_FM_BSWAP16(v);
@@ -297,7 +321,7 @@ static __inline void ppu_fm_write32(uint64_t a, uint32_t v)
      * store side effects. Delegate so the plain store + side effect keep the
      * slow path's exact ordering. */
     if (PPU_FM_UNLIKELY(spu_raw_is_reg(ea))) { vm_write32(a, v); return; }
-    if (PPU_FM_UNLIKELY(g_spu_coh_armed && spu_coh_is_reserved(ea))) {
+    if (PPU_FM_UNLIKELY(g_spu_coh_armed && spu_coh_bitmap_test(ea))) {
         vm_write32(a, v); return;
     }
     uint32_t b = PPU_FM_BSWAP32(v);
@@ -310,7 +334,7 @@ static __inline void ppu_fm_write64(uint64_t a, uint64_t v)
     if (PPU_FM_UNLIKELY(ppu_fm_oob(ea, 8))) { vm_write64(a, v); return; }
     if (PPU_FM_UNLIKELY(ppu_fm_diag || g_barrier_sync_watch)) { vm_write64(a, v); return; }
     if (PPU_FM_UNLIKELY(ea < 0x1000u)) { vm_write64(a, v); return; }
-    if (PPU_FM_UNLIKELY(g_spu_coh_armed && spu_coh_is_reserved(ea))) {
+    if (PPU_FM_UNLIKELY(g_spu_coh_armed && spu_coh_bitmap_test(ea))) {
         vm_write64(a, v); return;
     }
     uint64_t b = PPU_FM_BSWAP64(v);
