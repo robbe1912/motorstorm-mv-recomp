@@ -8,7 +8,8 @@
 #include <string.h>
 static unsigned char memory[0x30000];
 uint8_t *vm_base=memory;uint32_t ppu_vm_size=sizeof memory,ppu_hle_inject_base=0;
-volatile uint32_t ppu_fm_diag=0;
+volatile uint32_t ppu_fm_slow=0;unsigned char ppu_fm_kind[1u<<20];/* fast paths on; no page marked */
+volatile uint32_t ppu_fm_spin_det=1;void ppu_fm_count_hit(unsigned k){(void)k;}/* detector on; the counter is off */
 uint32_t sysmem_spu_alias_fixup(uint32_t a){return a;}
 uint8_t vm_read8(uint64_t a){return memory[a];}
 uint16_t vm_read16(uint64_t a){return (uint16_t)((memory[a]<<8)|memory[a+1]);}
