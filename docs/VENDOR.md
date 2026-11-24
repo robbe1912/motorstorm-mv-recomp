@@ -1798,10 +1798,18 @@ output bytes and verify that only hits add copy bytes and copy time. The
 indexed-strip check passes against both backends.
 
 Expected saving `[INFERENCE]`: one 256-byte copy per indexed-cache miss. The
-profile field `misses` counts these removed copies. No frame-time saving is
-measured.
+profile field `misses` counts these removed copies.
 
-Measured result: none. No run yet.
+Measured result: the change is defective. The game tree reverts it.
+
+- Clean run C3 (exe `f402fa1fe4ffcff4`, run `20261124T121022`, CPU deformation
+  buffer on): 15 frames in 12 seconds at 200 seconds (median 798.0 ms) and 5
+  frames in 12 seconds at 300 seconds (median 2362.6 ms). The frame time grows
+  from the start of the race.
+- The same tree with this commit reverted (exe `316eb63b4e6aef4a`, run
+  `20261124T122733`): 74 frames in 12 seconds (median 160.6 ms).
+
+The cause inside the change is open. Do not carry fork `b60101eb` again.
 
 ## Bounded native job trace foundation
 

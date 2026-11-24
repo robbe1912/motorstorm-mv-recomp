@@ -56,9 +56,8 @@ Set `RSX_VERTEX_PROFILE=1` in the launcher environment to print one
 `[VTXPROFILE]` line per frame. It reports vertex fetch bytes and time, indexed
 uploader calls, cache hits and misses, direct output bytes, and cache copy
 bytes and time. Fetch bytes count converted output, not guest input. Copy bytes
-and time count cache-hit copies only. Cache misses fetch directly into the
-upload buffer. Each `misses` value removes one 256-byte copy from the old path.
-The option adds clock reads
+and time count the copies of all cached vertices, hits and misses. Each
+`misses` value is one converted vertex. The option adds clock reads
 and one log line per frame. Leave it off for timing runs that do not need
 these counters. The default path does not read the profile clock.
 

@@ -114,10 +114,10 @@ def main():
         # one microsecond per read, so each operation costs one microsecond.
         single = dict(fetches="4", fetch_bytes="1024", fetch_ms="0.004", draws="1",
                       repeats="0", hits="2", misses="4", direct_bytes="0",
-                      copy_bytes="512", copy_ms="0.002", clock=12)
+                      copy_bytes="1536", copy_ms="0.006", clock=20)
         repeat = dict(fetches="12", fetch_bytes="3072", fetch_ms="0.012", draws="3",
                       repeats="2", hits="6", misses="12", direct_bytes="0",
-                      copy_bytes="1536", copy_ms="0.006", clock=36)
+                      copy_bytes="4608", copy_ms="0.018", clock=60)
         direct = dict(fetches="3", fetch_bytes="768", fetch_ms="0.003", draws="1",
                       repeats="0", hits="0", misses="0", direct_bytes="768",
                       copy_bytes="0", copy_ms="0.000", clock=6)
@@ -130,17 +130,10 @@ def main():
             "fetch time": ("s_vertex_profile.fetch_seconds += perf_now() - started;", ";"),
             "cache hit": ("++s_vertex_profile.cache_hits;", ";"),
             "cache miss": ("++s_vertex_profile.cache_misses;", ";"),
-            "copy bytes": ("s_vertex_profile.copy_bytes += VP_VERT_STRIDE;", ";"),
+            "copy bytes": ("s_vertex_profile.copy_bytes += sizeof cached_vertices[set][way];", ";"),
             "copy time": ("s_vertex_profile.copy_seconds += perf_now() - started;", ";"),
             "draw count": ("++s_vertex_profile.draws;", ";"),
             "repeat count": ("++s_vertex_profile.repeats;", ";"),
-            "hit copy": ("memcpy(&out[o*16], cached_vertices[set][way], VP_VERT_STRIDE);", ";"),
-            "cache pointer": ("cached_vertices[set][way] = &out[o*16];",
-                              "cached_vertices[set][way] = &out[(o + 1) * 16];"),
-            "miss output": ("read_vp_vertex(state, &fetch_batch, triangle[v], &out[o*16]);",
-                            "read_vp_vertex(state, &fetch_batch, triangle[v], &out[(o + 1) * 16]);"),
-            "cache index": ("cached_indices[set][way] = triangle[v];",
-                            "cached_indices[set][way] = triangle[v] ^ 1u;"),
             "direct bytes": ("s_vertex_profile.direct_bytes += 3u * VP_VERT_STRIDE;", ";"),
         }
         for name, (before, after) in mutants.items():
