@@ -938,6 +938,13 @@ dump is off by default.
   of the last exit, and the bytes of each DMA transfer. A file is about
   520 KB without DMA bytes. Lock-line atomics and mailbox writes have no
   record.
+- A job stays open until the next entry on its lane. Its DMA records after
+  the last exit point come from the later work of the lane. The time from the
+  entry to the last exit point is the duration of the job. The `spu` field of
+  the header is 0 for each SPURS lane; the host thread id tells the lane.
+- The title scene makes about 100 PVS jobs a second. A dump of jobs of the
+  race needs `every n-th job`. `400:50` gives about 130 jobs of the title
+  scene, then 2 jobs of each race frame.
 - The dump costs memory and disk time per job. Do not time a run with the
   dump.
 - The launcher rejects a malformed value and a directory outside `temp/`
@@ -945,7 +952,7 @@ dump is off by default.
   the process with exit code 2. The log holds the message
   `SPU_JOB_DUMP must be`. The launch record names the switch.
 
-Example for the PVS job: `--job-dump 210:0x16270:64:1:E:/<worktree>/temp/jobdump/pvs`.
+Example for the PVS job: `--job-dump 210:0x16270:400:50:E:/<worktree>/temp/jobdump/pvs`.
 `python scripts/spu_job_dump.py <directory>` prints one line per job. Add
 `--dma` for the DMA records. The check is
 [check_spu_job_dump.py](../scripts/check_spu_job_dump.py).

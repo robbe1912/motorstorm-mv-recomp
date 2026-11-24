@@ -2821,6 +2821,7 @@ The change is in the fork, branch `codex/spu-job-exit-dump`, from `combined`
 |---|---|
 | `8508e3d515` | `runtime/spu/spu_job_dump.h`, `runtime/spu/spu_job_dump.inc`, the probe hook in `spu_native_owned.h`, the DMA hook in `spu_dma.h`, the include in `spu_channels.c` |
 | `77a292d500` | `tests/check_spu_job_dump.py`, the fixture and the reader |
+| `c8e77d42` | The writer zeroes bytes 52 to 63 of each DMA record (game `633319d4b7`). The fixture starts the record buffer dirty. |
 
 The copy in `vendor/ps3recomp/runtime/spu/` holds the same two new files and
 the same three hook lines. The `mfc_do_transfer` of the copy has one more
@@ -2831,8 +2832,29 @@ comment at the top of `spu_job_dump.inc`.
 `scripts/fixtures/spu_job_dump_harness.c` two times. One build calls the DMA
 hook directly. The other build sends each transfer through the production
 `mfc_do_transfer`. The check compares the files of four modes with the
-scenario of the fixture. It rejects 27 mutants of the production files.
+scenario of the fixture. It rejects 28 mutants of the production files.
 `python scripts/spu_job_dump.py <directory>` prints a summary of the files.
 
-Measured result: none. No run with the dump exists. `docs/OPERATIONS.md`
-describes the switch.
+Measured result of the dump (run `20261124T154552`, exe `9442ae4ddb4efd65`,
+PVS job `210:0x16270`, 96 jobs): the reader rejected each file before the fix
+of `c8e77d42`. Bytes 56 to 63 of each DMA record held `CD`, the fill of new
+heap memory of the debug CRT. The fixture builds without that CRT, so its
+buffer was zero by chance.
+
+Facts from the 96 files after the fix was read with a local parser:
+
+- The jobs ran 2.2 to 3.1 s after launch, in the title scene, not in the race.
+- Five host threads ran them. The `spu` field of the header is 0 for each
+  job: each SPURS policy context starts with SPU id 0
+  (`runtime/spu/spurs_policy.c`). The host thread id tells the lane.
+- Time from the entry to the last exit point: median 0.61 ms, mean 0.75 ms,
+  minimum 0.30 ms, maximum 2.52 ms. The dump adds an unknown small cost.
+- Each job has 7 exit points and 2 DMA gets from inside the image span. The
+  other DMA records come from the policy module. 1,661 records stand after the
+  last exit point: a job stays open until the next entry on its lane, so the
+  reader must cut the DMA stream at the last exit point.
+- The close time of a job is 12 to 168 ms after its entry. It is not the
+  duration of the job.
+
+A dump of jobs of the race needs `every n-th job`, because the title scene
+makes about 100 jobs a second: `--job-dump 210:0x16270:400:50:<directory>`.
