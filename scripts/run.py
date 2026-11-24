@@ -66,6 +66,7 @@ def main():
     ap.add_argument('--cpu-surface-fast',choices=('0','1'),default='1',help='Serve current-generation CPU surface reads on the calling thread (default 1); 0 queues every read')
     ap.add_argument('--cpu-surface-snapshot-fast',choices=('0','1'),default='0',help='Serve a snapshot CPU read on the calling thread when no recorded draw targets its range and its surfaces are current (default 0: wait for the renderer FIFO boundary)')
     ap.add_argument('--spurs-kernel-notify',choices=('0','1'),default='0',help='Wake the SPURS coordinator when the game publishes job demand, instead of its periodic poll (default 0)')
+    ap.add_argument('--spurs-lanes',choices=('0','1','2','3','4','5','6'),default='0',help='Lane count for each SPURS instance in place of the count of the game; 0 keeps the count of the game (default 0)')
     ap.add_argument('--rsx-switch',action='append',default=[],metavar='KEY=VALUE',help='Set one RSX_* switch of the runtime (repeatable); the launch record names each switch')
     ap.add_argument('--cpu-surface-prompt',choices=('default','0','1'),default='default',help='Prompt disjoint CPU surface reads; default preserves backend policy, 0 uses batch-end service')
     ap.add_argument('--cpu-surface-flush',choices=('default','0','1'),default='default',help='Submit recorded writes needed by queued CPU reads at the next draw boundary or idle pump')
@@ -87,6 +88,7 @@ def main():
     ap.add_argument('--jobmod-header-fnv',action='store_true',help='Also identify staged job images by their declared C0DEC0DE span, ignoring load padding')
     ap.add_argument('--pm-native-services',action='store_true',help='Run the job manager services native jobs call (registered in src/motorstorm/spu_pm_services.cpp) compiled while their LS text is pristine; requires --native-owned-jobs')
     ap.add_argument('--min-free-physical-gib',type=physical_reserve,default=4,help='Host free physical RAM reserve, 1..4 GiB (default 4); lower explicitly for concurrent host work')
+    ap.add_argument('--havok-threads',type=int,default=0,help='Havok PPU worker threads for the physics step: 0 keeps the game count (2), 1..6; above 0 requires a matching --havok-threads build')
     args=ap.parse_args()
     if args.profile_renderer_draws and not args.profile_renderer:
         ap.error('--profile-renderer-draws requires --profile-renderer')
@@ -121,6 +123,7 @@ def main():
         raise SystemExit('Replay screen stride must be 1..120 and requires --menu-replay when changed')
     if not 0<=args.trace_task_lifecycle<=4096: raise SystemExit('Task lifecycle trace must be 0..4096 events')
     if args.trace_task_image is not None and (args.trace_task_image<0 or not args.trace_task_lifecycle): raise SystemExit('Task image filter requires an enabled trace and nonnegative image ID')
+    if not 0<=args.havok_threads<=6: raise SystemExit('Havok thread count must be 0 (game count) or 1..6; no process launched')
     if any(p.info['name']=='ms1_recomp.exe' for p in psutil.process_iter(['name'])): raise SystemExit('A native instance already exists; close it first')
     c=config(); exe=(args.executable or ROOT/'build/native/ms1_recomp.exe').resolve()
     if args.menu_replay and hashlib.sha256(c['elf'].read_bytes()).hexdigest()!=replay_profile['elf_sha256']:
@@ -158,6 +161,10 @@ def main():
         identity=admitted['build_identity']
         if not identity.get('native_depth_query') or identity.get('sha256') != hashlib.sha256(exe.read_bytes()).hexdigest():
             raise SystemExit('Native depth requires a matching native-query build; no process launched')
+    if args.havok_threads:
+        identity=admitted['build_identity']
+        if not identity.get('havok_threads') or identity.get('sha256') != admitted['exe_sha256']:
+            raise SystemExit('Havok thread count above 0 requires a matching --havok-threads build; no process launched')
     if args.capture_jobs:
         identity = admitted['build_identity']
         if not identity.get('job_capture') or not identity.get('queue_call_observation'):
@@ -181,6 +188,7 @@ def main():
     env['MS_NATIVE_VISIBILITY_BATCH']=args.native_visibility_batch
     env['MS_DEPTH_OBSERVER']='1' if args.depth_observer else '0'
     env['MS_NATIVE_DEPTH']=args.native_depth
+    env['MS_HAVOK_THREADS']=str(args.havok_threads)
     env.pop('D3D12_DBG',None)
     env.pop('PERF',None)
     if args.d3d12_debug != 'default':env['D3D12_DBG']=args.d3d12_debug
@@ -241,6 +249,8 @@ def main():
     if args.cpu_surface_snapshot_fast=='1':env['RSX_CPU_SURFACE_SNAPSHOT_FAST']='1'
     env.pop('SPURS_KERNEL_NOTIFY',None)
     if args.spurs_kernel_notify=='1':env['SPURS_KERNEL_NOTIFY']='1'
+    env.pop('SPURS_LANES',None)
+    if args.spurs_lanes!='0':env['SPURS_LANES']=args.spurs_lanes
     env.pop('PPU_WAIT_PROFILE',None)
     if args.profile_ppu_waits:env['PPU_WAIT_PROFILE']='1'
     if args.cpu_surface_flush != 'default':env['RSX_CPU_SURFACE_FLUSH']=args.cpu_surface_flush
@@ -279,12 +289,14 @@ def main():
     proc=psutil.Process(p.pid); start=time.monotonic(); reason='guard tooling failure'; terminated=False
     record={'pid':p.pid,'create_time':proc.create_time(),'exe':str(exe),'exe_sha256':hashlib.sha256(exe.read_bytes()).hexdigest(),'elf_sha256':hashlib.sha256(c['elf'].read_bytes()).hexdigest(),'output':str(out),'muted':True,'capture_menu':bool(args.capture_menu or args.menu_replay),'menu_replay':str(args.menu_replay.resolve()) if args.menu_replay else None,'capture_textures':args.capture_textures,'trace_video':args.trace_video,'capture_havok':args.capture_havok or args.capture_havok_only,'capture_bike':args.capture_bike,'loadtime_trace':args.loadtime_trace,'capture_profile':'broad' if args.capture_havok else 'havok-only' if args.capture_havok_only else 'none','environment':{k:v for k,v in env.items() if k in ('PS3_VFS_ROOT','PS3_HDD0_ROOT','PS3_SAVEDATA_ROOT','AUDIO_MUTE','PAD_FILE','CAP_HAVOK_DIR','CAP_BIKE_DIR','CAP_BIKE_ARM_FILE','LOADTIME_TRACE','LOADTIME_TRACE_FILE','SPU_PM_INTERP','SPU_NATIVE_OWNED_JOBS','SPU_NATIVE_OWNED_IMAGE','SPU_JOBMOD_HEADER_FNV','SPU_JOBMOD_DISPATCH_LOG') or k.startswith(('SPU_PM_','TEX_','RSX_')) or k in ('VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG') or k=='SPU_WP'}}
     if 'SPURS_KERNEL_NOTIFY' in env:record['environment']['SPURS_KERNEL_NOTIFY']=env['SPURS_KERNEL_NOTIFY']
+    if 'SPURS_LANES' in env:record['environment']['SPURS_LANES']=env['SPURS_LANES']
     if 'PPU_WAIT_PROFILE' in env:record['environment']['PPU_WAIT_PROFILE']=env['PPU_WAIT_PROFILE']
     record['resource_limits']=resource_policy
     record['resource_breach']=None
     record['launcher_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     record['resource_guard_sha256']=hashlib.sha256(Path(__file__).with_name('native_resource_guard.py').read_bytes()).hexdigest()
     record['environment']['MS_BOOT_MENU'] = env['MS_BOOT_MENU']
+    record['environment']['MS_HAVOK_THREADS'] = env['MS_HAVOK_THREADS']
     record['capture_jobs'] = args.capture_jobs
     record['job_capture_seconds'] = args.job_capture_seconds
     record['job_capture_execution_pcs'] = args.job_capture_execution_pc

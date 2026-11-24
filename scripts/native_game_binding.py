@@ -50,6 +50,9 @@ MENU_VIDEO = Contract(PRODUCTION.elf_sha256,
 MENU_LANGUAGE = Contract(PRODUCTION.elf_sha256,
     'a2ec3a9e721fa5f60a201e579af96d2e4405404b50a7ebf352803f9e38cb5d79',
     'func_00530A88', 'game_original_language_event', 'motorstorm_boot_language_event')
+HAVOK_THREADS = Contract(PRODUCTION.elf_sha256,
+    '9a263a15562ae116cbd6d9c252383733477e82c9811a7f8b7f27bc74622e443e',
+    'func_00A01220', 'game_original_init_multithreading', 'motorstorm_havok_threads')
 # Direct lifted callers bypass registry-only observation.
 DEPTH_OBSERVER = Contract(PRODUCTION.elf_sha256,
     'c1569b155b7ff33025877349e330a5a8c8b9c2adc0f62b946d2bcbd5408f6064',
@@ -180,7 +183,7 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
     if any(elf_sha != c.elf_sha256 for c in selected):
         raise ValueError('Unsupported original ELF identity for native game binding')
     known = tuple(known_contracts) if known_contracts is not None else (
-        (PRODUCTION, JOB_WAIT, VISIBILITY, PCM_CUBIC, DEPTH_OBSERVER, QUEUE_RESET, QUEUE_RESET_MULTI, QUEUE_INIT, QUEUE_ADD_JOB, MENU_VIDEO, MENU_LANGUAGE) if elf_sha == PRODUCTION.elf_sha256 else selected)
+        (PRODUCTION, JOB_WAIT, VISIBILITY, PCM_CUBIC, DEPTH_OBSERVER, QUEUE_RESET, QUEUE_RESET_MULTI, QUEUE_INIT, QUEUE_ADD_JOB, MENU_VIDEO, MENU_LANGUAGE, HAVOK_THREADS) if elf_sha == PRODUCTION.elf_sha256 else selected)
     # Older observer copies used the same verified body without byte tracing.
     # Admit only that exact legacy recipe when enabling/disabling this feature.
     known = tuple(dict.fromkeys((*known, *selected,
@@ -292,12 +295,15 @@ def main():
     parser.add_argument('--pcm-cubic', action='store_true')
     parser.add_argument('--depth-observer', action='store_true')
     parser.add_argument('--menu-boot', action='store_true')
+    parser.add_argument('--havok-threads', action='store_true')
     parser.add_argument('--queue-call-observation', action='store_true',
                         help='Observe verified queue reset/init/publication calls')
     args = parser.parse_args()
     selected = ([] if args.without_world_transforms else [PRODUCTION]) + ([JOB_WAIT] if args.job_wait else []) + ([VISIBILITY] if args.visibility else []) + ([PCM_CUBIC] if args.pcm_cubic else [])
     if args.menu_boot:
         selected.extend((MENU_VIDEO, MENU_LANGUAGE))
+    if args.havok_threads:
+        selected.append(HAVOK_THREADS)
     if args.depth_observer:
         selected.append(DEPTH_OBSERVER)
     if args.queue_call_observation:

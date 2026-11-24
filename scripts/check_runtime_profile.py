@@ -338,6 +338,22 @@ class ExecutionProfileTests(unittest.TestCase):
     def test_spurs_kernel_notify_enabled(self):
         self.check_spurs_kernel_notify('1')
 
+    def check_spurs_lanes(self, lanes, expected):
+        with patch.dict(os.environ, {'SPURS_LANES': '6'}):
+            record, env = self.launch('--spurs-lanes', lanes)
+        self.assertEqual(env.get('SPURS_LANES'), expected)
+        self.assertEqual(record['environment'].get('SPURS_LANES'), expected)
+
+    def test_spurs_lanes_default_clears_inherited_switch(self):
+        self.check_spurs_lanes('0', None)
+
+    def test_spurs_lanes_six(self):
+        self.check_spurs_lanes('6', '6')
+
+    def test_spurs_lanes_rejects_seven(self):
+        with self.assertRaises(SystemExit):
+            self.launch('--spurs-lanes', '7')
+
     def check_ppu_wait_profile(self, options):
         with patch.dict(os.environ, {'PPU_WAIT_PROFILE': '1'}):
             record, env = self.launch(*options)
@@ -758,6 +774,36 @@ class ExecutionProfileTests(unittest.TestCase):
                                                     native_depth_query=True)))
         self.rejected('matching --depth-observer build', '--executable', str(self.exe),
                       '--depth-observer', '--native-depth', '1')
+
+    def test_havok_threads_default_is_game_count_and_rejects_unmatched_build(self):
+        for count in ('-1', '7'):
+            self.rejected('Havok thread count must be 0 \\(game count\\) or 1\\.\\.6',
+                          '--havok-threads', count)
+        self.rejected('requires a matching --havok-threads build', '--havok-threads', '4')
+        with patch.dict(os.environ, {'MS_HAVOK_THREADS': '4'}):
+            record, env = self.launch()
+        self.assertEqual(env['MS_HAVOK_THREADS'], '0')
+        self.assertEqual(record['environment']['MS_HAVOK_THREADS'], '0')
+
+    def test_havok_threads_selection_is_recorded(self):
+        # The flag must come from the record of the selected executable, not
+        # build/native's (the pattern of the depth observer test above).
+        default_identity = self.exe.parent / 'build_identity.json'
+        self.exe = self.root / 'selected/ms1_recomp.exe'
+        self.exe.parent.mkdir()
+        self.exe.write_bytes(b'authored inert executable identity; never executed')
+        self.record.update(path=str(self.exe), havok_threads=False)
+        self.save_record()
+        default_identity.write_text(json.dumps(dict(self.record, havok_threads=True)))
+        self.rejected('requires a matching --havok-threads build', '--executable', str(self.exe),
+                      '--havok-threads', '4')
+        self.record['havok_threads'] = True
+        self.save_record()
+        with patch.dict(os.environ, {'MS_HAVOK_THREADS': '2'}):
+            record, env = self.launch('--executable', str(self.exe), '--havok-threads', '4')
+        self.assertEqual(env['MS_HAVOK_THREADS'], '4')
+        self.assertEqual(record['environment']['MS_HAVOK_THREADS'], '4')
+        self.assertIs(record['build_identity']['havok_threads'], True)
 
 
 HISTORICAL_URL = 'https://github.com/robbe1912/ps3recomp.git'

@@ -78,6 +78,7 @@ def main():
     b.add_argument('--depth-observer',action='store_true',
                    help='Build the opt-in raw GetDepth/PixelBuffer Lock observer (default off)')
     b.add_argument('--menu-boot',action=argparse.BooleanOptionalAction,default=True,help='Boot supported original targets directly to PLAY')
+    b.add_argument('--havok-threads',action='store_true',help='Bind the opt-in Havok PPU worker count switch (default off: game count)')
     b.add_argument('--capture-jobs',action='store_true',help='Build bounded atomic, SPU execution, scheduler and verified queue-call capture')
     g=sub.add_parser('generate'); g.add_argument('--stage',choices=['ppu','spu'],required=True); g.add_argument('--jobs',type=int,default=8)
     sub.add_parser('check')
@@ -136,6 +137,7 @@ def main():
         from native_game_binding import PRODUCTION
         menu_boot = args.menu_boot and hashlib.sha256(c['elf'].read_bytes()).hexdigest() == PRODUCTION.elf_sha256
         command.append(f'-DPORT_NATIVE_MENU_BOOT={"ON" if menu_boot else "OFF"}')
+        havok_threads = args.havok_threads and hashlib.sha256(c['elf'].read_bytes()).hexdigest() == PRODUCTION.elf_sha256
         command.append(f'-DPORT_OPTIMIZE_RENDERER={"ON" if args.optimize_renderer else "OFF"}')
         command.append(f'-DPORT_OPTIMIZE_GUEST={"ON" if args.optimize_guest else "OFF"}')
         capture_options = ('PORT_ENABLE_JOB_CAPTURE', 'PORT_QUEUE_CALL_OBSERVATION',
@@ -151,6 +153,7 @@ def main():
                         f'-DPORT_NATIVE_PARTICLE_COLLISIONS={"ON" if args.native_particle_collisions else "OFF"}',
                         f'-DPORT_NATIVE_PARTICLE_THRESHOLDS={"ON" if args.native_particle_thresholds else "OFF"}',
                         f'-DPORT_DEFORMATION_DEPTH_OBSERVER={"ON" if args.depth_observer else "OFF"}',
+                        f'-DPORT_HAVOK_THREADS={"ON" if havok_threads else "OFF"}',
                         f'-DPORT_TARGET_ELF={c["elf"]}'])
         logs=ROOT/'temp/builds'/datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
         logged_run(command,logs/'configure.log',env=env)
@@ -182,6 +185,7 @@ def main():
         identity['job_capture_module_identity'] = args.capture_jobs
         identity['depth_observer']=args.depth_observer
         identity['native_depth_query']=args.depth_observer
+        identity['havok_threads']=havok_threads
         identity['renderer_optimization']=json.loads((binary/'renderer-optimization.json').read_text())
         if identity['renderer_optimization']['enabled'] != args.optimize_renderer:
             raise SystemExit('Renderer build configuration did not match the requested mode')
@@ -190,7 +194,7 @@ def main():
         if args.native_particle_thresholds:
             identity['native_particle_binding']=json.loads((binary/'native-particle-input/identity.json').read_text())
             identity['native_particle_binding_generator_sha256']=hashlib.sha256((ROOT/'scripts/native_particle_binding.py').read_bytes()).hexdigest()
-        if menu_boot or args.native_world_transforms or args.native_job_wait or args.native_visibility or args.native_pcm_cubic or args.depth_observer or args.capture_jobs:
+        if menu_boot or havok_threads or args.native_world_transforms or args.native_job_wait or args.native_visibility or args.native_pcm_cubic or args.depth_observer or args.capture_jobs:
             identity['native_world_binding']=json.loads((binary/'native-world-binding.json').read_text())
             identity['native_world_sources_sha256']={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in sorted((ROOT/'src/motorstorm').glob('*')) if p.is_file()}

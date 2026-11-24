@@ -263,6 +263,33 @@ The latest completed frame was 159 when the owned run stopped explicitly at
 capture of this clipping candidate; no freshness/ownership threshold changed.
 This verifies replay beyond the ordering boundary, not bike or race correctness.
 
+### Havok worker threads
+
+The game starts two PPU threads for the Havok step. Each thread name is
+`ppu:Havok PPU Thread`. `HavokSystem::NUM_PPU_THREADS` (`0x10066030`) holds the
+count. `hkMultithreadingUtil::initMultithreading` (`0xA01220`) starts the threads
+and clamps the count to 6. An opt-in switch raises the count.
+
+Build with `python scripts/project.py build --havok-threads`. This binds the
+lifted function `func_00A01220` to `src/motorstorm/havok_threads.cpp`. Then start
+with `--havok-threads N`, where `N` is 1 to 6. `--havok-threads 0` is the default
+and keeps the game count. The launcher sets `MS_HAVOK_THREADS=N` and records it
+in `launch.json`. A count above 0 needs a build with the identity flag
+`havok_threads`. Without that build, the launcher stops and starts no process.
+
+The hook writes one line to `native.err` at boot, before the first race frame:
+`[HAVOK_THREADS] game=<n> set=<n> workers=<n>`. `game` is the count of the game.
+`set` is the request. `workers` is the count that the guest started. Each worker
+takes 1,500,016 bytes from the Havok heap of 17,039,360 bytes. Two workers take
+17.6 % of the heap. Four workers take 35.2 %. The peak heap use in a race is not
+measured. Start with 4 workers. If a race does not load with more workers, the
+Havok heap is the first suspect.
+
+The hook does not change the step order, the substeps, or the stack size of a
+thread (256 KiB). `python scripts/check_havok_threads.py` checks the launcher
+lines, the registration, the hook and the lifted body. No run with more than two
+workers is measured at the time of writing.
+
 ## Capture discipline
 
 The Havok observer check allows 120 seconds for its compiler/linker and 15

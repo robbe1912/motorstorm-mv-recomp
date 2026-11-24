@@ -2499,3 +2499,29 @@ dispatch-depth fixture covers lookup, replacement and failure semantics. On
 the Windows integration host, the real vendored PPU loader compiled as x64
 clang-cl with a generated smoke header; the POSIX/ucontext fixture was not
 runnable locally.
+
+## Havok PPU worker count switch
+
+The game starts two PPU threads for the Havok step
+(`HavokSystem::NUM_PPU_THREADS`, `0x10066030`). The main thread waits 24 to
+30 ms per frame for that step. An opt-in switch raises the count of workers.
+The switch is a game-side binding of the lifted function
+`hkMultithreadingUtil::initMultithreading(hkWorld*, int)` (`0xA01220`) to
+`src/motorstorm/havok_threads.cpp`. The binding is `HAVOK_THREADS` in
+`scripts/native_game_binding.py`. The SHA-256 of the lifted body is
+`9a263a15562ae116cbd6d9c252383733477e82c9811a7f8b7f27bc74622e443e`.
+
+The switch needs no change in the fork or in `vendor/ps3recomp`. It has no fork
+hash. The extra workers are ordinary guest threads. The runtime creates them
+through the HLE `sys_ppu_thread_create` in
+`vendor/ps3recomp/runtime/syscalls/sys_ppu_thread.c`. Each thread has a stack of
+256 KiB and priority 100. The guest clamp and the worker array of 6 entries set
+the limit to 6. Each worker takes 1,500,016 bytes from the Havok heap of
+17,039,360 bytes.
+
+`python scripts/check_havok_threads.py` covers the launcher lines, the
+registration, the hook (14 cases, 16 mutants) and the identity of the lifted
+body. `python scripts/check_runtime_profile.py` covers the launcher option.
+
+Measured result: none at the time of writing. No run with more than two workers
+exists. `docs/OPERATIONS.md` describes the switch.
