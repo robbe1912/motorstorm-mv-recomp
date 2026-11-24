@@ -899,3 +899,34 @@ Larger policy records increase bounded recorder memory. Retain the matching
 decoder with each capture. Existing schema-5 and schema-6 evidence uses preserved
 decoders and decoded artifacts. Current module-fingerprint title validation and
 its overhead measurement remain pending.
+
+## SPU job dump
+
+`SPU_JOB_DUMP=<image>:<entry>[:<max jobs>[:<every n-th job>]]:<directory>`
+writes the input files of the oracle for a native port of one SPU job. Set
+it for one run. The dump is off by default.
+
+- `image` is the id of the job module image. `entry` is the local store
+  address of the job entry, decimal or `0x` hex. `210:0x16270` is the PVS job.
+- `max jobs` stops the dump after this number of jobs. The default is 64.
+  `every n-th job` dumps one entry of a context in `n`. The default is 1.
+  `directory` is the output directory. The dump makes it when it does not
+  exist. The rest of the value is the directory, so a drive letter works.
+- A job starts at the entry address inside the image span. It ends at the
+  next entry of the same context, when the policy module selects the next
+  workload, or at the exit of the process. The exit flush writes the open
+  jobs. A run that another process kills can lose the open job of a lane,
+  at most 6 files.
+- One file holds the local store at entry, the exit points, the local store
+  of the last exit, and the bytes of each DMA transfer. A file is about
+  520 KB without DMA bytes. Lock-line atomics and mailbox writes have no
+  record.
+- The dump costs memory and disk time per job. Do not time a run with the
+  dump.
+- An invalid value ends the process with exit code 2. The log holds the
+  message `SPU_JOB_DUMP must be`.
+
+Example for the PVS job: `SPU_JOB_DUMP=210:0x16270:64:1:E:/captures/pvs`.
+`python scripts/spu_job_dump.py <directory>` prints one line per job. Add
+`--dma` for the DMA records. The check is
+[check_spu_job_dump.py](../scripts/check_spu_job_dump.py).

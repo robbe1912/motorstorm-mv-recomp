@@ -2783,3 +2783,35 @@ body. `python scripts/check_runtime_profile.py` covers the launcher option.
 
 Measured result: none at the time of writing. No run with more than two workers
 exists. `docs/OPERATIONS.md` describes the switch.
+
+## SPU job dump
+
+`SPU_JOB_DUMP=<image>:<entry>[:<max jobs>[:<every n-th job>]]:<directory>`
+writes one file for each job of one SPU image. A file holds the local store
+at entry, each exit from the image span with the local store of the last
+exit, and the bytes of each DMA transfer in time order. The dump is the
+input of the oracle for a native port of a job. The dump is off by default.
+Without the switch the runtime writes no file.
+
+The change is in the fork, branch `codex/spu-job-exit-dump`, from `combined`
+`79e7bb4c`:
+
+| Commit | Content |
+|---|---|
+| `8508e3d515` | `runtime/spu/spu_job_dump.h`, `runtime/spu/spu_job_dump.inc`, the probe hook in `spu_native_owned.h`, the DMA hook in `spu_dma.h`, the include in `spu_channels.c` |
+| `77a292d500` | `tests/check_spu_job_dump.py`, the fixture and the reader |
+
+The copy in `vendor/ps3recomp/runtime/spu/` holds the same two new files and
+the same three hook lines. The `mfc_do_transfer` of the copy has one more
+parameter, `tag`. The hook line does not use it. The record format is in the
+comment at the top of `spu_job_dump.inc`.
+
+`python scripts/check_spu_job_dump.py` builds the fixture
+`scripts/fixtures/spu_job_dump_harness.c` two times. One build calls the DMA
+hook directly. The other build sends each transfer through the production
+`mfc_do_transfer`. The check compares the files of four modes with the
+scenario of the fixture. It rejects 27 mutants of the production files.
+`python scripts/spu_job_dump.py <directory>` prints a summary of the files.
+
+Measured result: none. No run with the dump exists. `docs/OPERATIONS.md`
+describes the switch.

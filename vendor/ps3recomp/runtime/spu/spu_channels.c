@@ -82,6 +82,9 @@ void spu_gread_dump(const char* tag, uint32_t wid, uint32_t spu)
 #ifdef __cplusplus
 extern "C" {
 #endif
+/* Opt-in SPU job dump. The definitions are in this file because each build
+ * links it; the two hooks add no link dependency to the headers. */
+#include "spu_job_dump.inc"
 
 /* The SPU decrementer ticks at the PS3 timebase, 79.8 MHz -- the same clock
  * sys_time_get_timebase_frequency reports to the PPU. Titles calibrate real
