@@ -42,6 +42,7 @@
 #ifdef PORT_ENABLE_JOB_CAPTURE
 #include "motorstorm/job_capture_control.h"
 #endif
+#include "motorstorm/no_dialogs.h"   /* a diagnostic build writes its reports to stderr, not to a dialog */
 #if defined(MOTORSTORM_DEFORMATION_DEPTH_OBSERVER)
 #include "motorstorm/deformation_depth_observer.h"
 #endif
@@ -379,6 +380,9 @@ static void harness_guest_caller(uint32_t opd, uint64_t a0, uint64_t a1,
 
 int main(int argc, char** argv)
 {
+    /* First: no modal dialog from the debug CRT or from WER. A dialog stops
+     * the thread until a person clicks it, and an owned run has nobody there. */
+    motorstorm::no_dialogs();
     if (argc < 2) {
         printf("usage: %s <PPU ELF>\n", argv[0]);
         return 2;

@@ -772,6 +772,30 @@ A completed wrapper span supplies the actual wait interval and threshold;
 selected-job ownership and an exclusive frame-critical producer remain separate
 proof obligations under issue 219.
 
+## Dialogs of a diagnostic build
+
+The game is a debug build and links the debug CRT. Without a setting, each
+assertion, each invalid CRT parameter and each heap check of that runtime opens
+a modal dialog and stops its thread until a person clicks it. An owned run has
+nobody at the window.
+
+- `src/main.cpp` calls `motorstorm::no_dialogs()`
+  (`src/motorstorm/no_dialogs.h`) first. The game writes each report to
+  stderr, and the run directory keeps it in `native.err`. Windows Error
+  Reporting shows no box for the game.
+- Start each test program through `python scripts/quiet_run.py --timeout
+  <seconds> -- <command>`. The command runs on a private desktop, so its
+  dialogs are invisible. A command that blocks on a dialog ends at the time
+  limit with exit code 124. The output then names the windows of the command.
+  `quiet_run.py` passes stdout, stderr and the exit code of the command through
+  unchanged.
+- A test program that links the debug CRT includes `motorstorm/no_dialogs.h`
+  and calls `motorstorm::no_dialogs()` first in `main`.
+
+Check: `python scripts/quiet_run.py --timeout 900 -- python
+scripts/check_no_dialogs.py`. It compiles a fixture with the debug CRT and
+rejects 2 mutants of `main` and 3 mutants of the header.
+
 ## Compare arms over the same race frames
 
 A window by wall time compares runs of different speed at different race
