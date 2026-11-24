@@ -57,6 +57,10 @@ out-of-line family of the fork does not call the fire halves.
 `ppu_fm_kind`, `ppu_fm_spin_det` and `ppu_fm_count_hit`. Before this change
 it defined `ppu_fm_diag` only. The header no longer has `ppu_fm_diag`.
 
+The launcher options are `--fastmem-gate 0|1` (game `6568abc3`) and
+`--fastmem-count 0|1` (this commit). They are game code: the fork has no
+launcher. `python scripts/check_runtime_profile.py` covers both keys.
+
 Check: `python scripts/check_ppu_fastmem_diet.py` passes. It compiles the
 header in both layouts and the production arm text with its page table. It
 rejects 55 header mutants and 27 loader mutants. `python

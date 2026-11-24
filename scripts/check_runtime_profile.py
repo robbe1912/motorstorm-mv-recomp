@@ -357,6 +357,19 @@ class ExecutionProfileTests(unittest.TestCase):
     def test_fastmem_gate_off_sets_and_records_key(self):
         self.check_fastmem_gate('0')
 
+    def check_fastmem_count(self, mode):
+        with patch.dict(os.environ, {'PPU_FM_COUNT': '1'}):
+            record, env = self.launch('--fastmem-count', mode)
+        expected = '1' if mode == '1' else None
+        self.assertEqual(env.get('PPU_FM_COUNT'), expected)
+        self.assertEqual(record['environment'].get('PPU_FM_COUNT'), expected)
+
+    def test_fastmem_count_default_clears_inherited_key(self):
+        self.check_fastmem_count('0')
+
+    def test_fastmem_count_on_sets_and_records_key(self):
+        self.check_fastmem_count('1')
+
     def check_cpu_surface_snapshot_fast(self, mode):
         with patch.dict(os.environ, {'RSX_CPU_SURFACE_SNAPSHOT_FAST': '1'}):
             record, env = self.launch('--cpu-surface-snapshot-fast', mode)

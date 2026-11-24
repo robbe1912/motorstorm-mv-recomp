@@ -713,11 +713,11 @@ option the launcher clears an inherited `PPU_FM`. Use `0` for the control
 arm of an A/B run of a fast memory change. Measured result: none. No run
 yet.
 
-`PPU_FM_COUNT=1` in the environment turns on the call counter of the PPU
-fast memory accessors. There is no launcher option. The launcher passes the
-key to the game, but the launch record does not name it, so write the key
-into the capture notes. Each host thread that calls an accessor reads the
-clock one time per 16384 calls. The game log then gets one
+`--fastmem-count 0|1` turns on the call counter of the PPU fast memory
+accessors. The default `0` removes an inherited `PPU_FM_COUNT`. The value
+`1` sets `PPU_FM_COUNT=1`, and the launch record names the key. Each host
+thread that calls an accessor reads the clock one time per 16384 calls. The
+game log then gets one
 `[PPU_FM_COUNT]` line per second for each thread with calls, then one line
 with the sum of all threads. The line holds `seq`, `scope` (`thread` or
 `all`), `slot`, `tid` (host thread id), `guest` (guest thread id, or 0 for a
