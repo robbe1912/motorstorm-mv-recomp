@@ -137,6 +137,17 @@ O1 and O2 guest units): median frame interval 184.7 ms against 241.8 ms; main
 thread CPU 30.0 ms per frame against 43.4 ms. The memory helpers of
 `ppu_fastmem.h` stay out of line in the largest guest functions at both levels.
 
+The Havok worker count switch is opt-in: `python scripts/project.py build
+--havok-threads`. This defaults off. It sets `PORT_HAVOK_THREADS=ON` only for
+the verified production ELF. The build binds the lifted
+`hkMultithreadingUtil::initMultithreading` (`0xA01220`) to
+`src/motorstorm/havok_threads.cpp` through the existing native binding. Build
+identity records the flag `havok_threads` and the binding manifest. The build
+does not change the worker count. The count changes only when the launcher sets
+`MS_HAVOK_THREADS`; see [Havok worker threads](OPERATIONS.md#havok-worker-threads).
+`python scripts/check_havok_threads.py` checks the registration, the hook and
+the identity of the lifted body.
+
 The first native evaluation changed exactly eight object commands, leaving 207
 others unchanged. With matching executable/PDB identity, normal gated PLAY
 reached original menu/bike assets and a race. Its unsuspended diagnostic window
