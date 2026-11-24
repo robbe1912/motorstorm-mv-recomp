@@ -64,6 +64,27 @@ mutants; `python scripts/check_rsx_draw_profile.py` here rejects 21. Both pass.
 
 Measured result: none. The record has no run in the game yet.
 
+## State columns in the draw record (#333)
+
+Fork branch `codex/rsx-draw-merge`, based on `codex/rsx-draw-gpu-record`
+`b5251494` (on `combined` `79e7bb4c`): `4147d8a0` (columns and check).
+Game `b5e832a6`.
+
+`rsx_draws.csv` gets four columns: `cmd`, `vc_sig`, `fc_sig` and
+`state_eq`. They tell whether a draw has the GPU state of the previous
+draw of the batch. The rule is in the comment at
+`phase_draw_rows_write`. [operations](OPERATIONS.md) names the columns.
+The fork has three `cmd` bits. The game copy adds two: another stencil
+reference and the first use of a depth surface. For them
+`rsx_d3d12_sampler_tables.inc` stores the table of the last bind.
+
+Checks: `python tests/check_rsx_draw_record.py` in the fork rejects 43
+mutants and passes 16 fixture controls. `python
+scripts/check_rsx_draw_profile.py` here rejects 61 mutants and passes 14
+fixture controls. Both pass.
+
+Measured result: none. No run yet.
+
 ## Title counts presents (#343)
 
 Fork draft PR robbe1912/ps3recomp#10, branch `codex/rsx-title-counts-presents`

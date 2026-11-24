@@ -562,6 +562,20 @@ readback of a row is ready at the start of the next batch, and the timestamps
 add overhead. Game-free coverage:
 [check_rsx_draw_profile.py](../scripts/check_rsx_draw_profile.py).
 
+Four more columns tell whether a draw has the GPU state of the previous
+draw of the batch. `cmd` is a bit sum. Bit 1: the mid-batch snapshot sits
+before the draw. Bit 2: a clear record sits before the draw. Bit 4: the
+draw uses another sampler table. Bit 8: the draw uses another stencil
+reference. Bit 16: the draw is the first use of a depth surface.
+`vc_sig` and `fc_sig` are FNV-1a signatures of the vertex constant slot
+(b0) and of the fragment constants (b1) of the draw. `fc_sig` is 0 when
+the backend has no b1 buffer. `state_eq` is 1 when the row has no flag,
+`cmd` is 0 and both signatures are equal to those of the previous row of
+the file. The first row of a batch has `state_eq` 0. `barriers` is not
+part of `state_eq`. Two draws with `state_eq` 1 differ only in the vertex
+data that they read. The record reads the b0 slot (8224 bytes) and the b1
+constants of each draw for the signatures.
+
 `--spurs-kernel-notify 0|1` (default `0`) selects `SPURS_KERNEL_NOTIFY=1`.
 The SPURS coordinator thread looks for new job demand once per period. With
 the switch off, each period is a `Sleep(1)` call. With the switch on, the
