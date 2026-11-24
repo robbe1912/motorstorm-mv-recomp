@@ -35,6 +35,10 @@ if(PORT_OPTIMIZE_NATIVE)
     endif()
 endif()
 
+# O2 with automatic inlining for the lifted guest units only. The guard and the flags are in
+# src/guest_optimization.cmake.
+option(PORT_OPTIMIZE_GUEST "Use O2 and automatic inlining for the lifted guest units; requires PORT_OPTIMIZE_NATIVE" OFF)
+
 # Prefer Ninja if available
 if(NOT CMAKE_GENERATOR MATCHES "Ninja" AND NOT DEFINED ENV{CMAKE_GENERATOR})
     message(STATUS "Tip: use -G Ninja for faster builds")
@@ -346,22 +350,9 @@ elseif(MSVC)
     )
 endif()
 
-# The lifted translation units are machine-generated and can run to hundreds of
-# thousands of lines each, so they get their own flags:
-#
-#   - warnings off. They are about generated code and nobody will act on them,
-#     and at this volume they bury the diagnostics that matter.
-#   - no floating-point contraction. arm64 fuses a multiply and an add by
-#     default; a PPC fmadd is spelt as one where the lifter means one.
-#   - /bigobj on MSVC. A single lifted file routinely passes the 65,536-section
-#     limit of the default object format.
-if(MSVC)
-    set_source_files_properties(${RECOMP_SOURCES} PROPERTIES
-        COMPILE_OPTIONS "/w;/bigobj")
-else()
-    set_source_files_properties(${RECOMP_SOURCES} PROPERTIES
-        COMPILE_OPTIONS "-w;-ffp-contract=off")
-endif()
+# The lifted translation units get their own flags; see src/guest_optimization.cmake.
+include("${CMAKE_CURRENT_SOURCE_DIR}/src/guest_optimization.cmake")
+motorstorm_guest_compile_options("${RECOMP_SOURCES}")
 
 # ---------------------------------------------------------------------------
 # Install

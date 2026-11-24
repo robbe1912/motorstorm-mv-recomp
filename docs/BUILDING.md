@@ -126,6 +126,17 @@ existing settings. `renderer_optimization` in build identity records the selecte
 source list, and the helper hash is retained. This is an experimental build
 comparison under issue #296; compilation alone proves no frame-rate improvement.
 
+Guest evaluation can additionally use `--optimize-guest` with `--optimize`.
+This defaults off. It gives O2 (plus automatic `/Ob2` inlining on clang-cl) to
+the lifted PPU translation units only; the runtime keeps checked O1. The flags
+are in `src/guest_optimization.cmake`; `scripts/check_guest_optimization.py`
+configures a fixture with the actual flags and rejects eight mutants. Build
+identity records `guest_optimization`. Measured on the diagnostic race run
+`20261124T010716.205010Z` against `20261124T002840.355595Z` (same switches,
+O1 and O2 guest units): median frame interval 184.7 ms against 241.8 ms; main
+thread CPU 30.0 ms per frame against 43.4 ms. The memory helpers of
+`ppu_fastmem.h` stay out of line in the largest guest functions at both levels.
+
 The first native evaluation changed exactly eight object commands, leaving 207
 others unchanged. With matching executable/PDB identity, normal gated PLAY
 reached original menu/bike assets and a race. Its unsuspended diagnostic window
