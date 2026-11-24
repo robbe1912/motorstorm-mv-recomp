@@ -593,11 +593,15 @@ wait only when jobs are ready and no lane is free. In a race, the first
 marker wait of the vehicle jobs has no free lane for 8.1 ms per frame while
 particle jobs hold the lanes
 ([#327](https://github.com/robbe1912/motorstorm-mv-recomp/issues/327)).
-Measured result: no clear gain. Clean runs with the CPU deformation buffer on:
-median dt 97.9, 100.1 and 91.6 ms in the windows 200, 300 and 390 s with six
-lanes (`20261124T094720`), against 98.6, 98.9 and 96.1 ms with five lanes
-(`20261124T065827`). The differences are within the run-to-run spread of about
-3 ms. Game-free coverage:
+Measured result: no clear gain. Clean runs with the CPU deformation buffer on,
+by wall time: median dt 97.9, 100.1 and 91.6 ms in the windows 200, 300 and 390 s
+with six lanes (`20261124T094720`), against 98.6, 98.9 and 96.1 ms with five
+lanes (`20261124T065827`). Over the same race frames 1100 to 1400 (exe
+`8856e66571f07c3e`): median 99.3 ms against 100.5 ms, p95 108.2 ms against
+108.7 ms. Six lanes with the wait priority and the marker wake (exe
+`62fadf7802bd24e4`, run `20261124T111736`): median 97.9 and 96.5 ms in the
+ranges 1100 to 1400 and 1500 to 1800, against 103.6 to 108.5 ms in two control
+runs, but p95 141.8 and 162.9 ms against 115.8 to 121.0 ms. Game-free coverage:
 [check_spurs_lane_count.py](../scripts/check_spurs_lane_count.py).
 
 `--spurs-wait-priority 0|1` (default `0`) selects `SPURS_WAIT_PRIORITY=1`.
@@ -614,11 +618,14 @@ the vehicle marker wait takes 28.6 ms per frame. The marker 15 wait holds
 245 particle records against 13.6 vehicle records
 ([#327](https://github.com/robbe1912/motorstorm-mv-recomp/issues/327)).
 Measured result (exe `62fadf7802bd24e4`, clean runs with the CPU deformation
-buffer on): no gain, and more long frames. Median dt 105.6, 106.6 and 110.8 ms
-in the windows 200, 250 and 300 s, against 107.2, 101.9 and 118.8 ms with the
-switch off (runs `20261124T101255` and `20261124T100551`). p95 is 161 to
-183 ms, against 112 to 126 ms. One run counts 114,616 waits and 96,657 boosted
-jobs. Game-free coverage:
+buffer on, same race frames): no gain in the median, and long frames. Frames
+1100 to 1400: median 104.4 ms against 103.6 and 106.0 ms in two control runs
+(`20261124T100551`, `20261124T111041`); p95 163.4 ms against 115.8 and
+118.9 ms. Frames 1500 to 1800: median 106.5 ms against 107.4 and 108.5 ms;
+p95 169.8 ms against 119.4 and 121.0 ms. Frames above 150 ms in the two
+ranges: 17 and 31, against 2 and 5 in the control run `20261124T111041`.
+One run counts 114,616 waits and 96,657 boosted jobs (run `20261124T101255`).
+Game-free coverage:
 [check_spurs_wait_priority.py](../scripts/check_spurs_wait_priority.py).
 
 `--spurs-marker-wake 0|1` (default `0`) selects `SPURS_MARKER_WAKE=1`.
@@ -636,10 +643,11 @@ race, one cooperation takes 0.52 to 0.59 ms for a due of 100 us, and a
 vehicle wait has 12 cooperations
 ([#327](https://github.com/robbe1912/motorstorm-mv-recomp/issues/327)).
 Measured result (exe `62fadf7802bd24e4`, clean run with the switch on, the
-wait priority on and the CPU deformation buffer on, run `20261124T102359`): no
-gain. Median dt 106.0, 106.4 and 110.2 ms in the windows 200, 250 and 300 s,
-p95 118 to 188 ms. The marker wake has no run without the wait priority.
-Game-free coverage:
+wait priority on and the CPU deformation buffer on, run `20261124T102359`,
+same race frames): no gain. Frames 1100 to 1400: median 106.1 ms, p95
+131.6 ms. Frames 1500 to 1800: median 105.3 ms, p95 169.9 ms; 30 of 300
+frames take more than 150 ms. The marker wake has no run without the wait
+priority. Game-free coverage:
 [check_spurs_marker_wake.py](../scripts/check_spurs_marker_wake.py).
 
 `--rsx-switch KEY=VALUE` (repeatable) sets one `RSX_*` switch of the runtime
@@ -762,6 +770,20 @@ capture requires equal clock frequency and qualified queue/job lifetimes.
 A completed wrapper span supplies the actual wait interval and threshold;
 selected-job ownership and an exclusive frame-critical producer remain separate
 proof obligations under issue 219.
+
+## Compare arms over the same race frames
+
+A window by wall time compares runs of different speed at different race
+positions: a faster run is further in the race at the same second. The race
+start is the first frame after which 50 frames each take more than 40 ms in
+`frames.csv`. Compare the same frames after that frame. Skip the first 1000
+race frames: two control runs of one executable differ by 33 ms in the median
+there (143.5 and 110.6 ms, runs `20261124T100551` and `20261124T111041`).
+Frames 1100 to 1400 and frames 1500 to 1800 gave medians within 12 ms for five
+runs with the same options class.
+
+State the median and the p95 of each range. The goal needs a p95 within
+20 percent of the median, so count the frames above 150 ms too.
 
 ## Bounded job timeline capture
 
