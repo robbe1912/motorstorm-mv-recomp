@@ -65,6 +65,7 @@ def main():
     ap.add_argument('--cpu-surface-fast',choices=('0','1'),default='1',help='Serve current-generation CPU surface reads on the calling thread (default 1); 0 queues every read')
     ap.add_argument('--cpu-surface-snapshot-fast',choices=('0','1'),default='0',help='Serve a snapshot CPU read on the calling thread when no recorded draw targets its range and its surfaces are current (default 0: wait for the renderer FIFO boundary)')
     ap.add_argument('--spurs-kernel-notify',choices=('0','1'),default='0',help='Wake the SPURS coordinator when the game publishes job demand, instead of its periodic poll (default 0)')
+    ap.add_argument('--rsx-switch',action='append',default=[],metavar='KEY=VALUE',help='Set one RSX_* switch of the runtime (repeatable); the launch record names each switch')
     ap.add_argument('--cpu-surface-prompt',choices=('default','0','1'),default='default',help='Prompt disjoint CPU surface reads; default preserves backend policy, 0 uses batch-end service')
     ap.add_argument('--cpu-surface-flush',choices=('default','0','1'),default='default',help='Submit recorded writes needed by queued CPU reads at the next draw boundary or idle pump')
     ap.add_argument('--prompt-flip',action='store_true',help='Deliver the drained frame completion at take and wake its guest waiter at the original refresh limit')
@@ -258,6 +259,11 @@ def main():
         env.update(RSX_CAP_ARM_FILE=str(out/'capture-burst.arm'),RSX_CAP_BURST=str(args.capture_burst_frames))
     if args.capture_on_pad:
         env['RSX_CAP_PAD_MASK']=hex(args.capture_on_pad)
+    for switch in args.rsx_switch:
+        key,sep,value=switch.partition('=')
+        if not sep or not key.startswith('RSX_') or len(key)<5 or not key.isupper() or not value or key in env:
+            raise SystemExit('--rsx-switch takes RSX_<NAME>=<value> pairs with a key the launcher does not set: '+switch)
+        env[key]=value
     if (hashlib.sha256(exe.read_bytes()).hexdigest()!=admitted['exe_sha256'] or
             hashlib.sha256(c['elf'].read_bytes()).hexdigest()!=elf_sha256):
         raise SystemExit('Executable or ELF changed after profile admission; no process launched')

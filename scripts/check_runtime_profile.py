@@ -6,7 +6,7 @@ Optional historical source check: --historical-runtime PATH_TO_PINNED_TOOLKIT, o
 Native process creation and compilation are intercepted; no game runs.
 """
 import argparse
-from contextlib import ExitStack, redirect_stdout
+from contextlib import ExitStack, redirect_stderr, redirect_stdout
 import hashlib
 import io
 import json
@@ -337,6 +337,24 @@ class ExecutionProfileTests(unittest.TestCase):
 
     def test_spurs_kernel_notify_enabled(self):
         self.check_spurs_kernel_notify('1')
+
+    def test_rsx_switch_sets_and_records_runtime_keys(self):
+        record, env = self.launch('--rsx-switch', 'RSX_DEFORM_CAPTURE=1', '--rsx-switch', 'RSX_DEFORM_TARGETS=00A80500')
+        self.assertEqual((env.get('RSX_DEFORM_CAPTURE'), env.get('RSX_DEFORM_TARGETS')), ('1', '00A80500'))
+        self.assertEqual({k: v for k, v in record['environment'].items() if k.startswith('RSX_DEFORM')},
+                         {'RSX_DEFORM_CAPTURE': '1', 'RSX_DEFORM_TARGETS': '00A80500'})
+
+    def test_rsx_switch_absent_clears_inherited_key(self):
+        with patch.dict(os.environ, {'RSX_DEFORM_CAPTURE': '1'}):
+            record, env = self.launch()
+        self.assertNotIn('RSX_DEFORM_CAPTURE', env)
+        self.assertNotIn('RSX_DEFORM_CAPTURE', record['environment'])
+
+    def test_rsx_switch_rejects_malformed_and_launcher_owned_keys(self):
+        for switch in ('DEFORM_CAPTURE=1', 'RSX_DEFORM_CAPTURE', 'RSX_deform=1', 'RSX_TEX_MIPS=0'):
+            with self.subTest(switch=switch), redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit):
+                    self.launch('--rsx-switch', switch)
 
     def test_owned_jobs_rejected_on_capture_build(self):
         self.record['job_capture'] = True
