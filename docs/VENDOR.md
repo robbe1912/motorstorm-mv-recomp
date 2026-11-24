@@ -169,9 +169,10 @@ Fork branch `codex/frame60-deform-cpu-buffer` on the branch of PR #9:
 `d912c3c6` (buffer), `d4704cf7` (fix: the B8 brush), `5843b0fd` (shadow
 comparison, header, fork document), `0bc3ac59` (fix: switches on the first
 call), `c7b58208` (fork test), `65e5a82d` (fix: the private copies of the
-shadow mode start as guest memory; dump of the shadow frames). Game
-`6638e69c9d`, `e6abdbbeb2`, `039a251ddf`, `ee1dfd3fff`, `d906401bd0`. Off by
-default.
+shadow mode start as guest memory; dump of the shadow frames), `46ba950e`
+(fix: the paint notes stop with the dump budget). Game `6638e69c9d`,
+`e6abdbbeb2`, `039a251ddf`, `ee1dfd3fff`, `d906401bd0`, `54379f34e4`.
+Off by default.
 
 `RSX_DEFORM_BUFFER=1` with `RSX_DEFORM_TARGETS=<offset,...>` keeps level
 0 of each listed surface in host memory. The painter replays each paint
@@ -195,7 +196,7 @@ the production switch code and the read block of the query, rejects 13
 runtime mutants, 7 query mutants and 9 wiring mutants, and compiles the
 vendor backend syntax-only. In the fork,
 `python tests/check_rsx_deform_surface.py` compiles the production
-painter, mip row, sampler, shadow comparison and dump, and rejects 23
+painter, mip row, sampler, shadow comparison and dump, and rejects 24
 mutants. `python scripts/check_deformation_query.py` passes with the new
 header.
 
