@@ -74,6 +74,7 @@ that invocation. Move previous outputs aside before regenerating.
 Additional scripts accept explicit inputs/outputs; inspect `--help`:
 
 - `scripts/spu/lift_ms1_jobmods.py`: original job-module extraction/lifting; retain unique IDs and staged span identity.
+- `scripts/spu/lift_coverage.py report --tree TREE --jobmods DIR --check` checks static branch targets in the ten debug-US job modules. Use `diff OLD NEW --check` to detect changed or removed function bodies. A coverage pass is not a replay result. Keep the selected tree until the replacement passes replay.
 - `scripts/spu/lift_flash_codec_at_base.py --elf INPUT --base BASE --prefix NAME --code-end END --out OUTPUT`: observed link-base codec lift, fixed-low-LS extern restoration; `--module-lift` is the separate module-relative form.
 - `scripts/spu/lift_ms1_debug_dsp.py --dump INPUT --trees OUTPUT_TREE[,OUTPUT_TREE]`: capture-based reconstruction; trees need existing target-specific workload files. Observed bases/content provenance remain necessary.
 - `scripts/analysis/debug_elf_functions.py ELF --out OUTPUT`: executable function bounds, rejects empty/overlapping spans.
