@@ -281,14 +281,22 @@ The hook writes one line to `native.err` at boot, before the first race frame:
 `[HAVOK_THREADS] game=<n> set=<n> workers=<n>`. `game` is the count of the game.
 `set` is the request. `workers` is the count that the guest started. Each worker
 takes 1,500,016 bytes from the Havok heap of 17,039,360 bytes. Two workers take
-17.6 % of the heap. Four workers take 35.2 %. The peak heap use in a race is not
-measured. Start with 4 workers. If a race does not load with more workers, the
-Havok heap is the first suspect.
+17.6 % of the heap. Four workers take 35.2 %.
+
+Measured result (exe `8856e66571f07c3e`, diagnostic arms): keep the game count
+of two workers.
+
+- Three workers (`--havok-threads 3`, run `20261124T050935`): the race loads.
+  The game stops presenting frames after about 170 s. At 340 s the three Havok
+  threads and five `spu_async` threads each use 99 % of one core, and the main
+  thread is idle. The cause is not known.
+- Four workers (`--havok-threads 4`, run `20261124T050653`): the game stops at
+  race load after 70 s with `MsHavokAllocator out of memory trying to
+  allocate 8320 bytes`, then `sys_process_exit(code=0)`.
 
 The hook does not change the step order, the substeps, or the stack size of a
 thread (256 KiB). `python scripts/check_havok_threads.py` checks the launcher
-lines, the registration, the hook and the lifted body. No run with more than two
-workers is measured at the time of writing.
+lines, the registration, the hook and the lifted body.
 
 ## Capture discipline
 
