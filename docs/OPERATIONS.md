@@ -561,6 +561,20 @@ marker waits do not come from the coordinator wake-up
 ([#327](https://github.com/robbe1912/motorstorm-mv-recomp/issues/327)).
 Game-free coverage: [check_spurs_notify_wait.py](../scripts/check_spurs_notify_wait.py).
 
+`--spurs-lanes N` (default `0`) sets `SPURS_LANES=N` with `N` from 1 to 6. It
+replaces the lane count that the game requests for each SPURS instance (5 in
+a race). Each lane is one host worker thread. The instance and
+`cellSpursGetInfo` report the effective count. The log line of the
+initialization shows both counts: `nSpus=6 requested=5`. Without the option
+the launcher clears an inherited value, because it does not clear the
+`SPURS_` prefix. The launch record names the key. More lanes shorten a marker
+wait only when jobs are ready and no lane is free. In a race, the first
+marker wait of the vehicle jobs has no free lane for 8.1 ms per frame while
+particle jobs hold the lanes
+([#327](https://github.com/robbe1912/motorstorm-mv-recomp/issues/327)).
+Measured result: none. No run yet. Game-free coverage:
+[check_spurs_lane_count.py](../scripts/check_spurs_lane_count.py).
+
 `--rsx-switch KEY=VALUE` (repeatable) sets one `RSX_*` switch of the runtime
 that has no launcher option. Use it for a diagnostic arm. The key must start
 with `RSX_` and must not be a key that the launcher sets. Without the option

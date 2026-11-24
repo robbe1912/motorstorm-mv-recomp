@@ -157,6 +157,25 @@ Checks: the vendor backend compiles syntax-only. No authored check yet.
 
 Measured result: none. No run yet.
 
+## SPURS lane count override (#327)
+
+Fork branch `codex/spurs-lane-count` on `combined` `79e7bb4c`: `d3067667`
+(code), `e8dcbfda` (check). Game `9c978b4008`, `91ed55ecd3`. The launcher
+lines of `--spurs-lanes` and their three tests are in `8078679`, committed
+together with the Havok thread switch. Default off.
+
+`SPURS_LANES=N` with `N` in 1..6 replaces the lane count that the game
+requests. `spurs_initialize_common` applies it after its validity check and
+writes the effective count to the instance. The log line of the
+initialization shows `nSpus=<effective> requested=<game>`.
+
+Checks: `python tests/check_spurs_lane_count.py` in the fork rejects 6 header
+mutants and 6 source mutants. `python scripts/check_spurs_lane_count.py` here
+rejects 6 header, 6 source and 5 launcher mutants, and compiles `cellSpurs.c`
+syntax-only. Both pass.
+
+Measured result: none. No run yet.
+
 ## Image-scoped native job admission (#219)
 
 The existing fork carries the selector on `codex/native-owned-image-scope`
