@@ -580,7 +580,11 @@ wait only when jobs are ready and no lane is free. In a race, the first
 marker wait of the vehicle jobs has no free lane for 8.1 ms per frame while
 particle jobs hold the lanes
 ([#327](https://github.com/robbe1912/motorstorm-mv-recomp/issues/327)).
-Measured result: none. No run yet. Game-free coverage:
+Measured result: no clear gain. Clean runs with the CPU deformation buffer on:
+median dt 97.9, 100.1 and 91.6 ms in the windows 200, 300 and 390 s with six
+lanes (`20261124T094720`), against 98.6, 98.9 and 96.1 ms with five lanes
+(`20261124T065827`). The differences are within the run-to-run spread of about
+3 ms. Game-free coverage:
 [check_spurs_lane_count.py](../scripts/check_spurs_lane_count.py).
 
 `--spurs-wait-priority 0|1` (default `0`) selects `SPURS_WAIT_PRIORITY=1`.
