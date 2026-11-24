@@ -29,6 +29,7 @@ RECORD_GET = "/* Renderer thread. The record of the target of dr."
 SAMPLE = "int rsx_deform_sample(uint32_t address, const uint32_t offsets[4], unsigned char out[4])"
 WHEEL_STATICS = "static _Atomic u64 s_deform_wheel_frame, s_deform_wheel_frames;"
 WHEEL = "void rsx_deform_wheel_log(uint32_t address, uint32_t offset, const char* level,"
+TIME = "static double deform_time_ms(void)"
 DEFORM_INIT = "static void rsx_deform_init(void)"
 BATCH = "static void rsx_deform_batch_end(void)"
 BLOCK_START = "    patch = {{}, plan.x_fraction, plan.y_fraction};"
@@ -133,6 +134,8 @@ typedef uint64_t u64;
 
 uint8_t* vm_base;
 static struct { u64 frame_count; } s_d3d;
+static double s_now = 10.0005;   /* seconds of the performance clock */
+static double perf_now(void) { return s_now; }
 static char log_text[8192];
 static int test_fprintf(FILE* file, const char* format, ...);
 #define fprintf test_fprintf
@@ -264,15 +267,19 @@ int main(void)
     CHECK(rsx_deform_sequence() == 0 && rsx_deform_true_size(0x00A80500) == 1);
     CHECK(rsx_deform_sample(BASE, bottom, out) == 4);
     CHECK(out[0] == 0x5A && out[1] == 0x5A && out[2] == 0xC3 && out[3] == 0xC3);
+    rsx_deform_wheel_log(BASE, 0, "point", out, other);
+    CHECK(log_text[0] == 0);      /* no compare found painted texels yet */
+    atomic_store(&s->compared, 1);
     for (u64 frame = 0; frame < 6; frame++) {
         s_d3d.frame_count = 10 + frame;
         for (int read = 0; read < 5; read++) rsx_deform_wheel_log(BASE, 3 * PITCH + 5, "bilinear", out, other);
     }
-    CHECK(strstr(log_text, "[DEFORM_WHEEL] frame=10 x=5 y=3 level=bilinear cpu=5A5AC3C3 gpu=01020304\n") == log_text);
+    CHECK(strstr(log_text, "[DEFORM_WHEEL] frame=10 x=5 y=3 level=bilinear cpu=5A5AC3C3 gpu=01020304 t_ms=10000.500\n")
+          == log_text);
     int lines = 0;
     for (const char* p = log_text; (p = strchr(p, '\n')) != NULL; p++) lines++;
     CHECK(lines == 15);
-    printf("PASS shadow mode: GPU read paths kept, private copy sampled, wheel line bounded\n");
+    printf("PASS shadow mode: GPU read paths kept, private copy sampled, wheel line bounded, timed, after a compare\n");
     return 0;
 }
 '''
@@ -458,8 +465,11 @@ RUNTIME_MUTANTS = [
      "    if (atomic_load_explicit(&s_deform_wheel_frames, memory_order_relaxed) > s_deform.log_frames) return;",
      "    if (atomic_load_explicit(&s_deform_wheel_frames, memory_order_relaxed) > 1000000) return;"),
     ("first-call-reads-off", "            st = s_deform.any ? 2 : 0;\n", ""),
-    ("wheel-line-swaps-x-and-y", "pitch ? offset % pitch : 0, pitch ? offset / pitch : 0,",
-     "pitch ? offset / pitch : 0, pitch ? offset % pitch : 0,"),
+    ("wheel-line-swaps-x-and-y", "(unsigned long long)frame, offset % pitch, offset / pitch,",
+     "(unsigned long long)frame, offset / pitch, offset % pitch,"),
+    ("time-in-seconds", "    return perf_now() * 1000.0;", "    return perf_now();"),
+    ("wheel-before-compare", "if (!s || !atomic_load_explicit(&s->compared, memory_order_relaxed)) return;",
+     "if (!s) return;"),
 ]
 QUERY_MUTANTS = [
     ("cpu-path-ignored", CPU_BRANCH, "    if (false) {"),
@@ -496,14 +506,14 @@ WIRING_MUTANTS = [
 def runtime_text(deform):
     """The production text of the runtime fixture: the limits, the pixel operations with the switches, the record
     lookup, and the two public read functions."""
-    for marker in (LIMITS, PIXEL, CAPTURE, RECORD, RECORD_GET, SAMPLE, WHEEL_STATICS, WHEEL):
+    for marker in (LIMITS, PIXEL, CAPTURE, RECORD, RECORD_GET, SAMPLE, WHEEL_STATICS, TIME, WHEEL):
         assert deform.count(marker) == 1, marker
     statics = deform[deform.index(WHEEL_STATICS):deform.index("\n", deform.index(WHEEL_STATICS))]
     return "\n\n".join([
         deform[deform.index(LIMITS):deform.index(PIXEL)],
         deform[deform.index(PIXEL):deform.rindex("/*", 0, deform.index(CAPTURE))],
         deform[deform.index(RECORD):deform.index(RECORD_GET)],
-        statics, function(deform, SAMPLE), function(deform, WHEEL)])
+        statics, function(deform, TIME), function(deform, SAMPLE), function(deform, WHEEL)])
 
 
 def main():
