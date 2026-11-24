@@ -916,9 +916,12 @@ its overhead measurement remain pending.
 
 ## SPU job dump
 
-`SPU_JOB_DUMP=<image>:<entry>[:<max jobs>[:<every n-th job>]]:<directory>`
-writes the input files of the oracle for a native port of one SPU job. Set
-it for one run. The dump is off by default.
+`--job-dump <image>:<entry>[:<max jobs>[:<every n-th job>]]:<directory>`
+sets `SPU_JOB_DUMP` of the runtime. The launcher removes each inherited
+`SPU_` key, so an environment variable alone does not reach the game. The
+directory must be inside `temp/` of the worktree. One run with the dump
+writes the input files of the oracle for a native port of one SPU job. The
+dump is off by default.
 
 - `image` is the id of the job module image. `entry` is the local store
   address of the job entry, decimal or `0x` hex. `210:0x16270` is the PVS job.
@@ -937,10 +940,12 @@ it for one run. The dump is off by default.
   record.
 - The dump costs memory and disk time per job. Do not time a run with the
   dump.
-- An invalid value ends the process with exit code 2. The log holds the
-  message `SPU_JOB_DUMP must be`.
+- The launcher rejects a malformed value and a directory outside `temp/`
+  before it starts the game. An invalid value that reaches the runtime ends
+  the process with exit code 2. The log holds the message
+  `SPU_JOB_DUMP must be`. The launch record names the switch.
 
-Example for the PVS job: `SPU_JOB_DUMP=210:0x16270:64:1:E:/captures/pvs`.
+Example for the PVS job: `--job-dump 210:0x16270:64:1:E:/<worktree>/temp/jobdump/pvs`.
 `python scripts/spu_job_dump.py <directory>` prints one line per job. Add
 `--dma` for the DMA records. The check is
 [check_spu_job_dump.py](../scripts/check_spu_job_dump.py).

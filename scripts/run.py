@@ -26,6 +26,19 @@ SURFACE_PREFETCH='01A80500,00A80500,02A30480'
 # MotorStorm race surface whose writes --eager-surface-submit 1 submits at once (HDR exposure target).
 SURFACE_EAGER='02A30480'
 
+def job_dump_directory(value):
+    """Directory of <image>:<entry>[:<max jobs>[:<every n-th job>]]:<directory>, the value of SPU_JOB_DUMP.
+    None when the value is malformed."""
+    fields=value.split(':')
+    if len(fields)<3 or not fields[0].isdigit() or int(fields[0])==0: return None
+    entry=fields[1][2:] if fields[1].lower().startswith('0x') else ''
+    if not entry or any(c not in '0123456789abcdefABCDEF' for c in entry): return None
+    i=2
+    while i<len(fields)-1 and i<4 and fields[i].isdigit() and int(fields[i]): i+=1
+    if i<len(fields)-1 and i<4 and fields[i].isdigit(): return None
+    directory=':'.join(fields[i:])
+    return directory or None
+
 def main():
     ap=argparse.ArgumentParser(description=__doc__); ap.add_argument('--seconds',type=int,default=600)
     ap.add_argument('--executable',type=Path,help='Executable with its adjacent build_identity.json')
@@ -92,9 +105,15 @@ def main():
     ap.add_argument('--pm-native-services',action='store_true',help='Run the job manager services native jobs call (registered in src/motorstorm/spu_pm_services.cpp) compiled while their LS text is pristine; requires --native-owned-jobs')
     ap.add_argument('--min-free-physical-gib',type=physical_reserve,default=4,help='Host free physical RAM reserve, 1..4 GiB (default 4); lower explicitly for concurrent host work')
     ap.add_argument('--havok-threads',type=int,default=0,help='Havok PPU worker threads for the physics step: 0 keeps the game count (2), 1..6; above 0 requires a matching --havok-threads build')
+    ap.add_argument('--job-dump',metavar='IMAGE:ENTRY[:MAX[:EVERY]]:DIR',help='Diagnostic: SPU_JOB_DUMP of the runtime, a dump of jobs that enter ENTRY of image IMAGE (at most MAX jobs, 64 by default; EVERY n-th job) into DIR inside this worktree temp directory; slows SPU threads, do not time that run')
     args=ap.parse_args()
     if args.profile_renderer_draws and not args.profile_renderer:
         ap.error('--profile-renderer-draws requires --profile-renderer')
+    if args.job_dump is not None:
+        job_dump_dir=job_dump_directory(args.job_dump)
+        if job_dump_dir is None: raise SystemExit('--job-dump takes <image>:<entry>[:<max jobs>[:<every n-th job>]]:<directory> with a decimal image above 0, a 0x entry and two optional numbers above 0: '+args.job_dump)
+        try: Path(job_dump_dir).resolve().relative_to((ROOT/'temp').resolve())
+        except ValueError: raise SystemExit('--job-dump directory escapes this worktree temp directory; no process launched')
     if args.job_capture_execution_pc and (not args.capture_jobs or
             len(args.job_capture_execution_pc) > 32 or
             any(pc < 0 or pc > 0x3fffc or pc % 4 for pc in args.job_capture_execution_pc)):
@@ -208,6 +227,7 @@ def main():
     if args.native_owned_image is not None:
         env['SPU_NATIVE_OWNED_IMAGE'] = str(args.native_owned_image)
     if args.jobmod_header_fnv:env['SPU_JOBMOD_HEADER_FNV']='1'
+    if args.job_dump is not None: env['SPU_JOB_DUMP']=args.job_dump
     if args.pm_native_services:env['SPU_PM_NATIVE_SVC']='1'
     env['PS3_KEYS_FILE']=str(c.get('keys',ROOT/'game/private_keys')/'keys.json')
     if args.trace_task_lifecycle:
@@ -304,6 +324,7 @@ def main():
     if 'PPU_WAIT_PROFILE' in env:record['environment']['PPU_WAIT_PROFILE']=env['PPU_WAIT_PROFILE']
     if 'PPU_WAIT_PROFILE_MIN_US' in env:record['environment']['PPU_WAIT_PROFILE_MIN_US']=env['PPU_WAIT_PROFILE_MIN_US']
     if 'PPU_FM_SPINDET' in env:record['environment']['PPU_FM_SPINDET']=env['PPU_FM_SPINDET']
+    if 'SPU_JOB_DUMP' in env:record['environment']['SPU_JOB_DUMP']=env['SPU_JOB_DUMP']
     record['resource_limits']=resource_policy
     record['resource_breach']=None
     record['launcher_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()

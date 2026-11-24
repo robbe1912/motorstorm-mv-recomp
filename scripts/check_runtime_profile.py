@@ -273,6 +273,25 @@ class ExecutionProfileTests(unittest.TestCase):
         self.assertEqual(env.get('SPU_JOBMOD_DISPATCH_LOG'), '1')
         self.assertEqual(record['environment'].get('SPU_JOBMOD_DISPATCH_LOG'), '1')
 
+    def test_job_dump_default_clears_inherited_selection(self):
+        with patch.dict(os.environ, {'SPU_JOB_DUMP': '210:0x16270:96:' + str(self.root / 'temp/jobdump')}):
+            record, env = self.launch()
+        self.assertNotIn('SPU_JOB_DUMP', env)
+        self.assertNotIn('SPU_JOB_DUMP', record['environment'])
+
+    def test_job_dump_selection_is_recorded(self):
+        value = '210:0x16270:96:1:' + str(self.root / 'temp/jobdump/pvs')
+        record, env = self.launch('--job-dump', value)
+        self.assertEqual(env.get('SPU_JOB_DUMP'), value)
+        self.assertEqual(record['environment'].get('SPU_JOB_DUMP'), value)
+
+    def test_job_dump_rejects_malformed_and_escaping_values(self):
+        self.rejected('--job-dump takes', '--job-dump', 'pvs')
+        self.rejected('--job-dump takes', '--job-dump', '0:0x16270:96:' + str(self.root / 'temp/jobdump'))
+        self.rejected('--job-dump takes', '--job-dump', '210:16270:' + str(self.root / 'temp/jobdump'))
+        self.rejected('--job-dump takes', '--job-dump', '210:0x16270:0:' + str(self.root / 'temp/jobdump'))
+        self.rejected('escapes this worktree temp directory', '--job-dump', '210:0x16270:96:' + str(self.root.parent / 'jobdump-outside'))
+
     def check_surface_prefetch(self, mode):
         with patch.dict(os.environ, {'RSX_CPU_SURFACE_PREFETCH': 'inherited'}):
             record, env = self.launch('--surface-prefetch', mode)
