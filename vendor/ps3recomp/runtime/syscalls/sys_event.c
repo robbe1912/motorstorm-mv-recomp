@@ -3,6 +3,7 @@
  */
 
 #include "sys_event.h"
+#include "ppu_wait_profile.h"
 #include "../ps3_log.h"
 #include "sys_timer.h"             /* lv2_usec_deadline: sub-ms timed waits */
 #include "../memory/vm.h"
@@ -613,7 +614,7 @@ static int64_t sys_event_queue_receive_untraced(ppu_context* ctx)
 
     return CELL_OK;
 }
-int64_t sys_event_queue_receive(ppu_context* ctx)
+static int64_t sys_event_queue_receive_impl(ppu_context* ctx)
 {
     if (!loadtime_on()) return sys_event_queue_receive_untraced(ctx);
     const unsigned long long start = loadtime_us();
@@ -627,6 +628,15 @@ int64_t sys_event_queue_receive(ppu_context* ctx)
         snprintf(detail,sizeof detail,"start_us=%llu end_us=%llu dur_us=%llu result=%lld timeout=%llu guest_tid=%llu",start,end,end-start,(long long)result,requested,(unsigned long long)ctx->thread_id);
         loadtime_event("wait_event_end",detail);
     }
+    return result;
+}
+
+/* Profiled entry: one PPU_WAIT_PROFILE line per call (see ppu_wait_profile.h). */
+int64_t sys_event_queue_receive(ppu_context* ctx)
+{
+    PPU_WAIT_PROFILE_BEGIN(ctx, "event_queue_receive", LV2_ARG_U32(ctx, 0));
+    int64_t result = sys_event_queue_receive_impl(ctx);
+    ppu_wait_profile_end();
     return result;
 }
 
@@ -1154,7 +1164,7 @@ static int flag_check(uint64_t pattern, uint64_t bitpat, uint32_t mode)
  * r6 = pointer to receive result pattern (u64*)
  * r7 = timeout_usec (0 = infinite)
  * -----------------------------------------------------------------------*/
-int64_t sys_event_flag_wait(ppu_context* ctx)
+static int64_t sys_event_flag_wait_impl(ppu_context* ctx)
 {
     uint32_t flag_id    = LV2_ARG_U32(ctx, 0);
     uint64_t bitpat     = LV2_ARG_U64(ctx, 1);
@@ -1361,6 +1371,15 @@ int64_t sys_event_flag_wait(ppu_context* ctx)
     ppu_thread_wait_end(ctx);
 
     return CELL_OK;
+}
+
+/* Profiled entry: one PPU_WAIT_PROFILE line per call (see ppu_wait_profile.h). */
+int64_t sys_event_flag_wait(ppu_context* ctx)
+{
+    PPU_WAIT_PROFILE_BEGIN(ctx, "event_flag_wait", LV2_ARG_U32(ctx, 0));
+    int64_t result = sys_event_flag_wait_impl(ctx);
+    ppu_wait_profile_end();
+    return result;
 }
 
 int64_t sys_event_flag_trywait(ppu_context* ctx)

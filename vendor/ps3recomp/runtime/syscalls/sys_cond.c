@@ -6,6 +6,7 @@
  * guest mutex, and a later waiter cannot steal an earlier waiter's wakeup.
  */
 #include "sys_cond.h"
+#include "ppu_wait_profile.h"
 #include "../memory/vm.h"
 #include <string.h>
 #include <time.h>
@@ -164,7 +165,7 @@ int64_t sys_cond_destroy(ppu_context* ctx)
     return result;
 }
 
-int64_t sys_cond_wait(ppu_context* ctx)
+static int64_t sys_cond_wait_impl(ppu_context* ctx)
 {
     /* Firmware ABI (2 args): sys_cond_wait(cond_id r3, timeout_usec r4);
      * r4=0 means wait forever. There is no mutex argument -- the cond's
@@ -288,6 +289,15 @@ int64_t sys_cond_wait(ppu_context* ctx)
               fprintf(stderr, "[CWENTRY] tid=1 cond=%u ret=%lld\n",
                       LV2_ARG_U32(ctx, 0), (long long)result);
       } }
+    return result;
+}
+
+/* Profiled entry: one PPU_WAIT_PROFILE line per call (see ppu_wait_profile.h). */
+int64_t sys_cond_wait(ppu_context* ctx)
+{
+    PPU_WAIT_PROFILE_BEGIN(ctx, "cond_wait", LV2_ARG_U32(ctx, 0));
+    int64_t result = sys_cond_wait_impl(ctx);
+    ppu_wait_profile_end();
     return result;
 }
 
