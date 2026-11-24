@@ -513,6 +513,26 @@ readback of a row is ready at the start of the next batch, and the timestamps
 add overhead. Game-free coverage:
 [check_rsx_draw_profile.py](../scripts/check_rsx_draw_profile.py).
 
+`--spurs-kernel-notify 0|1` (default `0`) selects `SPURS_KERNEL_NOTIFY=1`.
+The SPURS coordinator thread looks for new job demand once per period. With
+the switch off, each period is a `Sleep(1)` call. With the switch on, the
+coordinator waits on a condition variable with the same period as its
+timeout, and the HLE calls that publish job demand or return a lane wake it
+at once. Stores of the guest code into the ready counts are not seen at
+once; the timed pass finds them. The default clears an inherited value, and
+the launch record names the selection. The switch changes no job order.
+Measured in a race with lifted jobs: no change (5.92 against 5.83 presents
+per second, median frame 165.6 against 165.8 ms; run `20261123T234752.038668Z`
+against `20261123T231436.539891Z`). The marker waits do not come from the
+coordinator wake-up ([#327](https://github.com/robbe1912/motorstorm-mv-recomp/issues/327)).
+
+`--rsx-switch KEY=VALUE` (repeatable) sets one `RSX_*` switch of the runtime
+that has no launcher option. Use it for a diagnostic arm. The key must start
+with `RSX_` and must not be a key that the launcher sets. Without the option
+the launcher clears every inherited `RSX_*` key. The launch record names each
+switch. Example: `--profile-renderer --rsx-switch RSX_DEFORM_CAPTURE=1
+--rsx-switch RSX_DEFORM_TARGETS=00A80500`.
+
 Use identical cache targets, validation and profiling settings for comparisons.
 Retention validates every uploaded face with full XXH3; the reference retains
 its sparse source checksum. Complete hashing has a measurable cost. Verify the
