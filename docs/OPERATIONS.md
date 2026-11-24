@@ -582,6 +582,20 @@ the launcher clears every inherited `RSX_*` key. The launch record names each
 switch. Example: `--profile-renderer --rsx-switch RSX_DEFORM_CAPTURE=1
 --rsx-switch RSX_DEFORM_TARGETS=00A80500`.
 
+The CPU deformation buffer
+([#346](https://github.com/robbe1912/motorstorm-mv-recomp/issues/346)) has
+three run modes. Each needs `--rsx-switch RSX_DEFORM_TARGETS=00A80500`.
+Capture writes the paint draws to `rsx_deform_draws.txt`: add
+`--profile-renderer` and `RSX_DEFORM_CAPTURE=1`. On removes the GPU reads of
+the game: add `RSX_DEFORM_BUFFER=1`. The `cpu=` count of
+`[native-depth-query]` grows with each read from the buffer. Shadow is the
+proof of the mode on: add `RSX_DEFORM_BUFFER=1` and `RSX_DEFORM_SHADOW=1`.
+The game still reads the GPU bytes. A `[DEFORM_SHADOW]` line compares the
+painted columns with the GPU bytes once a frame. A `[DEFORM_WHEEL]` line
+holds the four bytes of one depth read from the CPU copy and from the GPU.
+The shadow lines stop after `RSX_DEFORM_LOG` frames (300). Without the
+switches the runtime takes the GPU path.
+
 `--fastmem-spin-detector 0|1` controls the spin detector of the PPU fast
 memory reads. The default `1` keeps the detector on. The value `0` sets
 `PPU_FM_SPINDET=0` and the launch record names the key. Without the option

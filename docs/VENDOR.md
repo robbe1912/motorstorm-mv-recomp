@@ -157,6 +157,40 @@ Checks: the vendor backend compiles syntax-only. No authored check yet.
 
 Measured result: none. No run yet.
 
+## CPU deformation buffer (#346)
+
+Fork branch `codex/frame60-deform-cpu-buffer` on the branch of PR #9:
+`d912c3c6` (buffer), `d4704cf7` (fix: the B8 brush), `5843b0fd` (shadow
+comparison, header, fork document), `0bc3ac59` (fix: switches on the first
+call), `c7b58208` (fork test). Game `6638e69c9d`, `e6abdbbeb2`,
+`039a251ddf`, `ee1dfd3fff`. Off by default.
+
+`RSX_DEFORM_BUFFER=1` with `RSX_DEFORM_TARGETS=<offset,...>` keeps level
+0 of each listed surface in host memory. The painter replays each paint
+draw at record time: the vertex stream, the brush, the pixel operation
+`fp16(saturate(fp16(brush - 0.25) * colour.x + dest))` and row 0 of level
+1. The reads of the game then take their bytes from host memory. There is
+no copy of the surface and no wait for a recorded draw. The GPU keeps the
+paint draws. The native depth query of the game takes its four bytes
+through `rsx_deform_sample` in `libs/video/rsx_deform_surface.h`.
+
+`RSX_DEFORM_SHADOW=1` with the buffer is the proof. The runtime paints a
+private copy per pixel operation and compares the painted columns with
+the GPU bytes after a submitted batch. `RSX_DEFORM_OP=<name>` selects
+the operation: `fp16` (default), `fused`, `f32`. `RSX_DEFORM_LOG=<frames>`
+(300) bounds the shadow lines. The run modes are in
+[operations](OPERATIONS.md).
+
+Checks: `python scripts/check_deform_cpu_buffer.py` passes. It compiles
+the production switch code and the read block of the query, rejects 13
+runtime mutants, 7 query mutants and 9 wiring mutants, and compiles the
+vendor backend syntax-only. In the fork,
+`python tests/check_rsx_deform_surface.py` compiles the production
+painter, mip row, sampler and shadow comparison, and rejects 18 mutants.
+`python scripts/check_deformation_query.py` passes with the new header.
+
+Measured result: none. No run yet.
+
 ## SPURS lane count override (#327)
 
 Fork branch `codex/spurs-lane-count` on `combined` `79e7bb4c`: `d3067667`
