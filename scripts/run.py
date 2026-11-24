@@ -294,6 +294,7 @@ def main():
     if 'SPURS_KERNEL_NOTIFY' in env:record['environment']['SPURS_KERNEL_NOTIFY']=env['SPURS_KERNEL_NOTIFY']
     if 'SPURS_LANES' in env:record['environment']['SPURS_LANES']=env['SPURS_LANES']
     if 'PPU_WAIT_PROFILE' in env:record['environment']['PPU_WAIT_PROFILE']=env['PPU_WAIT_PROFILE']
+    if 'PPU_WAIT_PROFILE_MIN_US' in env:record['environment']['PPU_WAIT_PROFILE_MIN_US']=env['PPU_WAIT_PROFILE_MIN_US']
     if 'PPU_FM_SPINDET' in env:record['environment']['PPU_FM_SPINDET']=env['PPU_FM_SPINDET']
     record['resource_limits']=resource_policy
     record['resource_breach']=None

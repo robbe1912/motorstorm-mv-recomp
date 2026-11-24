@@ -26,7 +26,9 @@ ARGUMENT = "ap.add_argument('--profile-ppu-waits',action='store_true',"
 POP = "env.pop('PPU_WAIT_PROFILE',None)"
 SET = "if args.profile_ppu_waits:env['PPU_WAIT_PROFILE']='1'"
 RECORD = "if 'PPU_WAIT_PROFILE' in env:record['environment']['PPU_WAIT_PROFILE']=env['PPU_WAIT_PROFILE']"
+MIN_RECORD = "if 'PPU_WAIT_PROFILE_MIN_US' in env:record['environment']['PPU_WAIT_PROFILE_MIN_US']=env['PPU_WAIT_PROFILE_MIN_US']"
 FLAG = "record['profile_ppu_waits']=args.profile_ppu_waits"
+MIN_SWITCH = "PPU_WAIT_PROFILE_MIN_US"
 HOOKS = {
     "sys_cond.c": ("sys_cond_wait", "cond_wait"),
     "sys_semaphore.c": (None, "semaphore_wait"),
@@ -117,6 +119,12 @@ HEADER_MUTANTS = [
     ("call-site-lost", "    t_ppu_wait_profile.lr = lr;", "    t_ppu_wait_profile.lr = 0;"),
     ("nested-begin-ignored", "    if (!ppu_wait_profile_on()) {",
      "    if (!ppu_wait_profile_on() || t_ppu_wait_profile.active) {"),
+    ("min-ignored", "if (finished - t_ppu_wait_profile.start < ppu_wait_profile_min_ticks())", "if (0)"),
+    ("min-default-zero", "unsigned long long us = 1000;", "unsigned long long us = 0;"),
+    ("min-switch-ignored", "        if (value && value[0])\n            us = strtoull(value, 0, 10);",
+     "        if (0)\n            us = strtoull(value, 0, 10);"),
+    ("min-long-wait-dropped", "min_ticks = us * ppu_wait_profile_frequency() / 1000000ull;",
+     "min_ticks = us * ppu_wait_profile_frequency();"),
 ]
 
 
@@ -132,9 +140,9 @@ def wrapper_pattern(wrapped, kind):
 
 def audit(sources, launcher):
     """`sources` maps the four syscall file names to their text."""
-    for text in (ARGUMENT, POP, SET, RECORD, FLAG):
+    for text in (ARGUMENT, POP, SET, RECORD, MIN_RECORD, FLAG):
         assert launcher.count(text) == 1, "the launcher has one line: " + text
-    assert launcher.index(POP) < launcher.index(SET) < launcher.index(RECORD), "the launcher clears, sets, records"
+    assert launcher.index(POP) < launcher.index(SET) < launcher.index(RECORD) <= launcher.index(MIN_RECORD), "the launcher clears, sets, records"
     hooks = dict(HOOKS)
     hooks["sys_event.c"] = [HOOKS["sys_event.c"], EVENT_FLAG]
     for name, entries in hooks.items():
@@ -163,11 +171,14 @@ def build(environment, work, header):
     return exe
 
 
-def run(exe, mode, switch, environment):
+def run(exe, mode, switch, environment, min_us=None):
     env = dict(environment)
     env.pop(SWITCH, None)
+    env.pop(MIN_SWITCH, None)
     if switch is not None:
         env[SWITCH] = switch
+    if min_us is not None:
+        env[MIN_SWITCH] = min_us
     result = subprocess.run([str(exe), mode], capture_output=True, text=True, env=env, timeout=30)
     lines = result.stderr.splitlines()
     records = [dict(re.findall(r"(\w+)=(\w+)", line)) for line in lines
@@ -182,10 +193,15 @@ def seconds(record):
 
 def verify(exe, environment):
     for name, switch in (("off", None), ("zero", "0"), ("word", "yes")):
-        result, records, other = run(exe, "on", switch, environment)
-        assert result.returncode == 0 and result.stdout.strip() == "brackets=1", (name, result.stdout, result.stderr)
-        assert not records and not other, (name + ": the default run writes no line", records, other)
+        for mode in ("on", "sleep"):
+            result, records, other = run(exe, mode, switch, environment)
+            assert result.returncode == 0 and result.stdout.strip() == "brackets=1", (name, result.stdout, result.stderr)
+            assert not records and not other, (name + ": the default run writes no line", records, other)
+    # The default threshold is 1000 us: a wait that returns at once writes no line.
     result, records, other = run(exe, "on", "1", environment)
+    assert result.returncode == 0 and result.stdout.strip() == "brackets=1" and not other, (result.stdout, result.stderr)
+    assert not records, ("a short wait writes no line", records)
+    result, records, other = run(exe, "on", "1", environment, "0")
     assert result.returncode == 0 and not other and len(records) == 1, (result.stdout, result.stderr, records)
     record = records[0]
     assert (record["tid"], record["kind"], record["id"], record["lr"]) == ("7", "cond_wait", "3", "00ABCDEF"), record
@@ -193,7 +209,7 @@ def verify(exe, environment):
     result, records, other = run(exe, "sleep", "1", environment)
     assert result.returncode == 0 and not other and len(records) == 1, (result.stdout, result.stderr, records)
     assert records[0]["kind"] == "cond_wait" and 0.030 <= seconds(records[0]) < 2.0, records[0]
-    result, records, other = run(exe, "nested", "1", environment)
+    result, records, other = run(exe, "nested", "1", environment, "0")
     assert result.returncode == 0 and not other and len(records) == 1, (result.stdout, result.stderr, records)
     assert (records[0]["kind"], records[0]["id"]) == ("mutex_lock", "9"), records[0]
 
@@ -217,7 +233,7 @@ def main():
     sources = {name: (args.vendor / name).read_text() for name in HOOKS}
     header = (args.vendor / "ppu_wait_profile.h").read_text()
     audit(sources, launcher)
-    mutants = [launcher.replace(line, "", 1) for line in (ARGUMENT, POP, SET, RECORD, FLAG)]
+    mutants = [launcher.replace(line, "", 1) for line in (ARGUMENT, POP, SET, RECORD, MIN_RECORD, FLAG)]
     mutants.append(launcher.replace("if args.profile_ppu_waits:", "if True:", 1))
     for name in sources:
         source = sources[name]
@@ -260,7 +276,7 @@ def main():
     if os.name == "nt":
         for name in sources:
             syntax_only(environment, args.vendor / name)
-    print("PASS actual wait profile: default off, switch values, record fields, measured wait, nested begin, "
+    print("PASS actual wait profile: default off, switch values, default threshold, record fields, measured wait, nested begin, "
           "five entries, launcher, %d audit mutants, %d header mutants, syntax-only syscalls"
           % (len(mutants), count))
 
