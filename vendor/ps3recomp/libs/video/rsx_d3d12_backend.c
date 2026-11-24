@@ -4667,6 +4667,7 @@ static void vp_record_cb(u32 slot, int vs_idx, D3D12DrawRecord* dr)
  * one offset), which sidesteps guessing the surface's context DMA location. */
 #define CPU_SURFACE_CAPACITY s_d3d.off_rt_cap
 #include "rsx_cpu_surface.inc"
+#include "rsx_deform_surface.inc"
 
 #include "rsx_surface_samples.h"
 
@@ -7485,6 +7486,7 @@ static void record_surface_clear(u32 rt, u32 width, u32 height, const u32 mrt[3]
     dr->clear_flags = flags & 3u;
     dr->clear_z = depth;
     dr->clear_s = stencil;
+    rsx_deform_capture(dr, 0, 0, 0);
 }
 
 static void d3d12_clear(void* ud, u32 flags, u32 color, float depth, u8 stencil)
@@ -8459,6 +8461,7 @@ static void d3d12_draw_arrays(void* ud, u32 primitive, u32 first, u32 count)
                 dr->zeta_off = s_d3d.current_rsx_state
                     ? s_d3d.current_rsx_state->surface_zeta_offset : 0;
         cpu_surface_capture(dr);
+        rsx_deform_capture(dr, first, count, 0);
                 if (s_d3d.current_rsx_state) {
                     dr->vp_x = s_d3d.current_rsx_state->viewport_x;
                     dr->vp_y = s_d3d.current_rsx_state->viewport_y;
@@ -8578,6 +8581,7 @@ static void d3d12_draw_arrays(void* ud, u32 primitive, u32 first, u32 count)
             dr->zeta_off = s_d3d.current_rsx_state
                 ? s_d3d.current_rsx_state->surface_zeta_offset : 0;
         cpu_surface_capture(dr);
+        rsx_deform_capture(dr, first, count, 0);
             if (s_d3d.current_rsx_state) {
                 dr->vp_x = s_d3d.current_rsx_state->viewport_x;
                 dr->vp_y = s_d3d.current_rsx_state->viewport_y;
@@ -8717,6 +8721,7 @@ static void d3d12_draw_indexed(void* ud, u32 primitive, u32 first, u32 count)
         dr->zeta_off = s_d3d.current_rsx_state
             ? s_d3d.current_rsx_state->surface_zeta_offset : 0;
         cpu_surface_capture(dr);
+        rsx_deform_capture(dr, first, count, 1);
         if (s_d3d.current_rsx_state) {
             dr->vp_x = s_d3d.current_rsx_state->viewport_x;
             dr->vp_y = s_d3d.current_rsx_state->viewport_y;
