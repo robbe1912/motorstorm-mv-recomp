@@ -216,6 +216,31 @@ syntax-only. Both pass.
 
 Measured result: none. No run yet.
 
+## SPURS wait priority (#327)
+
+Fork branch `codex/spurs-wait-priority` on `combined` `79e7bb4c`: `a84237da`
+(code), `c90a4099` (check). Game `a0250241a0` carries the code. The check
+`scripts/check_spurs_wait_priority.py`, its fixture, the launcher lines of
+`--spurs-wait-priority`, their two tests and this section are in the commit
+that carries the check. Default off.
+
+`SPURS_WAIT_PRIORITY=1` gives a free lane first to the workload that a PPU
+thread waits on. The job wait adapter registers a callback with the runtime.
+The callback returns the job list address of the marker wait. The coordinator
+maps the address to the first workload of the instance with that data and
+tests that workload at the first position of the scan of each free lane. The
+admission checks do not change. The other workloads keep the order of the
+cursor. The coordinator prints `[SPURS_WAIT_PRIORITY] waits=N boosted_jobs=M`
+at most one line per second.
+
+Checks: `python tests/check_spurs_wait_priority.py` in the fork rejects 22
+header mutants and 10 source mutants. `python scripts/check_spurs_wait_priority.py`
+here rejects 22 header, 10 source, 7 adapter and 5 launcher mutants, and
+compiles `cellSpurs.c` syntax-only. `scripts/check_native_job_wait.py` passes
+with the changed adapter. Both pass.
+
+Measured result: none. No run yet.
+
 ## Image-scoped native job admission (#219)
 
 The existing fork carries the selector on `codex/native-owned-image-scope`

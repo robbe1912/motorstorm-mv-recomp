@@ -575,6 +575,22 @@ particle jobs hold the lanes
 Measured result: none. No run yet. Game-free coverage:
 [check_spurs_lane_count.py](../scripts/check_spurs_lane_count.py).
 
+`--spurs-wait-priority 0|1` (default `0`) selects `SPURS_WAIT_PRIORITY=1`.
+The SPURS coordinator gives each free lane to the first workload that passes
+its admission checks, from a round-robin cursor. With the switch on, the job
+wait adapter tells the runtime the job list address of each marker wait of
+the game. The coordinator tests the workload of that job list at the first
+position of the scan of each free lane. The admission checks do not change,
+so the other workloads run later. With the switch on, the coordinator prints
+`[SPURS_WAIT_PRIORITY] waits=N boosted_jobs=M` at most one line per second.
+Without the option the launcher clears an inherited value, because it does
+not clear the `SPURS_` prefix. The launch record names the key. In a race,
+the vehicle marker wait takes 28.6 ms per frame. The marker 15 wait holds
+245 particle records against 13.6 vehicle records
+([#327](https://github.com/robbe1912/motorstorm-mv-recomp/issues/327)).
+Measured result: none. No run yet. Game-free coverage:
+[check_spurs_wait_priority.py](../scripts/check_spurs_wait_priority.py).
+
 `--rsx-switch KEY=VALUE` (repeatable) sets one `RSX_*` switch of the runtime
 that has no launcher option. Use it for a diagnostic arm. The key must start
 with `RSX_` and must not be a key that the launcher sets. Without the option

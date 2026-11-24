@@ -345,6 +345,19 @@ class ExecutionProfileTests(unittest.TestCase):
         self.assertEqual(env.get('SPURS_KERNEL_NOTIFY'), expected)
         self.assertEqual(record['environment'].get('SPURS_KERNEL_NOTIFY'), expected)
 
+    def check_spurs_wait_priority(self, mode):
+        with patch.dict(os.environ, {'SPURS_WAIT_PRIORITY': '1'}):
+            record, env = self.launch('--spurs-wait-priority', mode)
+        expected = '1' if mode == '1' else None
+        self.assertEqual(env.get('SPURS_WAIT_PRIORITY'), expected)
+        self.assertEqual(record['environment'].get('SPURS_WAIT_PRIORITY'), expected)
+
+    def test_spurs_wait_priority_default_clears_inherited_switch(self):
+        self.check_spurs_wait_priority('0')
+
+    def test_spurs_wait_priority_enabled(self):
+        self.check_spurs_wait_priority('1')
+
     def test_spurs_kernel_notify_default_clears_inherited_switch(self):
         self.check_spurs_kernel_notify('0')
 
