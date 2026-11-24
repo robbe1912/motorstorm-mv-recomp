@@ -239,6 +239,12 @@ the first draw without texels, and the 60 compares took 15.1 s. So a
 shadow run needs 300 s. `t_ms` is on each shadow line since
 `537d1eaf59`.
 
+S5 (`20261124T134739.069671Z`, exe `c6aea3c150144769`, 300 s) compared 59
+frames in 18.6 s. Of 38630 painted texels, 32237 are equal (83.5 percent),
+4568 differ by one and 1825 by more than one (4.7 percent). The largest
+difference is 230 of 255. `fp16` and `fused` are equal at the same texels;
+`f32` is equal at 554 texels fewer. The cause of the 1825 texels is open.
+
 ## SPURS lane count override (#327)
 
 Fork branch `codex/spurs-lane-count` on `combined` `79e7bb4c`: `d3067667`
