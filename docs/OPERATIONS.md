@@ -617,8 +617,11 @@ proof of the mode on: add `RSX_DEFORM_BUFFER=1` and `RSX_DEFORM_SHADOW=1`.
 The game still reads the GPU bytes. A `[DEFORM_SHADOW]` line compares the
 painted columns with the GPU bytes once a frame. A `[DEFORM_WHEEL]` line
 holds the four bytes of one depth read from the CPU copy and from the GPU.
-The shadow lines stop after `RSX_DEFORM_LOG` frames (300). Without the
-switches the runtime takes the GPU path.
+The shadow lines stop after `RSX_DEFORM_LOG` frames (300).
+`RSX_DEFORM_DUMP=<frames>` writes the first frames with a difference to a
+file: `rsx_deform_dump.bin` next to `rsx_phases.csv` (`--profile-renderer`),
+else the file of `RSX_DEFORM_DUMP_FILE`. Without the switches the runtime
+takes the GPU path.
 
 `--fastmem-spin-detector 0|1` controls the spin detector of the PPU fast
 memory reads. The default `1` keeps the detector on. The value `0` sets

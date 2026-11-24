@@ -168,8 +168,10 @@ Measured result: none. No run yet.
 Fork branch `codex/frame60-deform-cpu-buffer` on the branch of PR #9:
 `d912c3c6` (buffer), `d4704cf7` (fix: the B8 brush), `5843b0fd` (shadow
 comparison, header, fork document), `0bc3ac59` (fix: switches on the first
-call), `c7b58208` (fork test). Game `6638e69c9d`, `e6abdbbeb2`,
-`039a251ddf`, `ee1dfd3fff`. Off by default.
+call), `c7b58208` (fork test), `65e5a82d` (fix: the private copies of the
+shadow mode start as guest memory; dump of the shadow frames). Game
+`6638e69c9d`, `e6abdbbeb2`, `039a251ddf`, `ee1dfd3fff`, `d906401bd0`. Off by
+default.
 
 `RSX_DEFORM_BUFFER=1` with `RSX_DEFORM_TARGETS=<offset,...>` keeps level
 0 of each listed surface in host memory. The painter replays each paint
@@ -184,7 +186,8 @@ through `rsx_deform_sample` in `libs/video/rsx_deform_surface.h`.
 private copy per pixel operation and compares the painted columns with
 the GPU bytes after a submitted batch. `RSX_DEFORM_OP=<name>` selects
 the operation: `fp16` (default), `fused`, `f32`. `RSX_DEFORM_LOG=<frames>`
-(300) bounds the shadow lines. The run modes are in
+(300) bounds the shadow lines. `RSX_DEFORM_DUMP=<frames>` writes the first
+frames with a difference to a file. The run modes are in
 [operations](OPERATIONS.md).
 
 Checks: `python scripts/check_deform_cpu_buffer.py` passes. It compiles
@@ -192,8 +195,9 @@ the production switch code and the read block of the query, rejects 13
 runtime mutants, 7 query mutants and 9 wiring mutants, and compiles the
 vendor backend syntax-only. In the fork,
 `python tests/check_rsx_deform_surface.py` compiles the production
-painter, mip row, sampler and shadow comparison, and rejects 18 mutants.
-`python scripts/check_deformation_query.py` passes with the new header.
+painter, mip row, sampler, shadow comparison and dump, and rejects 23
+mutants. `python scripts/check_deformation_query.py` passes with the new
+header.
 
 Measured result (exe `8856e66571f07c3e`, clean arms with lifted SPU jobs,
 `RSX_DEFORM_TARGETS=00A80500`): the median dt drops from 165.5, 163.7 and
@@ -203,7 +207,10 @@ to 312 s and 390 to 402 s. The p95 is 105.0, 106.4 and 102.2 ms with the
 buffer on. The surface reads of the deformation data are gone. The shadow
 arm S1 (`20261124T061644.583391Z`) shows a difference between the CPU bytes
 and the GPU bytes: 68 to 89 percent of the painted texels are equal, and
-half of the mip texels differ. The fix is in progress. 30 FPS is not reached.
+half of the mip texels differ. Cause: the private copies of the shadow mode
+started at zero, and the GPU surface starts as guest memory (`d906401bd0`
+fixes it). The emulator does not render level 1: its mip pass has positions
+that are not finite. The fix has no run. 30 FPS is not reached.
 
 ## SPURS lane count override (#327)
 
