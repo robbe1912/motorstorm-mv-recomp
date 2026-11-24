@@ -290,6 +290,11 @@ of two workers.
   The game stops presenting frames after about 170 s. At 340 s the three Havok
   threads and five `spu_async` threads each use 99 % of one core, and the main
   thread is idle. The cause is not known.
+  A second run with three workers (exe `62fadf7802bd24e4`, run `20261124T103056`)
+  did not stop in 352 s. The three Havok threads used 30 to 35 ms of CPU per
+  frame each, against 22 to 25 ms for two workers. The frame did not get
+  faster: 134 ms in a diagnostic run, against 108 ms with two workers (run
+  `20261124T095418`). Three workers give no gain, and the stop is not regular.
 - Four workers (`--havok-threads 4`, run `20261124T050653`): the game stops at
   race load after 70 s with `MsHavokAllocator out of memory trying to
   allocate 8320 bytes`, then `sys_process_exit(code=0)`.
@@ -600,7 +605,12 @@ not clear the `SPURS_` prefix. The launch record names the key. In a race,
 the vehicle marker wait takes 28.6 ms per frame. The marker 15 wait holds
 245 particle records against 13.6 vehicle records
 ([#327](https://github.com/robbe1912/motorstorm-mv-recomp/issues/327)).
-Measured result: none. No run yet. Game-free coverage:
+Measured result (exe `62fadf7802bd24e4`, clean runs with the CPU deformation
+buffer on): no gain, and more long frames. Median dt 105.6, 106.6 and 110.8 ms
+in the windows 200, 250 and 300 s, against 107.2, 101.9 and 118.8 ms with the
+switch off (runs `20261124T101255` and `20261124T100551`). p95 is 161 to
+183 ms, against 112 to 126 ms. One run counts 114,616 waits and 96,657 boosted
+jobs. Game-free coverage:
 [check_spurs_wait_priority.py](../scripts/check_spurs_wait_priority.py).
 
 `--spurs-marker-wake 0|1` (default `0`) selects `SPURS_MARKER_WAKE=1`.
@@ -617,7 +627,11 @@ does not clear the `SPURS_` prefix. The launch record names the key. In a
 race, one cooperation takes 0.52 to 0.59 ms for a due of 100 us, and a
 vehicle wait has 12 cooperations
 ([#327](https://github.com/robbe1912/motorstorm-mv-recomp/issues/327)).
-Measured result: none. No run yet. Game-free coverage:
+Measured result (exe `62fadf7802bd24e4`, clean run with the switch on, the
+wait priority on and the CPU deformation buffer on, run `20261124T102359`): no
+gain. Median dt 106.0, 106.4 and 110.2 ms in the windows 200, 250 and 300 s,
+p95 118 to 188 ms. The marker wake has no run without the wait priority.
+Game-free coverage:
 [check_spurs_marker_wake.py](../scripts/check_spurs_marker_wake.py).
 
 `--rsx-switch KEY=VALUE` (repeatable) sets one `RSX_*` switch of the runtime
