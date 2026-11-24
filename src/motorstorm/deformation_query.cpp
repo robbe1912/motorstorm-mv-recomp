@@ -1,6 +1,7 @@
 #include "deformation_depth.h"
 #include "ppu_recomp.h"
 #include "ps3emu/guest_read_sync.h"
+#include "rsx_deform_surface.h"
 
 #include <atomic>
 #include <bit>
@@ -123,15 +124,18 @@ struct PixelBufferLease {
 };
 
 struct Counts {
-  std::atomic<std::uint64_t> completed{}, sampled{}, snapshots{}, scalar{}, projected{};
+  std::atomic<std::uint64_t> completed{}, sampled{}, snapshots{}, scalar{}, cpu{},
+      projected{};
 };
 Counts counts;
 
-std::uint64_t report(bool sampled, bool snapshot) {
+std::uint64_t report(bool sampled, bool snapshot, bool from_cpu = false) {
   std::uint64_t sample_number{};
   if (sampled) {
     sample_number = ++counts.sampled;
-    if (snapshot)
+    if (from_cpu)
+      ++counts.cpu;
+    else if (snapshot)
       ++counts.snapshots;
     else
       ++counts.scalar;
@@ -141,11 +145,12 @@ std::uint64_t report(bool sampled, bool snapshot) {
       total % 1024 == 0)
     std::fprintf(stderr,
                  "[native-depth-query] completed=%llu sampled=%llu "
-                 "snapshots=%llu scalar=%llu projected=%llu\n",
+                 "snapshots=%llu scalar=%llu cpu=%llu projected=%llu\n",
                  static_cast<unsigned long long>(total),
                  static_cast<unsigned long long>(counts.sampled.load()),
                  static_cast<unsigned long long>(counts.snapshots.load()),
                  static_cast<unsigned long long>(counts.scalar.load()),
+                 static_cast<unsigned long long>(counts.cpu.load()),
                  static_cast<unsigned long long>(counts.projected.load()));
   return sample_number;
 }
@@ -210,6 +215,7 @@ void motorstorm_native_deformation_depth(ppu_context *context) {
   motorstorm::game::DeformationDepthPlan plan{};
   motorstorm::game::DepthPatch patch{};
   motorstorm::game::DepthSampleMode mode;
+  bool from_cpu = false;
   {
     const PixelBufferLease lease(context, pixel);
     width = vm_read32(std::uint64_t(pixel) + 0x60);
@@ -235,21 +241,42 @@ void motorstorm_native_deformation_depth(ppu_context *context) {
                           ? motorstorm::game::DepthSampleMode::bilinear
                           : motorstorm::game::DepthSampleMode::point;
     patch = {{}, plan.x_fraction, plan.y_fraction};
-    const auto status = vm_read_snapshot(ranges, 4, patch.samples.data(), 4);
-    snapshot = status == VM_READ_SNAPSHOT_OK;
-    if (status == VM_READ_SNAPSHOT_UNAVAILABLE) {
-      // Preserve the original scalar service when a bulk view is unavailable.
-      // Read order is TL, TR, BR, BL, including in point mode.
-      for (const unsigned index : {0u, 1u, 3u, 2u})
-        patch.samples[index] = vm_read8(ranges[index].address);
-    } else if (!snapshot) {
-      throw std::runtime_error("Native depth snapshot failed with status " +
-                               std::to_string(status));
+    std::uint32_t offsets[4];
+    for (unsigned index = 0; index != 4; ++index)
+      offsets[index] = static_cast<std::uint32_t>(plan.byte_offsets[index]);
+    const int deform = rsx_deform_mode();
+    unsigned char cpu[4]{};
+    const int cpu_count =
+        deform != 0 ? rsx_deform_sample(base, offsets, cpu) : 0;
+    if (deform == 1 && cpu_count == 4) {
+      // The CPU buffer holds the four bytes. No GPU read.
+      for (unsigned index = 0; index != 4; ++index)
+        patch.samples[index] = cpu[index];
+      from_cpu = true;
+      snapshot = false;
+    } else {
+      const auto status = vm_read_snapshot(ranges, 4, patch.samples.data(), 4);
+      snapshot = status == VM_READ_SNAPSHOT_OK;
+      if (status == VM_READ_SNAPSHOT_UNAVAILABLE) {
+        // Preserve the original scalar service when a bulk view is unavailable.
+        // Read order is TL, TR, BR, BL, including in point mode.
+        for (const unsigned index : {0u, 1u, 3u, 2u})
+          patch.samples[index] = vm_read8(ranges[index].address);
+      } else if (!snapshot) {
+        throw std::runtime_error("Native depth snapshot failed with status " +
+                                 std::to_string(status));
+      }
+      if (deform == 2 && cpu_count == 4)
+        rsx_deform_wheel_log(base, offsets[0],
+                             mode == motorstorm::game::DepthSampleMode::bilinear
+                                 ? "bilinear"
+                                 : "point",
+                             cpu, patch.samples.data());
     }
     result = motorstorm::game::sample_deformation_depth(patch, mode);
   }
   context->fpr[1] = result;
-  const auto sample_number = report(true, snapshot);
+  const auto sample_number = report(true, snapshot, from_cpu);
   static const bool capture_inputs = [] {
     const auto value = std::getenv("MS_DEPTH_OBSERVER");
     return value && std::strcmp(value, "1") == 0;

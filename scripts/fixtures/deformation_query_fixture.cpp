@@ -113,6 +113,17 @@ extern "C" void ps3_indirect_call(ppu_context *context) {
   }
 }
 
+// The CPU deformation buffer is off in this fixture: the query keeps the
+// readback path.
+extern "C" int rsx_deform_mode() { return 0; }
+extern "C" int rsx_deform_sample(std::uint32_t, const std::uint32_t[4],
+                                 unsigned char[4]) {
+  return 0;
+}
+extern "C" void rsx_deform_wheel_log(std::uint32_t, std::uint32_t,
+                                     const char *, const unsigned char[4],
+                                     const unsigned char[4]) {}
+
 extern "C" int vm_read_snapshot(const VmReadSnapshotRange *ranges,
                                 std::uint32_t count, void *destination,
                                 std::uint32_t bytes) {

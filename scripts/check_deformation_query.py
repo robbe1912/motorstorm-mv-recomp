@@ -79,6 +79,7 @@ void func_006CCF6C(ppu_context *);
         ROOT / "src/motorstorm",
         ROOT / "vendor/ps3recomp/include",
         ROOT / "vendor/ps3recomp/runtime/ppu",
+        ROOT / "vendor/ps3recomp/libs/video",
     ]
     if os.name == "nt":
         command = [
