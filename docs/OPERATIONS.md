@@ -516,15 +516,23 @@ add overhead. Game-free coverage:
 `--spurs-kernel-notify 0|1` (default `0`) selects `SPURS_KERNEL_NOTIFY=1`.
 The SPURS coordinator thread looks for new job demand once per period. With
 the switch off, each period is a `Sleep(1)` call. With the switch on, the
-coordinator waits on a condition variable with the same period as its
-timeout, and the HLE calls that publish job demand or return a lane wake it
-at once. Stores of the guest code into the ready counts are not seen at
-once; the timed pass finds them. The default clears an inherited value, and
-the launch record names the selection. The switch changes no job order.
-Measured in a race with lifted jobs: no change (5.92 against 5.83 presents
-per second, median frame 165.6 against 165.8 ms; run `20261123T234752.038668Z`
-against `20261123T231436.539891Z`). The marker waits do not come from the
-coordinator wake-up ([#327](https://github.com/robbe1912/motorstorm-mv-recomp/issues/327)).
+coordinator waits on a high-resolution waitable timer until the fallback
+deadline. The HLE calls that publish job demand or return a lane make the
+timer expire at once. The fallback deadline counts in
+`QueryPerformanceCounter` units. It ends after 1 ms and does not step with
+the system tick (15.6 ms on this machine). Before this change the deadline
+used `GetTickCount64`, which steps with the tick. Stores of the guest code
+into the ready counts are not seen at once; the timed pass finds them. The
+default clears an inherited value, and the launch record names the selection.
+The switch changes no job order. Measured in a race with lifted jobs before
+the timer change: no change (5.92 against 5.83 presents per second, median
+frame 165.6 against 165.8 ms; run `20261123T234752.038668Z` against
+`20261123T231436.539891Z`). The timer change has no measured run. Its
+expected saving is small: the game calls `timeBeginPeriod(1)` at start, so
+the tick in the game process can already be near 1 ms [INFERENCE]. The
+marker waits do not come from the coordinator wake-up
+([#327](https://github.com/robbe1912/motorstorm-mv-recomp/issues/327)).
+Game-free coverage: [check_spurs_notify_wait.py](../scripts/check_spurs_notify_wait.py).
 
 `--rsx-switch KEY=VALUE` (repeatable) sets one `RSX_*` switch of the runtime
 that has no launcher option. Use it for a diagnostic arm. The key must start
