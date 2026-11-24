@@ -144,7 +144,7 @@ ADAPTER_WIRING = [
     ('    return wait_priority_owner.load(std::memory_order_acquire);\n', 1),
     ('    ~WaitPriority() { wait_priority_owner.store(0, std::memory_order_release); }\n', 1),
     # begin names the waited job list with the one read of the job list address.
-    ('    wait_priority_owner.store(owner, std::memory_order_release);\n    return {owner, vm_read16(owner + 18)};\n', 1),
+    ('    wait_priority_owner.store(owner, std::memory_order_release);\n', 1),
     ('#ifndef MOTORSTORM_JOB_WAIT_FIXTURE\n'
      '            static const bool registered = [] { spurs_wait_priority_set(wait_priority_job_list, nullptr); return true; }();\n'
      '            (void)registered;\n'

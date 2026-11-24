@@ -603,6 +603,23 @@ the vehicle marker wait takes 28.6 ms per frame. The marker 15 wait holds
 Measured result: none. No run yet. Game-free coverage:
 [check_spurs_wait_priority.py](../scripts/check_spurs_wait_priority.py).
 
+`--spurs-marker-wake 0|1` (default `0`) selects `SPURS_MARKER_WAKE=1`.
+A marker wait of the game reads the counters of its job list 64 times, then
+sleeps 100 us in a high-resolution timer. On the build machine Windows wakes
+the timer after 0.52 ms at least, so each cooperation is late by about
+0.4 ms. With the switch on, the runtime calls a host hook after each commit
+of a guest line. The job wait adapter keeps the lines of the waited job list
+and signals an event when one of these lines commits. The wait blocks on the
+event and on the timer, so a lost wake-up cannot hang. A value that is not
+`0` or `1` makes the adapter fall back to the guest wait and print an error
+line. Without the option the launcher clears an inherited value, because it
+does not clear the `SPURS_` prefix. The launch record names the key. In a
+race, one cooperation takes 0.52 to 0.59 ms for a due of 100 us, and a
+vehicle wait has 12 cooperations
+([#327](https://github.com/robbe1912/motorstorm-mv-recomp/issues/327)).
+Measured result: none. No run yet. Game-free coverage:
+[check_spurs_marker_wake.py](../scripts/check_spurs_marker_wake.py).
+
 `--rsx-switch KEY=VALUE` (repeatable) sets one `RSX_*` switch of the runtime
 that has no launcher option. Use it for a diagnostic arm. The key must start
 with `RSX_` and must not be a key that the launcher sets. Without the option

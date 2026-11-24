@@ -67,6 +67,7 @@ def main():
     ap.add_argument('--cpu-surface-snapshot-fast',choices=('0','1'),default='0',help='Serve a snapshot CPU read on the calling thread when no recorded draw targets its range and its surfaces are current (default 0: wait for the renderer FIFO boundary)')
     ap.add_argument('--spurs-kernel-notify',choices=('0','1'),default='0',help='Wake the SPURS coordinator when the game publishes job demand, instead of its periodic poll (default 0)')
     ap.add_argument('--spurs-wait-priority',choices=('0','1'),default='0',help='Give a free SPU lane first to the workload of the job list that a marker wait of the game needs (default 0)')
+    ap.add_argument('--spurs-marker-wake',choices=('0','1'),default='0',help='End a marker wait of the game when a job list commits, in place of its 100 us timer step (default 0)')
     ap.add_argument('--spurs-lanes',choices=('0','1','2','3','4','5','6'),default='0',help='Lane count for each SPURS instance in place of the count of the game; 0 keeps the count of the game (default 0)')
     ap.add_argument('--rsx-switch',action='append',default=[],metavar='KEY=VALUE',help='Set one RSX_* switch of the runtime (repeatable); the launch record names each switch')
     ap.add_argument('--fastmem-spin-detector',choices=('0','1'),default='1',help='1: the fast memory spin detector runs (default); 0: PPU_FM_SPINDET=0 turns it off')
@@ -253,6 +254,8 @@ def main():
     if args.spurs_kernel_notify=='1':env['SPURS_KERNEL_NOTIFY']='1'
     env.pop('SPURS_WAIT_PRIORITY',None)
     if args.spurs_wait_priority=='1':env['SPURS_WAIT_PRIORITY']='1'
+    env.pop('SPURS_MARKER_WAKE',None)
+    if args.spurs_marker_wake=='1':env['SPURS_MARKER_WAKE']='1'
     env.pop('SPURS_LANES',None)
     if args.spurs_lanes!='0':env['SPURS_LANES']=args.spurs_lanes
     env.pop('PPU_WAIT_PROFILE',None)
@@ -296,6 +299,7 @@ def main():
     record={'pid':p.pid,'create_time':proc.create_time(),'exe':str(exe),'exe_sha256':hashlib.sha256(exe.read_bytes()).hexdigest(),'elf_sha256':hashlib.sha256(c['elf'].read_bytes()).hexdigest(),'output':str(out),'muted':True,'capture_menu':bool(args.capture_menu or args.menu_replay),'menu_replay':str(args.menu_replay.resolve()) if args.menu_replay else None,'capture_textures':args.capture_textures,'trace_video':args.trace_video,'capture_havok':args.capture_havok or args.capture_havok_only,'capture_bike':args.capture_bike,'loadtime_trace':args.loadtime_trace,'capture_profile':'broad' if args.capture_havok else 'havok-only' if args.capture_havok_only else 'none','environment':{k:v for k,v in env.items() if k in ('PS3_VFS_ROOT','PS3_HDD0_ROOT','PS3_SAVEDATA_ROOT','AUDIO_MUTE','PAD_FILE','CAP_HAVOK_DIR','CAP_BIKE_DIR','CAP_BIKE_ARM_FILE','LOADTIME_TRACE','LOADTIME_TRACE_FILE','SPU_PM_INTERP','SPU_NATIVE_OWNED_JOBS','SPU_NATIVE_OWNED_IMAGE','SPU_JOBMOD_HEADER_FNV','SPU_JOBMOD_DISPATCH_LOG') or k.startswith(('SPU_PM_','TEX_','RSX_')) or k in ('VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG') or k=='SPU_WP'}}
     if 'SPURS_KERNEL_NOTIFY' in env:record['environment']['SPURS_KERNEL_NOTIFY']=env['SPURS_KERNEL_NOTIFY']
     if 'SPURS_WAIT_PRIORITY' in env:record['environment']['SPURS_WAIT_PRIORITY']=env['SPURS_WAIT_PRIORITY']
+    if 'SPURS_MARKER_WAKE' in env:record['environment']['SPURS_MARKER_WAKE']=env['SPURS_MARKER_WAKE']
     if 'SPURS_LANES' in env:record['environment']['SPURS_LANES']=env['SPURS_LANES']
     if 'PPU_WAIT_PROFILE' in env:record['environment']['PPU_WAIT_PROFILE']=env['PPU_WAIT_PROFILE']
     if 'PPU_WAIT_PROFILE_MIN_US' in env:record['environment']['PPU_WAIT_PROFILE_MIN_US']=env['PPU_WAIT_PROFILE_MIN_US']

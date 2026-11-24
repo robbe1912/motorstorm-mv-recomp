@@ -257,6 +257,37 @@ with the changed adapter. Both pass.
 
 Measured result: none. No run yet.
 
+## SPURS marker wake (#327)
+
+Fork `combined` `79e7bb4c` holds the host line commit hook in `ab8da921`
+(`feat(spu): add host line commit wakeup`). The fork needs no other change,
+so this item has no new fork commit, fork check or fork doc. The game commit
+that carries the code copies the hook into `vendor/ps3recomp`. The check
+`scripts/check_spurs_marker_wake.py`, its fixture, the launcher lines of
+`--spurs-marker-wake`, their two tests and this section are in the commit
+that carries the check. Default off.
+
+`SPURS_MARKER_WAKE=1` ends a marker wait of the game at the commit of a job.
+Without the switch the wait reads the counters of its job list 64 times and
+sleeps in a high-resolution timer with a due of 100 us. On the build machine
+the timer wakes after 0.52 ms at least, so each cooperation is late by about
+0.4 ms. With the switch on, the runtime calls a host hook after each
+committing PUTLLC on a guest line. The job wait adapter installs the hook,
+keeps the lines of the job list that a marker wait waits on, and signals an
+event when one of these lines commits. The wait blocks on the event and on
+the timer, so a lost wake-up cannot hang. The runtime calls the hook only
+after a successful PUTLLC or PUTLLUC, after the coherence lock is released.
+The line filter and the event are shared by all threads. A second waiting
+thread gets the wake-ups of the first and the timer as its fallback.
+
+Checks: `python scripts/check_spurs_marker_wake.py` here rejects 5 source
+mutants of `spu_channels.c`, 2 adapter audit mutants, 12 adapter mutants and
+5 launcher mutants. It builds the adapter with the wait core and compiles
+`spu_channels.c` syntax-only. `scripts/check_native_job_wait.py` passes with
+the changed adapter. Both pass.
+
+Measured result: none. No run yet.
+
 ## Image-scoped native job admission (#219)
 
 The existing fork carries the selector on `codex/native-owned-image-scope`
