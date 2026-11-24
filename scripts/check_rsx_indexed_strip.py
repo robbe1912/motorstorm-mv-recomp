@@ -27,10 +27,11 @@ def main():
     out = ROOT / 'temp/checks' / ('rsx-indexed-strip-' + stamp)
     out.mkdir(parents=True)
     c, exe = out / 'check.c', out / ('check.exe' if os.name == 'nt' else 'check')
-    fetch_start = text.index('static void read_vp_vertex(')
+    profile_start = text.index('/* RSX_VERTEX_PROFILE=1:')
+    fetch_start = text.index('static void read_vp_vertex(', profile_start)
     fetch_end = text.index('\n/* VTX_POS=', fetch_start)
     assert template.count('@FETCH_VERTEX_FUNCTION@') == 1
-    c.write_text(template.replace('@INDEXED_STRIP_FUNCTION@', text[start:end]).replace('@FETCH_VERTEX_FUNCTION@', text[fetch_start:fetch_end]), encoding='utf-8')
+    c.write_text(template.replace('@INDEXED_STRIP_FUNCTION@', text[start:end]).replace('@FETCH_VERTEX_FUNCTION@', text[profile_start:fetch_end]), encoding='utf-8')
     fetch = VIDEO / 'rsx_vertex_fetch.c'
     include = ROOT / 'vendor/ps3recomp/include'
     env = os.environ.copy()
