@@ -171,9 +171,10 @@ comparison, header, fork document), `0bc3ac59` (fix: switches on the first
 call), `c7b58208` (fork test), `65e5a82d` (fix: the private copies of the
 shadow mode start as guest memory; dump of the shadow frames), `46ba950e`
 (fix: the paint notes stop with the dump budget), `5bbfff2e` (fix: the
-shadow copies start as the GPU bytes). Game `6638e69c9d`, `e6abdbbeb2`,
-`039a251ddf`, `ee1dfd3fff`, `d906401bd0`, `54379f34e4`, `9812a9ee40`.
-Off by default.
+shadow copies start as the GPU bytes), `ab206758` (fix: time of the shadow
+lines, wheel lines after the first compare). Game `6638e69c9d`,
+`e6abdbbeb2`, `039a251ddf`, `ee1dfd3fff`, `d906401bd0`, `54379f34e4`,
+`9812a9ee40`, `537d1eaf59`. Off by default.
 
 `RSX_DEFORM_BUFFER=1` with `RSX_DEFORM_TARGETS=<offset,...>` keeps level
 0 of each listed surface in host memory. The painter replays each paint
@@ -195,13 +196,17 @@ frames with a difference to a file. The run modes are in
 The private copies start as the GPU bytes: a `[DEFORM_SHADOW] start` line
 marks the first batch end that finds the GPU surface, and each one after
 the backend created it again. That frame does not compare.
+Each `[DEFORM_SHADOW]` and `[DEFORM_WHEEL]` line ends with `t_ms`: the
+performance clock of `rsx_phases.csv` in milliseconds. A run time is the
+value minus `t_ms` of the first row of that file. The wheel lines start
+with the first compare that found painted texels.
 
 Checks: `python scripts/check_deform_cpu_buffer.py` passes. It compiles
-the production switch code and the read block of the query, rejects 13
+the production switch code and the read block of the query, rejects 15
 runtime mutants, 7 query mutants and 9 wiring mutants, and compiles the
 vendor backend syntax-only. In the fork,
 `python tests/check_rsx_deform_surface.py` compiles the production
-painter, mip row, sampler, shadow comparison and dump, and rejects 30
+painter, mip row, sampler, shadow comparison and dump, and rejects 33
 mutants. `python scripts/check_deformation_query.py` passes with the new
 header.
 
@@ -222,8 +227,17 @@ and the CPU destination (guest memory) is 22 to 127. `off_rt_get` fills a
 new GPU surface with 4 guest bytes a texel and a row stride of `4 * width`,
 because the B8 target is RGBA8 on the host. So the GPU surface does not
 start as guest memory. `9812a9ee40` starts the private copies as the GPU
-bytes. It has no run. The emulator does not render level 1: its mip pass
-has positions that are not finite. 30 FPS is not reached.
+bytes. The emulator does not render level 1: its mip pass has positions
+that are not finite. 30 FPS is not reached.
+
+S4 (`20261124T130102.888566Z`, exe `f399ecfceddc716e`, with the GPU start)
+compared no frame. Its `start` line is at frame 9013, 176.0 s into the
+run, and the run ended at 181.2 s. No frame compared up to the last frame
+9112: `[DEFORM] frame=9072 ... painted=11 texels=0` shows that the paint
+draws covered no pixel. In S2 the first painted texel came 21.9 s after
+the first draw without texels, and the 60 compares took 15.1 s. So a
+shadow run needs 300 s. `t_ms` is on each shadow line since
+`537d1eaf59`.
 
 ## SPURS lane count override (#327)
 

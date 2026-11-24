@@ -672,6 +672,11 @@ holds the four bytes of one depth read from the CPU copy and from the GPU.
 The shadow lines stop after `RSX_DEFORM_LOG` frames (300).
 A `[DEFORM_SHADOW] start` line marks the frame in that the private copies
 start as the GPU bytes. That frame does not compare.
+Each shadow line and wheel line ends with `t_ms`: the performance clock
+of `rsx_phases.csv` in milliseconds. A run time is the value minus `t_ms`
+of the first row of that file. The wheel lines start with the first
+compare that found painted texels. The first painted texel of a run came
+22 s after the first paint draw: use `--seconds 300` for a shadow run.
 `RSX_DEFORM_DUMP=<frames>` writes the first frames with a difference to a
 file: `rsx_deform_dump.bin` next to `rsx_phases.csv` (`--profile-renderer`),
 else the file of `RSX_DEFORM_DUMP_FILE`. Without the switches the runtime
