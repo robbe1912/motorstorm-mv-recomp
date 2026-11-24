@@ -67,7 +67,13 @@ rejects 55 header mutants and 27 loader mutants. `python
 scripts/check_rsx_cpu_surface.py` passes. Fork check
 `tests/check_ppu_fastmem_diet.py` passes with clang-cl and with GCC 13.
 
-Measured result: none. No run yet.
+Measured result (clean race runs, CPU buffer on, frames 70 to 370 s): the
+default (`PPU_FM` absent) gives no gain and no loss that two runs can
+separate. Exe `7142478743adb8f5` (run `20261124T180146.290644Z`): median
+113.5 ms, p95 168.4, p99 201.1, 2468 frames. Exe `c6aea3c150144769` without
+the gate (run `20261124T135543.669738Z`): median 106.9 ms, p95 167.5, p99
+189.4. `--fastmem-gate 0` (run `20261124T181357.162518Z`) costs 29 ms of the
+median: median 142.4 ms, p95 229.1, p99 322.1. The inline fast paths stay.
 
 ## Lean fast memory paths (#348)
 

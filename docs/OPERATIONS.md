@@ -710,8 +710,10 @@ The default `1` keeps them on. The value `0` sets `PPU_FM=0`: each guest
 memory access of the lifted code then takes the out-of-line family
 (`vm_read*`, `vm_write*`), and the launch record names the key. Without the
 option the launcher clears an inherited `PPU_FM`. Use `0` for the control
-arm of an A/B run of a fast memory change. Measured result: none. No run
-yet.
+arm of an A/B run of a fast memory change. Measured result (exe
+`7142478743adb8f5`, race frames 70 to 370 s): `0` gives median 142.4 ms and
+p95 229.1 ms. The default gives median 113.5 ms and p95 168.4 ms. Run
+`20261124T181357.162518Z` against run `20261124T180146.290644Z`.
 
 `--fastmem-count 0|1` turns on the call counter of the PPU fast memory
 accessors. The default `0` removes an inherited `PPU_FM_COUNT`. The value
