@@ -1777,6 +1777,32 @@ passes against the fork and vendor backends.
 
 Measured result: none. No run yet.
 
+## Indexed cache miss copies
+
+Fork branch `codex/rsx-vertex-miss-copy`, based on `combined`
+`79e7bb4c9f8a616e95bfd4e758ca288600049333`, stacks the prepared-batch and
+vertex-profile commits. It keeps those changes in separate commits:
+
+- `b60101eb51a3f71b2542dda3a210a86d98d9a4ee` fetches an indexed-cache miss
+  directly into its D3D12 output slot. The cache stores that slot pointer.
+  Game `fafe0fa2477860c5be3d0b2c35a0bf481f544af1`.
+
+A cache hit still copies 256 bytes from the earlier output slot. A miss no
+longer writes the converted vertex twice. The pointers stay valid because the
+uploader reserves storage before it forms the output pointer and uses the cache
+only inside that callback. The default rendering result does not change.
+
+Fork `tests/check_rsx_vertex_profile.py` rejects 13 mutants. Game
+`scripts/check_rsx_vertex_profile.py` rejects 14 mutants. Both compare exact
+output bytes and verify that only hits add copy bytes and copy time. The
+indexed-strip check passes against both backends.
+
+Expected saving `[INFERENCE]`: one 256-byte copy per indexed-cache miss. The
+profile field `misses` counts these removed copies. No frame-time saving is
+measured.
+
+Measured result: none. No run yet.
+
 ## Bounded native job trace foundation
 
 Issue [219](https://github.com/robbe1912/motorstorm-mv-recomp/issues/219) uses
