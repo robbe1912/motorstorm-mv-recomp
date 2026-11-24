@@ -705,6 +705,31 @@ the launcher clears an inherited `PPU_FM_SPINDET`. Use `0` only for a profile
 of the lifted code. A guest loop that spins on one address then gets no
 yield and no hot-spin report.
 
+`PPU_FM_COUNT=1` in the environment turns on the call counter of the PPU
+fast memory accessors. There is no launcher option. The launcher passes the
+key to the game, but the launch record does not name it, so write the key
+into the capture notes. Each host thread that calls an accessor reads the
+clock one time per 16384 calls. The game log then gets one
+`[PPU_FM_COUNT]` line per second for each thread with calls, then one line
+with the sum of all threads. The line holds `seq`, `scope` (`thread` or
+`all`), `slot`, `tid` (host thread id), `guest` (guest thread id, or 0 for a
+thread without a guest context) and the calls of `read8` to `write64`. A
+line with `scope=all` also holds `start`, `end` and `frequency` in QPC
+ticks. The counter sends each access through the out-of-line family, so it
+costs speed. Use it only to learn which accessor and which thread make the
+calls. The class of a thread is not in the line. The `[thr]` lines of the
+log give the name of a host thread id. Game-free coverage:
+[check_ppu_fastmem_diet.py](../scripts/check_ppu_fastmem_diet.py).
+
+`PPU_FM=0` in the environment sends each guest memory access of the lifted
+code through the out-of-line family (`vm_read*`, `vm_write*`). The lifted
+code then makes no fast access. Use it for an A/B run of a fast memory
+change. Each other diagnostic key of the arm list of `ppu_fm_arm` does the
+same.
+
+`SPU_ATOM_EA=<address>` makes the stores of the lifted code take the
+out-of-line family. The reads keep the fast path.
+
 `--profile-ppu-waits` sets `PPU_WAIT_PROFILE=1`. Each call of a guest wait
 (condition, semaphore, mutex, event queue, event flag) that lasts at least
 1 ms writes one `[PPU_WAIT_PROFILE]` line to the game log: thread, kind,

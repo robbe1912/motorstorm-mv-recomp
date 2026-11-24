@@ -11,6 +11,60 @@ The setup, the workflow and the current limits are in
 [runtime changes](RUNTIME_CHANGES.md). The sections below stay the
 record of both hashes and the measured result of each change.
 
+## Fast memory gate and call counter (#348)
+
+Fork branch `codex/frame60-fastmem-v2`, based on the tip of
+`codex/frame60-fastmem-diet` `97aea850` (`combined` `79e7bb4c` plus the
+first diet):
+
+- `a3a46080` perf(ppu): add the fast memory paths. It brings the header and
+  the loader block of game `ef8fead` into the fork. No game commit.
+- `f92dc45c` test(ppu): check the fast memory paths. No game commit.
+- `e0f2d083` feat(ppu): add the opt-in call counter. Game `ffae208a`.
+- `694ae112` perf(ppu): add the fast gate. Game `5d3bcf77`.
+- `b12cab7a` test(ppu): check the fast gate. Game `c77262e9`.
+
+The call counter is opt-in. `PPU_FM_COUNT=1` turns it on. It counts the
+calls of each accessor per host thread and prints one line per second to
+the game log ([operations](OPERATIONS.md)). The default path has no code of
+the counter.
+
+The gate of each accessor (`ppu_fm_read8` to `ppu_fm_write64`) reads one
+flag word, `ppu_fm_slow`, and one byte of a page table, `ppu_fm_kind`. One
+byte is one 4 KB guest page. `ppu_fm_arm()` computes both at boot. The slow
+path is the out-of-line function `ppu_fm_readN_out` or `ppu_fm_writeN_out`.
+The fast body is always inline. `vm_cpu_read_sync` and the spin detector
+stay in the fast body of each read. The store body keeps the reserved-line
+test.
+
+The pages that take the slow path do not change. Pages `0x00000` to
+`0x0000F` (read: null-read report). Page `0x00000` (store: null-store
+report). Pages `0x45000` to `0x4FFFF` (alias window). The raw SPU register
+pages, `0xE0040` to `0xE00FF` in each slot of 1 MB. The page of
+`ppu_hle_inject_base + 0x2008` (read). Each page that is not entirely
+inside `ppu_vm_size`. The out-of-line function makes the exact test.
+
+`PPU_FM_INLINE_FAST` selects the layout. `1` (the default) puts the gate
+and the body at each call site. `0` keeps one out-of-line copy of each
+accessor per lifted unit. The build scripts do not set it.
+
+`PPU_FM=0` sends each access through the out-of-line family. `SPU_ATOM_EA`
+sends stores through it. Open items: the fork lifter does not emit the
+include of the header, so a fork build does not use the accessors. The
+out-of-line family of the fork does not call the fire halves.
+
+`scripts/fixtures/rsx_cpu_surface_memory.c` defines `ppu_fm_slow`,
+`ppu_fm_kind`, `ppu_fm_spin_det` and `ppu_fm_count_hit`. Before this change
+it defined `ppu_fm_diag` only. The header no longer has `ppu_fm_diag`.
+
+Check: `python scripts/check_ppu_fastmem_diet.py` passes. It compiles the
+header in both layouts and the production arm text with its page table. It
+rejects 55 header mutants and 27 loader mutants. `python
+scripts/check_rsx_cpu_surface.py` passes. Fork check
+`tests/check_ppu_fastmem_diet.py` passes with clang-cl and with GCC 13.
+
+Measured result: none. No run yet.
+
 ## Lean fast memory paths (#348)
 
 Fork branch `codex/frame60-fastmem-diet`, based on `combined` `79e7bb4c`:
@@ -18,8 +72,8 @@ Fork branch `codex/frame60-fastmem-diet`, based on `combined` `79e7bb4c`:
 - `76ebdb22` perf(spu): export the reserved-line bitmap. Game `cb9db6b`.
 - `34a66dae` perf(memory): skip the read sync table when no page is marked.
   Game `f49f9af`.
-- Game `ef8fead` perf(ppu): lean fast memory paths. This change is in
-  `ppu_fastmem.h` and `ppu_loader.cpp` only. It is not in the fork yet.
+- Game `ef8fead` perf(ppu): lean fast memory paths. The fork has the change
+  as `a3a46080` and `f92dc45c` on `codex/frame60-fastmem-v2`.
 
 `spu_coherency.h` publishes `g_spu_coh_bitmap` and `spu_coh_bitmap_test`.
 One bit is one 128-byte guest line. `ppu_fastmem.h` holds a copy of the test
