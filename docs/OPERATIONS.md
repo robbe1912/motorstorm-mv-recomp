@@ -568,6 +568,13 @@ the launcher clears every inherited `RSX_*` key. The launch record names each
 switch. Example: `--profile-renderer --rsx-switch RSX_DEFORM_CAPTURE=1
 --rsx-switch RSX_DEFORM_TARGETS=00A80500`.
 
+`--fastmem-spin-detector 0|1` controls the spin detector of the PPU fast
+memory reads. The default `1` keeps the detector on. The value `0` sets
+`PPU_FM_SPINDET=0` and the launch record names the key. Without the option
+the launcher clears an inherited `PPU_FM_SPINDET`. Use `0` only for a profile
+of the lifted code. A guest loop that spins on one address then gets no
+yield and no hot-spin report.
+
 `--profile-ppu-waits` sets `PPU_WAIT_PROFILE=1`. Each call of a guest wait
 (condition, semaphore, mutex, event queue, event flag) writes one
 `[PPU_WAIT_PROFILE]` line to the game log: thread, kind, object id, caller

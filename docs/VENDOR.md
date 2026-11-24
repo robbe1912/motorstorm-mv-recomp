@@ -11,6 +11,41 @@ The setup, the workflow and the current limits are in
 [runtime changes](RUNTIME_CHANGES.md). The sections below stay the
 record of both hashes and the measured result of each change.
 
+## Lean fast memory paths (#348)
+
+Fork branch `codex/frame60-fastmem-diet`, based on `combined` `79e7bb4c`:
+
+- `76ebdb22` perf(spu): export the reserved-line bitmap. Game `cb9db6b`.
+- `34a66dae` perf(memory): skip the read sync table when no page is marked.
+  Game `f49f9af`.
+- Game `ef8fead` perf(ppu): lean fast memory paths. This change is in
+  `ppu_fastmem.h` and `ppu_loader.cpp` only. It is not in the fork yet.
+
+`spu_coherency.h` publishes `g_spu_coh_bitmap` and `spu_coh_bitmap_test`.
+One bit is one 128-byte guest line. `ppu_fastmem.h` holds a copy of the test
+so that the lifted units do not include `spu_context.h`. The check compiles
+both and requires the same result for 3,000,000 addresses.
+
+`vm_cpu_read_sync` returns before it reads the page table while
+`vm_read_sync_any` is zero. `vm_read_sync_mark_range` sets that flag.
+
+The spin detector of the PPU fast memory reads runs while `ppu_fm_spin_det`
+is non-zero. The flag is 1 by default. `ppu_fm_arm` sets it to 0 only for the
+exact environment value `PPU_FM_SPINDET=0`. The launcher option is
+`--fastmem-spin-detector 0`.
+
+Check: `python scripts/check_ppu_fastmem_diet.py` passes. It rejects 11
+header mutants and 4 loader mutants. Fork checks: `tests/check_spu_coh_bitmap.py`
+(6 mutants) and `tests/check_guest_read_sync_gate.py` (5 mutants).
+
+Profile before the change (run `20261124T011533.717404Z`, exe
+`14ecf5d71193d027`, 1177 running samples, exclusive instruction pointer):
+the memory helpers hold 43.1 percent of the main thread. `ppu_fm_read32`
+25.3, `ppu_fm_read64` 5.9, `ppu_fm_write32` 4.7, `spu_coh_is_reserved` 3.9,
+`ppu_fm_read8` 2.5, `sysmem_spu_alias_fixup` 2.0, `ppu_fm_read16` 0.9.
+
+Measured result: none. The lead builds and profiles.
+
 ## Per-draw GPU record (#333)
 
 Fork draft PR robbe1912/ps3recomp#11, branch `codex/rsx-draw-gpu-record` on
