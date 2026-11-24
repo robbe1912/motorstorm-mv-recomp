@@ -533,6 +533,13 @@ the launcher clears every inherited `RSX_*` key. The launch record names each
 switch. Example: `--profile-renderer --rsx-switch RSX_DEFORM_CAPTURE=1
 --rsx-switch RSX_DEFORM_TARGETS=00A80500`.
 
+`--profile-ppu-waits` sets `PPU_WAIT_PROFILE=1`. Each call of a guest wait
+(condition, semaphore, mutex, event queue, event flag) writes one
+`[PPU_WAIT_PROFILE]` line to the game log: thread, kind, object id, caller
+address, start, end and frequency in QPC ticks. The profile adds two clock
+reads per wait. Do not time a frame interval with it. Game-free coverage:
+[check_ppu_wait_profile.py](../scripts/check_ppu_wait_profile.py).
+
 Use identical cache targets, validation and profiling settings for comparisons.
 Retention validates every uploaded face with full XXH3; the reference retains
 its sparse source checksum. Complete hashing has a measurable cost. Verify the

@@ -84,6 +84,44 @@ jobs, last 60 s): fewer than 1,024 reads served at once; the snapshot reads
 still cost 42.4 ms per frame. No gain: the slow requests need a copy or match
 no surface (#326, comment of 2026-11-23).
 
+## PPU wait profile (#327)
+
+Fork draft PR robbe1912/ps3recomp#12, branch `codex/frame60-ppu-wait-profile`
+on `combined` `79e7bb4c`: `c966a319` (code), `bc988f5a` (check). Game
+`f76e643235`, `5ae7bf8ced`; launcher `8dc4cbdfe0` (`--profile-ppu-waits`,
+default off).
+
+`PPU_WAIT_PROFILE=1` writes one `[PPU_WAIT_PROFILE]` line per call of
+`sys_cond_wait`, `sys_semaphore_wait`, `sys_mutex_lock`,
+`sys_event_queue_receive` and `sys_event_flag_wait`: thread, kind, object id,
+caller address, start and end. Off: no line and no clock read.
+
+Checks: `python tests/check_ppu_wait_profile.py` in the fork rejects 8 header
+mutants. `python scripts/check_ppu_wait_profile.py` here rejects 25 launcher
+and source mutants and 8 header mutants, and compiles the four syscall files
+syntax-only. Both pass.
+
+Measured result: none. No run yet.
+
+## Deform draw capture (#346)
+
+Fork branch `codex/frame60-deform-cpu-buffer` on the branch of PR #9:
+`7f8ef1ef` (capture), `c91e49bd` (chain dump). Game `f88feaba01`,
+`5fbcb5730e`. Off by default.
+
+`RSX_DEFORM_CAPTURE=1` with `RSX_DEFORM_TARGETS=<offset,...>` writes
+`rsx_deform_draws.txt` next to `rsx_phases.csv`: the first 64 records (clears
+and draws) into a listed RSX surface offset, with state words, texture units,
+stream format, the first vertices and the decompiled programs.
+`RSX_DEFORM_CHAIN=1` adds `rsx_deform_chain.txt`: the next 64 records in FIFO
+order whose colour target 0 is not listed. The launcher needs
+`--profile-renderer` (it sets the output path) and `--rsx-switch` for the
+keys.
+
+Checks: the vendor backend compiles syntax-only. No authored check yet.
+
+Measured result: none. No run yet.
+
 ## Image-scoped native job admission (#219)
 
 The existing fork carries the selector on `codex/native-owned-image-scope`
