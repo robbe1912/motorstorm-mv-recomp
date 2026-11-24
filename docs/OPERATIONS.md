@@ -52,6 +52,14 @@ These counters add overhead; retain the same profiling setting on both sides
 of a comparison. Texture-call remainder includes several kinds of work and
 must not be reported as allocation time alone.
 
+Set `RSX_VERTEX_PROFILE=1` in the launcher environment to print one
+`[VTXPROFILE]` line per frame. It reports vertex fetch bytes and time, indexed
+uploader calls, cache hits and misses, direct output bytes, and cache copy
+bytes and time. Fetch bytes count converted output, not guest input. Copy bytes
+count only indexed-cache to upload-buffer copies. The option adds clock reads
+and one log line per frame. Leave it off for timing runs that do not need
+these counters. The default path does not read the profile clock.
+
 For a renderer timing trial, add `--profile-renderer` to the normal launcher.
 It enables CPU phase counters and two GPU timestamp queries per renderer batch, retaining
 `rsx_phases.csv`, `[PERF]`/`[RSXPHASE]` logs and the exact timing environment in

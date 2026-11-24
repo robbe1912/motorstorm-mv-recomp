@@ -1751,6 +1751,32 @@ sequential declarations establish plausible sparse eligibility, not draw-weighte
 usage, ABA-proof snapshots, function costs or frame savings. #155/#26/#27/#137
 and complete typed game-workload replacement remain open.
 
+## Opt-in vertex fetch and upload profile
+
+Fork branch `codex/rsx-vertex-profile`, based on `combined` `79e7bb4c9f8a616e95bfd4e758ca288600049333`:
+
+- `ce01a48b1ea06b8a0191078751e4ea89e0d0f337` uses prepared vertex batches
+  in the D3D12 backend. Game carry: none. The vendor tree already had this
+  change.
+- `5776fd196e557dbcff5b300bdb2e5b36f3dec78c` adds opt-in vertex counters.
+  Game `1118acaf02807369e740fe671c9371cefb352ea4`.
+
+Set `RSX_VERTEX_PROFILE=1` to print one `[VTXPROFILE]` line per frame. The
+line counts fetches, fetch output bytes and time, indexed uploader calls,
+cache hits and misses, direct output bytes, and cache copy bytes and time.
+Fetch bytes are converted output bytes, not guest input bytes. Copy bytes
+include only copies from the indexed cache to the D3D12 upload buffer. The
+default path does not read the profile clock and keeps the same rendering
+result.
+
+Fork `tests/check_rsx_vertex_profile.py` compares exact output bytes and
+rejects nine mutants. Game `scripts/check_rsx_vertex_profile.py` rejects ten
+mutants, including direct output bytes. Both cover disabled mode, frame reset,
+changed guest bytes and repeated ranges. The existing indexed-strip check also
+passes against the fork and vendor backends.
+
+Measured result: none. No run yet.
+
 ## Bounded native job trace foundation
 
 Issue [219](https://github.com/robbe1912/motorstorm-mv-recomp/issues/219) uses
