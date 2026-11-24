@@ -170,8 +170,9 @@ Fork branch `codex/frame60-deform-cpu-buffer` on the branch of PR #9:
 comparison, header, fork document), `0bc3ac59` (fix: switches on the first
 call), `c7b58208` (fork test), `65e5a82d` (fix: the private copies of the
 shadow mode start as guest memory; dump of the shadow frames), `46ba950e`
-(fix: the paint notes stop with the dump budget). Game `6638e69c9d`,
-`e6abdbbeb2`, `039a251ddf`, `ee1dfd3fff`, `d906401bd0`, `54379f34e4`.
+(fix: the paint notes stop with the dump budget), `5bbfff2e` (fix: the
+shadow copies start as the GPU bytes). Game `6638e69c9d`, `e6abdbbeb2`,
+`039a251ddf`, `ee1dfd3fff`, `d906401bd0`, `54379f34e4`, `9812a9ee40`.
 Off by default.
 
 `RSX_DEFORM_BUFFER=1` with `RSX_DEFORM_TARGETS=<offset,...>` keeps level
@@ -191,12 +192,16 @@ the operation: `fp16` (default), `fused`, `f32`. `RSX_DEFORM_LOG=<frames>`
 frames with a difference to a file. The run modes are in
 [operations](OPERATIONS.md).
 
+The private copies start as the GPU bytes: a `[DEFORM_SHADOW] start` line
+marks the first batch end that finds the GPU surface, and each one after
+the backend created it again. That frame does not compare.
+
 Checks: `python scripts/check_deform_cpu_buffer.py` passes. It compiles
 the production switch code and the read block of the query, rejects 13
 runtime mutants, 7 query mutants and 9 wiring mutants, and compiles the
 vendor backend syntax-only. In the fork,
 `python tests/check_rsx_deform_surface.py` compiles the production
-painter, mip row, sampler, shadow comparison and dump, and rejects 24
+painter, mip row, sampler, shadow comparison and dump, and rejects 30
 mutants. `python scripts/check_deformation_query.py` passes with the new
 header.
 
@@ -205,13 +210,20 @@ Measured result (exe `8856e66571f07c3e`, clean arms with lifted SPU jobs,
 166.5 ms (control, run `20261124T065129.423997Z`) to 98.6, 98.9 and 96.1 ms
 (buffer on, run `20261124T065827.621038Z`) in the windows 200 to 212 s, 300
 to 312 s and 390 to 402 s. The p95 is 105.0, 106.4 and 102.2 ms with the
-buffer on. The surface reads of the deformation data are gone. The shadow
-arm S1 (`20261124T061644.583391Z`) shows a difference between the CPU bytes
-and the GPU bytes: 68 to 89 percent of the painted texels are equal, and
-half of the mip texels differ. Cause: the private copies of the shadow mode
-started at zero, and the GPU surface starts as guest memory (`d906401bd0`
-fixes it). The emulator does not render level 1: its mip pass has positions
-that are not finite. The fix has no run. 30 FPS is not reached.
+buffer on. The surface reads of the deformation data are gone.
+
+The shadow arms compare the CPU bytes with the GPU bytes. S1
+(`20261124T061644.583391Z`, private copies at zero): 68 to 89 percent of
+the painted texels are equal. S2 (`20261124T101948.193944Z`, exe
+`62fadf7802bd24e4`, private copies as guest memory): 8984 of 28179 texels
+are equal, 1009 differ by one and 18186 by more than one. The dump of S2
+shows the cause: at 425 of its 607 texels the GPU destination is 0 to 5,
+and the CPU destination (guest memory) is 22 to 127. `off_rt_get` fills a
+new GPU surface with 4 guest bytes a texel and a row stride of `4 * width`,
+because the B8 target is RGBA8 on the host. So the GPU surface does not
+start as guest memory. `9812a9ee40` starts the private copies as the GPU
+bytes. It has no run. The emulator does not render level 1: its mip pass
+has positions that are not finite. 30 FPS is not reached.
 
 ## SPURS lane count override (#327)
 

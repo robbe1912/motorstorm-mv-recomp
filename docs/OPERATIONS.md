@@ -653,6 +653,8 @@ The game still reads the GPU bytes. A `[DEFORM_SHADOW]` line compares the
 painted columns with the GPU bytes once a frame. A `[DEFORM_WHEEL]` line
 holds the four bytes of one depth read from the CPU copy and from the GPU.
 The shadow lines stop after `RSX_DEFORM_LOG` frames (300).
+A `[DEFORM_SHADOW] start` line marks the frame in that the private copies
+start as the GPU bytes. That frame does not compare.
 `RSX_DEFORM_DUMP=<frames>` writes the first frames with a difference to a
 file: `rsx_deform_dump.bin` next to `rsx_phases.csv` (`--profile-renderer`),
 else the file of `RSX_DEFORM_DUMP_FILE`. Without the switches the runtime
