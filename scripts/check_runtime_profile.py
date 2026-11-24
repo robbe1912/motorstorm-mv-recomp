@@ -344,6 +344,19 @@ class ExecutionProfileTests(unittest.TestCase):
     def test_fastmem_spin_detector_off_sets_and_records_key(self):
         self.check_fastmem_spin_detector('0')
 
+    def check_fastmem_gate(self, mode):
+        with patch.dict(os.environ, {'PPU_FM': '0'}):
+            record, env = self.launch('--fastmem-gate', mode)
+        expected = '0' if mode == '0' else None
+        self.assertEqual(env.get('PPU_FM'), expected)
+        self.assertEqual(record['environment'].get('PPU_FM'), expected)
+
+    def test_fastmem_gate_default_clears_inherited_key(self):
+        self.check_fastmem_gate('1')
+
+    def test_fastmem_gate_off_sets_and_records_key(self):
+        self.check_fastmem_gate('0')
+
     def check_cpu_surface_snapshot_fast(self, mode):
         with patch.dict(os.environ, {'RSX_CPU_SURFACE_SNAPSHOT_FAST': '1'}):
             record, env = self.launch('--cpu-surface-snapshot-fast', mode)

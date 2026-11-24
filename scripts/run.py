@@ -84,6 +84,7 @@ def main():
     ap.add_argument('--spurs-lanes',choices=('0','1','2','3','4','5','6'),default='0',help='Lane count for each SPURS instance in place of the count of the game; 0 keeps the count of the game (default 0)')
     ap.add_argument('--rsx-switch',action='append',default=[],metavar='KEY=VALUE',help='Set one RSX_* switch of the runtime (repeatable); the launch record names each switch')
     ap.add_argument('--fastmem-spin-detector',choices=('0','1'),default='1',help='1: the fast memory spin detector runs (default); 0: PPU_FM_SPINDET=0 turns it off')
+    ap.add_argument('--fastmem-gate',choices=('0','1'),default='1',help='1: the PPU fast memory paths run (default); 0: PPU_FM=0 sends each guest memory access of the lifted code through the out-of-line family')
     ap.add_argument('--cpu-surface-prompt',choices=('default','0','1'),default='default',help='Prompt disjoint CPU surface reads; default preserves backend policy, 0 uses batch-end service')
     ap.add_argument('--cpu-surface-flush',choices=('default','0','1'),default='default',help='Submit recorded writes needed by queued CPU reads at the next draw boundary or idle pump')
     ap.add_argument('--prompt-flip',action='store_true',help='Deliver the drained frame completion at take and wake its guest waiter at the original refresh limit')
@@ -282,6 +283,8 @@ def main():
     if args.profile_ppu_waits:env['PPU_WAIT_PROFILE']='1'
     env.pop('PPU_FM_SPINDET',None)
     if args.fastmem_spin_detector=='0':env['PPU_FM_SPINDET']='0'
+    env.pop('PPU_FM',None)
+    if args.fastmem_gate=='0':env['PPU_FM']='0'
     if args.cpu_surface_flush != 'default':env['RSX_CPU_SURFACE_FLUSH']=args.cpu_surface_flush
     if args.profile_flip:
         env['FLIP_LAT'] = '1'
@@ -324,6 +327,7 @@ def main():
     if 'PPU_WAIT_PROFILE' in env:record['environment']['PPU_WAIT_PROFILE']=env['PPU_WAIT_PROFILE']
     if 'PPU_WAIT_PROFILE_MIN_US' in env:record['environment']['PPU_WAIT_PROFILE_MIN_US']=env['PPU_WAIT_PROFILE_MIN_US']
     if 'PPU_FM_SPINDET' in env:record['environment']['PPU_FM_SPINDET']=env['PPU_FM_SPINDET']
+    if 'PPU_FM' in env:record['environment']['PPU_FM']=env['PPU_FM']
     if 'SPU_JOB_DUMP' in env:record['environment']['SPU_JOB_DUMP']=env['SPU_JOB_DUMP']
     record['resource_limits']=resource_policy
     record['resource_breach']=None

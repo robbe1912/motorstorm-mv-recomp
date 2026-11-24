@@ -705,6 +705,14 @@ the launcher clears an inherited `PPU_FM_SPINDET`. Use `0` only for a profile
 of the lifted code. A guest loop that spins on one address then gets no
 yield and no hot-spin report.
 
+`--fastmem-gate 0|1` controls the fast memory paths of the PPU lifted code.
+The default `1` keeps them on. The value `0` sets `PPU_FM=0`: each guest
+memory access of the lifted code then takes the out-of-line family
+(`vm_read*`, `vm_write*`), and the launch record names the key. Without the
+option the launcher clears an inherited `PPU_FM`. Use `0` for the control
+arm of an A/B run of a fast memory change. Measured result: none. No run
+yet.
+
 `PPU_FM_COUNT=1` in the environment turns on the call counter of the PPU
 fast memory accessors. There is no launcher option. The launcher passes the
 key to the game, but the launch record does not name it, so write the key
