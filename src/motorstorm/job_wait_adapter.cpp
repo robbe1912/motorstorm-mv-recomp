@@ -18,6 +18,11 @@
 #include <thread>
 #endif
 
+#ifndef MOTORSTORM_JOB_WAIT_FIXTURE
+// SPURS_WAIT_PRIORITY=1: the runtime asks for the job list that a PPU thread waits on.
+extern "C" void spurs_wait_priority_set(std::uint64_t (*job_list)(void*), void* context);
+#endif
+
 void game_original_job_marker_wait(ppu_context*);
 namespace {
 struct State {
@@ -88,11 +93,27 @@ void report_wait(std::uint64_t caller, std::uint64_t object, std::uint32_t marke
         static_cast<unsigned long long>(result.polls), static_cast<unsigned long long>(result.cooperations));
 }
 
+// SPURS_WAIT_PRIORITY=1: the job list that a marker wait of this process
+// waits on, 0 for none. The coordinator of the runtime reads it.
+std::atomic<std::uint32_t> wait_priority_owner{0};
+std::uint64_t wait_priority_job_list(void*) noexcept {
+    return wait_priority_owner.load(std::memory_order_acquire);
+}
+// Clears the waited job list when the marker wait ends, also when it throws.
+struct WaitPriority {
+    ~WaitPriority() { wait_priority_owner.store(0, std::memory_order_release); }
+    WaitPriority() = default;
+    WaitPriority(const WaitPriority&) = delete;
+    WaitPriority& operator=(const WaitPriority&) = delete;
+};
+
 motorstorm::game::JobProgressStart begin(void* user) {
     auto* ctx = static_cast<ppu_context*>(user);
     const std::uint32_t owner = vm_read32(ctx->gpr[3] + 4);
     if (!owner || std::uint64_t(owner) + 32 > 0x100000000ULL)
         throw std::runtime_error("Unsupported job progress ownership range");
+    // SPURS_WAIT_PRIORITY=1: the runtime gives the workload of this job list a free lane first.
+    wait_priority_owner.store(owner, std::memory_order_release);
     return {owner, vm_read16(owner + 18)};
 }
 void barrier(void*) { std::atomic_thread_fence(std::memory_order_seq_cst); }
@@ -130,10 +151,15 @@ void motorstorm_job_marker_wait(ppu_context* ctx) {
     try {
         runtime = &state();
         if (runtime->enabled) {
+#ifndef MOTORSTORM_JOB_WAIT_FIXTURE
+            static const bool registered = [] { spurs_wait_priority_set(wait_priority_job_list, nullptr); return true; }();
+            (void)registered;
+#endif
             const auto marker = static_cast<std::uint32_t>(ctx->gpr[4]);
             const auto caller = ctx->lr, object = ctx->gpr[3];
             Tick start;
             const bool start_ok = runtime->profile && profile_clock(start);
+            const WaitPriority priority;   // the waited job list is cleared when the wait ends
             const auto result = motorstorm::game::wait_for_job_marker(
                 {ctx, begin, barrier, active, cooperate}, marker);
             if (runtime->profile) report_wait(caller, object, marker, result, start, start_ok);
