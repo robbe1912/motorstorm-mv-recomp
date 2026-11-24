@@ -22,6 +22,9 @@
 // SPURS_WAIT_PRIORITY=1: the runtime asks for the job list that a PPU thread waits on.
 extern "C" void spurs_wait_priority_set(std::uint64_t (*job_list)(void*), void* context);
 #endif
+#ifndef MOTORSTORM_JOB_WAIT_FIXTURE
+#include "ps3emu/spu_host_line_commit.h"   // SPURS_MARKER_WAKE=1: each commit of a guest line
+#endif
 
 void game_original_job_marker_wait(ppu_context*);
 namespace {
@@ -38,6 +41,9 @@ struct State {
         if (profiling && std::strcmp(profiling, "0") && std::strcmp(profiling, "1"))
             throw std::runtime_error("MS_NATIVE_JOB_WAIT_PROFILE must be 0 or 1");
         profile = profiling && !std::strcmp(profiling, "1");
+        const char* wake = std::getenv("SPURS_MARKER_WAKE");
+        if (wake && std::strcmp(wake, "0") && std::strcmp(wake, "1"))
+            throw std::runtime_error("SPURS_MARKER_WAKE must be 0 or 1");
         std::fprintf(stderr, "[native-job-wait] enabled=%d profile=%d\n", enabled ? 1 : 0, profile ? 1 : 0);
     }
 };
@@ -106,6 +112,76 @@ struct WaitPriority {
     WaitPriority(const WaitPriority&) = delete;
     WaitPriority& operator=(const WaitPriority&) = delete;
 };
+// SPURS_MARKER_WAKE=1: the marker wait ends when a job list line commits.
+// Windows puts a step below each timed wait. On one host a high-resolution
+// waitable timer waits 0.52 ms for a due of 100 us. A wake from another
+// thread has no step.
+// MOTORSTORM_JOB_WAIT_WAKE_FALLBACK_MS: the fallback time of the wait in
+// milliseconds. 0 keeps the step of the timer path, 100 us. A commit through
+// another path ends the wait after that time.
+#ifndef MOTORSTORM_JOB_WAIT_WAKE_FALLBACK_MS
+#define MOTORSTORM_JOB_WAIT_WAKE_FALLBACK_MS 0
+#endif
+#if defined(_WIN32) && !defined(MOTORSTORM_JOB_WAIT_FIXTURE)
+// The lines of the counters of the waited job list: taken at +18, active at
+// +20 to +31. The first line is 0 when no thread waits.
+std::atomic<std::uint32_t> marker_wake_first{0}, marker_wake_last{0}, marker_wake_generation{0};
+// Set while a thread waits on the event.
+std::atomic<bool> marker_wake_waiting{false};
+// Auto-reset event of the wake: the callback sets it, the wait consumes it.
+HANDLE const marker_wake_event = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+bool marker_wake_on() {
+    static const bool on = [] {
+        const char* mode = std::getenv("SPURS_MARKER_WAKE");
+        return mode && !std::strcmp(mode, "1");
+    }();
+    return on;
+}
+// The runtime calls this after a committing PUTLLC on `line`, outside its line lock.
+void marker_wake_commit(std::uint32_t line) noexcept {
+    const std::uint32_t first = marker_wake_first.load(std::memory_order_acquire);
+    const std::uint32_t number = line >> 7;
+    if (!first || number < first || number > marker_wake_last.load(std::memory_order_relaxed)) return;
+    marker_wake_generation.fetch_add(1, std::memory_order_release);
+    // The wait counts the commit before it reads the flag, so it never sleeps
+    // through this one.
+    if (marker_wake_waiting.load(std::memory_order_acquire)) SetEvent(marker_wake_event);
+}
+// Ends when a job list line commits, or when `timer` ends the fallback time.
+void marker_wake_wait(HANDLE timer) {
+    thread_local std::uint32_t seen = 0;
+    const auto now = marker_wake_generation.load(std::memory_order_acquire);
+    // A commit since the last wait ends this wait at once: the loop polls again.
+    if (now != seen) { seen = now; return; }
+    marker_wake_waiting.store(true, std::memory_order_release);
+    // A commit between the read above and the flag does not set the event.
+    if (marker_wake_generation.load(std::memory_order_acquire) != seen) {
+        marker_wake_waiting.store(false, std::memory_order_release);
+        seen = marker_wake_generation.load(std::memory_order_acquire);
+        return;
+    }
+    LARGE_INTEGER due;
+#if MOTORSTORM_JOB_WAIT_WAKE_FALLBACK_MS > 0
+    due.QuadPart = -10000LL * MOTORSTORM_JOB_WAIT_WAKE_FALLBACK_MS;   // Relative milliseconds.
+#else
+    due.QuadPart = -1000;   // Relative 100 microseconds, the step of the timer path.
+#endif
+    if (!SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE)) {
+        marker_wake_waiting.store(false, std::memory_order_release);
+        throw std::runtime_error("Native job timer setup failed: " + std::to_string(GetLastError()));
+    }
+    HANDLE handles[2] = { marker_wake_event, timer };
+    const DWORD wait = WaitForMultipleObjects(2, handles, FALSE, INFINITE);
+    marker_wake_waiting.store(false, std::memory_order_release);
+    if (wait != WAIT_OBJECT_0 && wait != WAIT_OBJECT_0 + 1)
+        throw std::runtime_error("Native job timer wait failed: " + std::to_string(GetLastError()));
+    seen = marker_wake_generation.load(std::memory_order_acquire);
+}
+// Installs the hook before any SPU thread runs.
+struct MarkerWakeRegistration {
+    MarkerWakeRegistration() { if (marker_wake_on()) g_spu_host_line_commit_hook = &marker_wake_commit; }
+} const marker_wake_registration;
+#endif
 
 motorstorm::game::JobProgressStart begin(void* user) {
     auto* ctx = static_cast<ppu_context*>(user);
@@ -114,6 +190,14 @@ motorstorm::game::JobProgressStart begin(void* user) {
         throw std::runtime_error("Unsupported job progress ownership range");
     // SPURS_WAIT_PRIORITY=1: the runtime gives the workload of this job list a free lane first.
     wait_priority_owner.store(owner, std::memory_order_release);
+#if defined(_WIN32) && !defined(MOTORSTORM_JOB_WAIT_FIXTURE)
+    // SPURS_MARKER_WAKE=1: a commit on a line of the counters of this job list ends the wait.
+    // The last line goes first: the callback starts at a nonzero first line.
+    if (marker_wake_on()) {
+        marker_wake_last.store((owner + 31) >> 7, std::memory_order_release);
+        marker_wake_first.store((owner + 18) >> 7, std::memory_order_release);
+    }
+#endif
     return {owner, vm_read16(owner + 18)};
 }
 void barrier(void*) { std::atomic_thread_fence(std::memory_order_seq_cst); }
@@ -135,6 +219,7 @@ void cooperate(void*) {
         ~Timer() { CloseHandle(handle); }
     };
     thread_local Timer timer;
+    if (marker_wake_on()) { marker_wake_wait(timer.handle); return; }
     LARGE_INTEGER due; due.QuadPart = -1000; // Relative 100 microseconds.
     if (!SetWaitableTimer(timer.handle, &due, 0, nullptr, nullptr, FALSE))
         throw std::runtime_error("Native job timer setup failed: " + std::to_string(GetLastError()));
