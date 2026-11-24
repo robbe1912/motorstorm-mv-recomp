@@ -122,21 +122,27 @@ no surface (#326, comment of 2026-11-23).
 ## PPU wait profile (#327)
 
 Fork draft PR robbe1912/ps3recomp#12, branch `codex/frame60-ppu-wait-profile`
-on `combined` `79e7bb4c`: `c966a319` (code), `bc988f5a` (check). Game
-`f76e643235`, `5ae7bf8ced`; launcher `8dc4cbdfe0` (`--profile-ppu-waits`,
-default off).
+on `combined` `79e7bb4c`: `c966a319` (code), `bc988f5a` (check),
+`bacac6354b` (threshold of short waits, code and check). Game
+`f76e643235`, `5ae7bf8ced`, `384d505ae0`; launcher `8dc4cbdfe0`
+(`--profile-ppu-waits`, default off).
 
 `PPU_WAIT_PROFILE=1` writes one `[PPU_WAIT_PROFILE]` line per call of
 `sys_cond_wait`, `sys_semaphore_wait`, `sys_mutex_lock`,
-`sys_event_queue_receive` and `sys_event_flag_wait`: thread, kind, object id,
-caller address, start and end. Off: no line and no clock read.
+`sys_event_queue_receive` and `sys_event_flag_wait` that lasts at least
+`PPU_WAIT_PROFILE_MIN_US` microseconds: thread, kind, object id, caller
+address, start and end. The default of the threshold is 1000. A value of 0
+writes a line for each call. Off: no line and no clock read.
 
-Checks: `python tests/check_ppu_wait_profile.py` in the fork rejects 8 header
-mutants. `python scripts/check_ppu_wait_profile.py` here rejects 25 launcher
-and source mutants and 8 header mutants, and compiles the four syscall files
+Checks: `python tests/check_ppu_wait_profile.py` in the fork rejects 12 header
+mutants. `python scripts/check_ppu_wait_profile.py` here rejects 26 launcher
+and source mutants and 12 header mutants, and compiles the four syscall files
 syntax-only. Both pass.
 
-Measured result: none. No run yet.
+Measured result: none for the frame time. Without the threshold, diagnostic
+race run `20261124T045916` (exe `8856e66571f07c3e`) wrote 17,750 lines in the
+last 12 s for 70 frames: about 1479 lines per frame. No run with the threshold
+yet.
 
 ## Deform draw capture (#346)
 

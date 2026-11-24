@@ -604,9 +604,11 @@ of the lifted code. A guest loop that spins on one address then gets no
 yield and no hot-spin report.
 
 `--profile-ppu-waits` sets `PPU_WAIT_PROFILE=1`. Each call of a guest wait
-(condition, semaphore, mutex, event queue, event flag) writes one
-`[PPU_WAIT_PROFILE]` line to the game log: thread, kind, object id, caller
-address, start, end and frequency in QPC ticks. The profile adds two clock
+(condition, semaphore, mutex, event queue, event flag) that lasts at least
+1 ms writes one `[PPU_WAIT_PROFILE]` line to the game log: thread, kind,
+object id, caller address, start, end and frequency in QPC ticks. Set
+`PPU_WAIT_PROFILE_MIN_US=<microseconds>` in the environment to change the
+shortest wait; `0` writes a line for each call. The profile adds two clock
 reads per wait. Do not time a frame interval with it. Game-free coverage:
 [check_ppu_wait_profile.py](../scripts/check_ppu_wait_profile.py).
 
