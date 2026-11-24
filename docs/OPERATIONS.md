@@ -693,8 +693,10 @@ compare that found painted texels. The first painted texel of a run came
 22 s after the first paint draw: use `--seconds 300` for a shadow run.
 `RSX_DEFORM_DUMP=<frames>` writes the first frames with a difference to a
 file: `rsx_deform_dump.bin` next to `rsx_phases.csv` (`--profile-renderer`),
-else the file of `RSX_DEFORM_DUMP_FILE`. Without the switches the runtime
-takes the GPU path.
+else the file of `RSX_DEFORM_DUMP_FILE`. `RSX_DEFORM_DUMP_MIN=<k>` limits
+the dump to frames with a largest difference of at least `k`. Use `2` to
+catch a texel that differs by more than one. Without the switches the
+runtime takes the GPU path.
 
 `--fastmem-spin-detector 0|1` controls the spin detector of the PPU fast
 memory reads. The default `1` keeps the detector on. The value `0` sets

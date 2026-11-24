@@ -193,9 +193,11 @@ call), `c7b58208` (fork test), `65e5a82d` (fix: the private copies of the
 shadow mode start as guest memory; dump of the shadow frames), `46ba950e`
 (fix: the paint notes stop with the dump budget), `5bbfff2e` (fix: the
 shadow copies start as the GPU bytes), `ab206758` (fix: time of the shadow
-lines, wheel lines after the first compare). Game `6638e69c9d`,
-`e6abdbbeb2`, `039a251ddf`, `ee1dfd3fff`, `d906401bd0`, `54379f34e4`,
-`9812a9ee40`, `537d1eaf59`. Off by default.
+lines, wheel lines after the first compare), `37cf3948` (dump threshold,
+`first` field of a dump record), `756d9f0e` (fix: a covered texel gets
+the last paint of its draw). Game `6638e69c9d`, `e6abdbbeb2`,
+`039a251ddf`, `ee1dfd3fff`, `d906401bd0`, `54379f34e4`, `9812a9ee40`,
+`537d1eaf59`, `d1a2a6bafa`, `1c7a3ec18c`. Off by default.
 
 `RSX_DEFORM_BUFFER=1` with `RSX_DEFORM_TARGETS=<offset,...>` keeps level
 0 of each listed surface in host memory. The painter replays each paint
@@ -206,12 +208,18 @@ no copy of the surface and no wait for a recorded draw. The GPU keeps the
 paint draws. The native depth query of the game takes its four bytes
 through `rsx_deform_sample` in `libs/video/rsx_deform_surface.h`.
 
+A texel that two triangles of one draw cover gets the last paint of the
+draw on its byte before the draw. The backend binds the OffRT of the
+target as the texture and as the render target of the draw, so the GPU
+reads the destination as it was before the draw. Two draws accumulate.
+
 `RSX_DEFORM_SHADOW=1` with the buffer is the proof. The runtime paints a
 private copy per pixel operation and compares the painted columns with
 the GPU bytes after a submitted batch. `RSX_DEFORM_OP=<name>` selects
 the operation: `fp16` (default), `fused`, `f32`. `RSX_DEFORM_LOG=<frames>`
 (300) bounds the shadow lines. `RSX_DEFORM_DUMP=<frames>` writes the first
-frames with a difference to a file. The run modes are in
+frames with a difference to a file. `RSX_DEFORM_DUMP_MIN=<k>` (0) limits
+the dump to frames with a largest difference of at least `k`. The run modes are in
 [operations](OPERATIONS.md).
 
 The private copies start as the GPU bytes: a `[DEFORM_SHADOW] start` line
@@ -227,7 +235,7 @@ the production switch code and the read block of the query, rejects 15
 runtime mutants, 7 query mutants and 9 wiring mutants, and compiles the
 vendor backend syntax-only. In the fork,
 `python tests/check_rsx_deform_surface.py` compiles the production
-painter, mip row, sampler, shadow comparison and dump, and rejects 33
+painter, mip row, sampler, shadow comparison and dump, and rejects 41
 mutants. `python scripts/check_deformation_query.py` passes with the new
 header.
 
@@ -264,7 +272,17 @@ S5 (`20261124T134739.069671Z`, exe `c6aea3c150144769`, 300 s) compared 59
 frames in 18.6 s. Of 38630 painted texels, 32237 are equal (83.5 percent),
 4568 differ by one and 1825 by more than one (4.7 percent). The largest
 difference is 230 of 255. `fp16` and `fused` are equal at the same texels;
-`f32` is equal at 554 texels fewer. The cause of the 1825 texels is open.
+`f32` is equal at 554 texels fewer.
+
+The dump of S5 holds two of the 1825 texels, in frame 8374 at (168, 271)
+and (168, 272). The painter painted each twice in the frame. At the
+first, the CPU byte is 36 and the byte before the last paint is 75. The
+GPU byte is 46: the byte before the first paint (85) plus the increment
+of the last paint (-39). The GPU applies the last paint of a draw on the
+byte before the draw, because the backend binds the OffRT of the target
+as the texture and as the render target of the draw. The painter
+accumulated the paints of the draw. `756d9f0e` applies the same
+rule as the GPU. It has no run.
 
 ## SPURS lane count override (#327)
 
