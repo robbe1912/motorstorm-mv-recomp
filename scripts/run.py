@@ -58,6 +58,7 @@ def main():
     ap.add_argument('--d3d12-debug',choices=('default','0','1'),default='default',help='Explicit API validation selection; default preserves build policy and assertions stay enabled')
     ap.add_argument('--profile-textures',action='store_true',help='Existing aggregate DX12 texture phases and cache outcomes; adds timing overhead')
     ap.add_argument('--profile-job-waits',action='store_true',help='Record completed native marker waits with owner, caller, threshold and QPC timing; requires selected build support')
+    ap.add_argument('--profile-ppu-waits',action='store_true',help='Record the wall time of guest waits ([PPU_WAIT_PROFILE] lines: cond, semaphore, mutex, event queue, event flag)')
     ap.add_argument('--profile-cpu-surfaces',action='store_true',help='Existing per-request CPU surface read queue, match, copy and fence diagnostics; adds timing and logging overhead')
     ap.add_argument('--surface-prefetch',choices=('0','1'),default='0',help='Copy the race feedback surfaces (deformation 01A80500, 1280x720 00A80500, exposure 02A30480) ahead of coherent CPU reads (default 0: copy on read)')
     ap.add_argument('--eager-surface-submit',choices=('0','1'),default='0',help='Submit the batch as soon as the game stops drawing into the race exposure target (02A30480), ahead of its coherent CPU read (default 0: submit at the read or frame end)')
@@ -240,6 +241,8 @@ def main():
     if args.cpu_surface_snapshot_fast=='1':env['RSX_CPU_SURFACE_SNAPSHOT_FAST']='1'
     env.pop('SPURS_KERNEL_NOTIFY',None)
     if args.spurs_kernel_notify=='1':env['SPURS_KERNEL_NOTIFY']='1'
+    env.pop('PPU_WAIT_PROFILE',None)
+    if args.profile_ppu_waits:env['PPU_WAIT_PROFILE']='1'
     if args.cpu_surface_flush != 'default':env['RSX_CPU_SURFACE_FLUSH']=args.cpu_surface_flush
     if args.profile_flip:
         env['FLIP_LAT'] = '1'
@@ -276,6 +279,7 @@ def main():
     proc=psutil.Process(p.pid); start=time.monotonic(); reason='guard tooling failure'; terminated=False
     record={'pid':p.pid,'create_time':proc.create_time(),'exe':str(exe),'exe_sha256':hashlib.sha256(exe.read_bytes()).hexdigest(),'elf_sha256':hashlib.sha256(c['elf'].read_bytes()).hexdigest(),'output':str(out),'muted':True,'capture_menu':bool(args.capture_menu or args.menu_replay),'menu_replay':str(args.menu_replay.resolve()) if args.menu_replay else None,'capture_textures':args.capture_textures,'trace_video':args.trace_video,'capture_havok':args.capture_havok or args.capture_havok_only,'capture_bike':args.capture_bike,'loadtime_trace':args.loadtime_trace,'capture_profile':'broad' if args.capture_havok else 'havok-only' if args.capture_havok_only else 'none','environment':{k:v for k,v in env.items() if k in ('PS3_VFS_ROOT','PS3_HDD0_ROOT','PS3_SAVEDATA_ROOT','AUDIO_MUTE','PAD_FILE','CAP_HAVOK_DIR','CAP_BIKE_DIR','CAP_BIKE_ARM_FILE','LOADTIME_TRACE','LOADTIME_TRACE_FILE','SPU_PM_INTERP','SPU_NATIVE_OWNED_JOBS','SPU_NATIVE_OWNED_IMAGE','SPU_JOBMOD_HEADER_FNV','SPU_JOBMOD_DISPATCH_LOG') or k.startswith(('SPU_PM_','TEX_','RSX_')) or k in ('VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG') or k=='SPU_WP'}}
     if 'SPURS_KERNEL_NOTIFY' in env:record['environment']['SPURS_KERNEL_NOTIFY']=env['SPURS_KERNEL_NOTIFY']
+    if 'PPU_WAIT_PROFILE' in env:record['environment']['PPU_WAIT_PROFILE']=env['PPU_WAIT_PROFILE']
     record['resource_limits']=resource_policy
     record['resource_breach']=None
     record['launcher_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
@@ -293,6 +297,7 @@ def main():
     record.update(admitted)
     record['environment'].update(admitted['execution_environment'])
     record['profile_job_waits']=args.profile_job_waits
+    record['profile_ppu_waits']=args.profile_ppu_waits
     record['profile_renderer']=args.profile_renderer
     record['profile_textures']=args.profile_textures
     record['d3d12_debug']=args.d3d12_debug

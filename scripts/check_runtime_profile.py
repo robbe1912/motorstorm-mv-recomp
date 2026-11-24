@@ -338,6 +338,20 @@ class ExecutionProfileTests(unittest.TestCase):
     def test_spurs_kernel_notify_enabled(self):
         self.check_spurs_kernel_notify('1')
 
+    def check_ppu_wait_profile(self, options):
+        with patch.dict(os.environ, {'PPU_WAIT_PROFILE': '1'}):
+            record, env = self.launch(*options)
+        expected = '1' if '--profile-ppu-waits' in options else None
+        self.assertEqual(env.get('PPU_WAIT_PROFILE'), expected)
+        self.assertEqual(record['environment'].get('PPU_WAIT_PROFILE'), expected)
+        self.assertEqual(record['profile_ppu_waits'], expected == '1')
+
+    def test_ppu_wait_profile_default_clears_inherited_switch(self):
+        self.check_ppu_wait_profile(())
+
+    def test_ppu_wait_profile_enabled(self):
+        self.check_ppu_wait_profile(('--profile-ppu-waits',))
+
     def test_rsx_switch_sets_and_records_runtime_keys(self):
         record, env = self.launch('--rsx-switch', 'RSX_DEFORM_CAPTURE=1', '--rsx-switch', 'RSX_DEFORM_TARGETS=00A80500')
         self.assertEqual((env.get('RSX_DEFORM_CAPTURE'), env.get('RSX_DEFORM_TARGETS')), ('1', '00A80500'))
