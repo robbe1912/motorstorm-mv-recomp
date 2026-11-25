@@ -71,6 +71,46 @@ the inject base `0x7FE00000`. No mutant covers it. Step 4 (lean gate, at
 most 8 x86 instructions at a plain access) is a design only:
 `temp/fastmem3/REPORT.md`, section 9.
 
+## PPU fast memory step 4: lean gate, move 1
+
+Fork branch `codex/ppu-fastmem4`, based on `codex/ppu-fastmem3`
+`cbc220d5`:
+
+- `1c3fec80` perf(ppu): gate the page byte in the accessor. Game
+  `994da1d1`.
+- `6feb73ce` test(ppu): build the coherency stub per tree. The change of
+  the stub is in the same game commit `994da1d1`.
+
+No build option is new. `PPU_FM4` is 1 by default in the header. The
+lean gate is the default of each build. `--ppu-fastmem3 0` (the path
+before step 3) forces it off.
+
+The call site makes one test: the page byte and the flag word. Three
+exact tests of step 3 move into the page byte: the bounds test, the GCM
+ref-poll address of `read32` and the read sync. The out-of-line function
+keeps each exact test. The route bits of the page byte are `0x08` (read)
+and `0x10` (write). `0x20` names the read sync as the writer. The read
+sync is the one writer at run time. `vm_read_sync_mark_range` calls a
+new hook (`ppu_fm_mark_sync`) after its marks and after its flag.
+
+Checks on 2026-11-25:
+
+- `scripts/check_ppu_fastmem3.py`: PASS on the game tree and on the fork
+  tree, in batches under the run lock. 3 paths (`PPU_FM4` default,
+  `PPU_FM3=1 PPU_FM4=0`, `PPU_FM3=0`) times 2 layouts
+  (`PPU_FM_INLINE_FAST` 1 and 0), 12 modes on the lean path and 10 on
+  the other paths. 41 mutants rejected: 29 of step 3, 12 of this step
+  (4 header, 6 arm, 2 read sync).
+- Static cost of a synthetic lifted unit (clang-cl, lifted flags;
+  `temp/fastmem4/REPORT.md`, section 2): 16 x86 instructions for a plain
+  `read32` at a call site, 14 in a loop, and 11 for a plain `write32`.
+
+Measured result of step 4: none. No run yet.
+
+Open: moves 2 to 4 (alias answer, sampled spin detector, reserved-line
+test of a store), the microbenchmark of the lean gate, and the run of
+the oracle in one piece.
+
 ## Fast memory gate and call counter (#348)
 
 Fork branch `codex/frame60-fastmem-v2`, based on the tip of
