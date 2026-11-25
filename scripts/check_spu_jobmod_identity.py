@@ -3,7 +3,7 @@
 Compiles the production staging accumulator from spu_channels.c with an
 authored fixture. Images are synthetic C0DEC0DE headers over pseudo-random
 bytes; nothing is read from a game. Each case stages chunked transfers the
-way a policy module does and records which registry keys are offered. Six
+way a policy module does and records which registry keys are offered. Four
 source mutants must each fail. No native execution or speed claim."""
 import argparse
 import datetime
@@ -124,7 +124,7 @@ MUTANTS = {
     'span-includes-trailer': ('return image - 0x20u;', 'return image;'),
     'ignores-link-base': (' || stage_be32(ls + 0x28) != lsa', ''),
     'hashes-padding': ('uint32_t take = ctx->stage_hdr_span - ctx->stage_hdr_len;', 'uint32_t take = size;'),
-    'ignores-switch': ('header_identity ? stage_header_span(ls, lsa, size) : 0', 'stage_header_span(ls, lsa, size)'),
+    'ignores-switch': ('!header_identity ? STAGE_SPAN_LEGACY', '0 ? STAGE_SPAN_LEGACY'),
 }
 
 

@@ -2279,7 +2279,29 @@ static unsigned s_stage_good_n;
  * trailer, so a loader that pads its last transfer (MS1's MP3 job objects:
  * 0x179B0-byte image staged as 0x17A00) never matches. SPU_JOBMOD_HEADER_FNV=1
  * also offers, exactly once per burst, the key over the span its C0DEC0DE
- * header declares. Configure before workers start; unset or 0 = legacy only. */
+ * header declares. Configure before workers start; unset or 0 = legacy only.
+ * In that mode a burst without the magic at +0x20 is data: no identity has
+ * that form, so the runtime hashes no byte of it and offers no key. A burst
+ * is sorted when it holds 0x30 bytes. The keys of each other burst do not
+ * change. */
+/* Hash one transfer of a burst that is not data: every byte into the legacy
+ * key, the bytes of the declared span into the header key. Returns 1 when
+ * the header key is complete at the end of this call. */
+static int stage_hash_bytes(spu_context* ctx, const uint8_t* ls, uint32_t size)
+{
+    for (uint32_t i = 0; i < size; ++i)
+        ctx->stage_fnv = (ctx->stage_fnv ^ ls[i]) * 1099511628211ULL;
+    int header_ready = 0;
+    if (ctx->stage_hdr_len < ctx->stage_hdr_span) {
+        uint32_t take = ctx->stage_hdr_span - ctx->stage_hdr_len;
+        if (take > size) take = size;
+        for (uint32_t i = 0; i < take; ++i)
+            ctx->stage_hdr_fnv = (ctx->stage_hdr_fnv ^ ls[i]) * 1099511628211ULL;
+        ctx->stage_hdr_len += take;
+        header_ready = ctx->stage_hdr_len == ctx->stage_hdr_span;
+    }
+    return header_ready;
+}
 /* Account one policy-mode transfer into LS [lsa, lsa+size). Writes the
  * candidate registry keys, legacy first, and returns how many (0..2). */
 static unsigned spu_stage_accumulate(spu_context* ctx, const uint8_t* ls, uint32_t lsa,
@@ -2291,10 +2313,20 @@ static unsigned spu_stage_accumulate(spu_context* ctx, const uint8_t* ls, uint32
         ctx->stage_ea0 = ea;
         ctx->stage_hashed = 0;
         ctx->stage_fnv = 1469598103934665603ULL;
-        ctx->stage_hdr_span = header_identity ? stage_header_span(ls, lsa, size) : 0;
+        ctx->stage_hdr_span = !header_identity ? STAGE_SPAN_LEGACY
+            : size >= 0x30u ? stage_burst_kind(ls, lsa, 1) : STAGE_SPAN_PENDING;
         ctx->stage_hdr_len = 0;
         ctx->stage_hdr_fnv = 1469598103934665603ULL;
+    } else if (ctx->stage_hdr_span == STAGE_SPAN_PENDING && ctx->stage_hashed + size >= 0x30u) {
+        ctx->stage_hdr_span = stage_burst_kind(ctx->ls + ctx->stage_lo, ctx->stage_lo, 1);
+        if (ctx->stage_hdr_span < STAGE_SPAN_PENDING) /* not data: the bytes that
+            landed before the sort belong to the burst as well */
+            stage_hash_bytes(ctx, ctx->ls + ctx->stage_lo, ctx->stage_hashed);
     }
+    if (ctx->stage_hdr_span == STAGE_SPAN_PENDING) { ctx->stage_hashed += size; return 0; }
+    if (ctx->stage_hdr_span > STAGE_SPAN_PENDING) return 0; /* data: no hash, no key */
+    const int header_ready = stage_hash_bytes(ctx, ls, size);
+    ctx->stage_hashed += size;
     if (ctx->stage_hashed < 0x800u) return 0;
     unsigned n = 0;
     keys[n++] = ctx->stage_fnv;
@@ -2538,7 +2570,7 @@ void spu_overlay_note_get(spu_context* ctx, uint32_t ea, const uint8_t* ls, uint
                           } }
                 }
                 ctx->stage_hashed = 0;   /* complete: don't re-match follow-ups */
-            } else if (ctx->stage_hashed >= 0x800u) {
+            } else if (ctx->stage_hashed >= 0x800u && ctx->stage_hdr_span < STAGE_SPAN_PENDING) {
                 /* Round-9: the streamed module matched NO registered hash.
                  * Old code was silent here -- a new attract-cycle jobmod
                  * (PVS video-post class) then never got a resident_code
