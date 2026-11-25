@@ -446,7 +446,10 @@ static void spu_drain_call_scoped_body(spu_context* ctx, uint32_t return_pc)
     for (;;) {
         while (g_spu_trampoline_fn) {
             /* Owned tails may name the genuine native caller continuation. */
-            if ((g_spu_trampoline_fn == spu_indirect_branch || spu_native_owned_policy(ctx)) &&
+            /* The policy test is made one time per iteration. No guest code
+             * runs before the gate below, so the value cannot change. */
+            const int owned = spu_native_owned_policy(ctx);
+            if ((g_spu_trampoline_fn == spu_indirect_branch || owned) &&
                 (ctx->pc & SPU_LS_MASK) == (return_pc & SPU_LS_MASK)) {
                 g_spu_trampoline_fn = 0;
                 SPU_DRAIN_POP_IRQ();
@@ -454,7 +457,7 @@ static void spu_drain_call_scoped_body(spu_context* ctx, uint32_t return_pc)
             }
             void (*fn)(spu_context*) = g_spu_trampoline_fn;
             g_spu_trampoline_fn = 0;
-            if (spu_native_owned_policy(ctx) && !spu_native_owned_can_run(ctx,ctx->pc))
+            if (owned && !spu_native_owned_run_ok(ctx,ctx->pc))
                 fn=spu_indirect_branch;
             PS3_SPU_DISPATCH_BASE(fn);
             ctx->drain_ret_pc = (return_pc & SPU_LS_MASK) ? (return_pc & SPU_LS_MASK) : SPU_LS_SIZE;   /* re-set: a nested drain changed it */
@@ -666,7 +669,7 @@ static void spu_drain_call_scoped_body(spu_context* ctx, uint32_t return_pc)
                         ctx->irq_frame = &f;
                     }
                     if (setjmp(f.env) == 0) {
-                        if (spu_native_owned_policy(ctx) && !spu_native_owned_can_run(ctx,ctx->pc))
+                        if (owned && !spu_native_owned_run_ok(ctx,ctx->pc))
                             vf=spu_indirect_branch;
                         PS3_SPU_DISPATCH(ctx, vf);
                     vf(ctx);

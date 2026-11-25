@@ -4,6 +4,10 @@
 #define main existing_handoff_main
 #include "spu_interpreter_handoff.c"
 #undef main
+/* A wrapper can build these scenarios under another name (spu_gate_diet.c). */
+#ifdef OWNED_MAIN_NAME
+#define main OWNED_MAIN_NAME
+#endif
 #include "spu_native_owned.h"
 #include <fenv.h>
 #include "spu_native_owned_call.h"
