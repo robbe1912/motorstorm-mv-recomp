@@ -11,6 +11,66 @@ The setup, the workflow and the current limits are in
 [runtime changes](RUNTIME_CHANGES.md). The sections below stay the
 record of both hashes and the measured result of each change.
 
+## PPU fast memory step 3: inline reads and alias answer
+
+Fork branch `codex/ppu-fastmem3`, based on `codex/frame60-fastmem-v2`
+`b12cab7a`:
+
+- `aaf23ec3` perf(ppu): inline the fast read accessors. Game `9689461d`.
+- `fe6c4afa` perf(ppu): answer alias pages in the gate. Game `a1e8e9da`.
+- `9cb40e9e` docs: describe PPU fast memory step 3. No game commit: the
+  vendor tree has no `docs/` directory.
+- `cbc220d5` test(ppu): complete the PPU_FM3 oracle. Game `401c583c`.
+
+Game `2ffcf16e` adds the build switch. `python scripts/project.py build
+--ppu-fastmem3 0` selects the path before this change. The default is 1.
+The switch is part of the build identity. A build with `--ppu-fastmem3 0`
+is the control for the two carry commits.
+
+`PPU_FM3` is 1 by default. The read accessors are inline at each call
+site (`PPU_FM_INLINE_FAST`). The gate reads the flag word and one page
+byte. An access to a page of the alias window `0x45000000` to
+`0x50000000` gets its answer in the gate. IDENTITY keeps the address.
+ALIAS subtracts `0x05000000`. MIXED and each other case take the
+out-of-line function. `spu_ea_alias.c` publishes the page state in
+`sysmem_spu_alias_page`.
+
+Checks on 2026-11-25:
+
+- `scripts/check_ppu_fastmem3.py`: PASS on the game tree and on the fork
+  tree. 3 paths (`PPU_FM3` default, 1, 0) times 2 layouts
+  (`PPU_FM_INLINE_FAST` 1, 0), 10 modes each. 29 mutants rejected: 24
+  header, 4 alias, 1 arm. Run time 75 seconds for each tree.
+- `runtime/syscalls/tests/test_spu_ea_alias.c` (fork tree): PASS.
+  6746751 fixup answers equal the scan reference. 9 mutants rejected.
+- `scripts/check_ppu_fastmem_diet.py` with `PPU_FM3=0`: PASS. 55 header
+  and 27 loader mutants rejected.
+
+Measured result (lead, game HEAD `5d88051`, build identity
+`209057025e760226`):
+
+- Exe size 360,416,768 bytes against 148,481,536 bytes (2.4 times).
+  Build time 2983 seconds against 379 seconds.
+- Static cost in
+  `hkContinuousSimulation::collideEntitiesBroadPhaseContinuous`
+  (`0xCAFF28`): 52.1 x86 instructions at each `lwz` site against 4 plus
+  34 (call site plus callee) before. 60 of 107 running samples of that
+  function are in the inlined accessor code.
+- Race frames, race time 10 to 40 seconds: 213, 204, 201 against 208,
+  212, 209 for the lane gate build. No gain.
+- Havok workers: both work in 87 percent of the cycles. Before: both
+  work in 37.5 percent.
+
+Microbenchmark (`temp/fastmem3/REPORT.md`, section 5): a read of a
+window page costs 16.6 ns against 32.5 ns. A read of a plain page costs
+15.7 ns against 16.2 ns. The microbenchmark does not show the cost in
+code size that the game shows.
+
+Open: the inline ref-poll compare of the read32 path is redundant for
+the inject base `0x7FE00000`. No mutant covers it. Step 4 (lean gate, at
+most 8 x86 instructions at a plain access) is a design only:
+`temp/fastmem3/REPORT.md`, section 9.
+
 ## Fast memory gate and call counter (#348)
 
 Fork branch `codex/frame60-fastmem-v2`, based on the tip of
