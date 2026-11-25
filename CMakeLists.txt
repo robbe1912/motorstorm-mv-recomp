@@ -39,6 +39,19 @@ endif()
 # src/guest_optimization.cmake.
 option(PORT_OPTIMIZE_GUEST "Use O2 and automatic inlining for the lifted guest units; requires PORT_OPTIMIZE_NATIVE" OFF)
 
+# PPU fast memory step 3. 1, the default: the read accessors of
+# include/ps3emu/ppu_fastmem.h hold no label address, so Clang inlines them
+# into the lifted code, and the gate gives the alias answer of a page of the
+# alias window inline. 0: the path before that step. The definition reaches
+# each unit of the build, also the lifted PPU units and the runtime
+# subdirectory. The build identity records the value.
+option(PORT_PPU_FM3 "PPU fast memory step 3: inline read accessors and alias answer of the gate" ON)
+if(PORT_PPU_FM3)
+    add_compile_definitions(PPU_FM3=1)
+else()
+    add_compile_definitions(PPU_FM3=0)
+endif()
+
 # Prefer Ninja if available
 if(NOT CMAKE_GENERATOR MATCHES "Ninja" AND NOT DEFINED ENV{CMAKE_GENERATOR})
     message(STATUS "Tip: use -G Ninja for faster builds")

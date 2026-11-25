@@ -137,6 +137,17 @@ identity records `guest_optimization`. Measured on the diagnostic race run
 O1 and O2 guest units): median frame interval 184.7 ms against 241.8 ms; main
 thread CPU 30.0 ms per frame against 43.4 ms. The memory helpers of
 `ppu_fastmem.h` stay out of line in the largest guest functions at both levels.
+With `--ppu-fastmem3 0`, the read accessors stay out of line in that way.
+
+The PPU fast memory step is on by default: `python scripts/project.py build
+--ppu-fastmem3 0` builds the path before that step, for a comparison build.
+The switch sets `PORT_PPU_FM3` and the compile definition `PPU_FM3=1` or
+`PPU_FM3=0` for each unit. Value 1 removes the label address from the read
+accessors of `ppu_fastmem.h`, so Clang inlines them, and the gate gives the
+alias answer of a page of the alias window inline. Build identity records
+`ppu_fastmem3`, and the launch record of `scripts/run.py` holds that value.
+`python scripts/check_ppu_fastmem3.py` builds both paths and rejects 29
+mutants. See [PPU fast memory step 3](NATIVE_GAME.md#ppu-fast-memory-step-3-alias-window-and-gate).
 
 The Havok worker count switch is opt-in: `python scripts/project.py build
 --havok-threads`. This defaults off. It sets `PORT_HAVOK_THREADS=ON` only for

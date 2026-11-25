@@ -642,3 +642,33 @@ incompatible watches. The authored standalone/adapter fixtures run with
 `python scripts/check_native_particle_collision.py`; original instruction and
 captured-state replay remains private. The [measurement record](research/NATIVE_JOB_TIMELINE.md#standalone-particle-box-collision-batch)
 separates stage evidence from the still-open 33 ms gameplay goal.
+
+`python scripts/check_particle_batches.py`.
+
+## PPU fast memory step 3: alias window and gate
+
+The lifted code reads guest memory through the accessors of
+`vendor/ps3recomp/include/ps3emu/ppu_fastmem.h`. Before this step each read
+was a call of an out-of-line copy of the accessor. The read accessors held
+the address of a label and a thread-local access, and Clang 17 does not
+inline such a function. Each access of a page of the alias window
+(`0x45000000` to `0x50000000`) went out of line to `sysmem_spu_alias_fixup`.
+
+The step makes two changes. The read accessors hold no label address, so
+Clang inlines them as it inlines the write accessors. The fire half of the
+spin detector is a separate function that reads its own return address, so
+the report gets the same caller function. The gate reads the page answer of
+the alias window. An IDENTITY page and an ALIAS page stay inline. A MIXED
+page, each page with another flag and each diagnostic bit go out of line.
+
+Build with `--ppu-fastmem3 1` (the default) or `--ppu-fastmem3 0` (the path
+before this step) to compare both paths in two builds. `PPU_FM=0`
+(`--fastmem-gate 0`) keeps its meaning: each access goes to the family.
+
+`python scripts/check_ppu_fastmem3.py` builds both paths in two layouts and
+rejects 29 mutants. The access classes are plain page, null page, IDENTITY
+page, ALIAS page, MIXED page, EA bit 31, raw SPU problem-state register, GCM
+ref-poll address, out of bounds and each diagnostic bit, for reads and
+writes of each width.
+
+Measured result: none. No run yet.
