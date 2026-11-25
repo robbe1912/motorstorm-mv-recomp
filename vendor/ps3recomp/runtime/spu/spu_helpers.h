@@ -171,7 +171,7 @@ static inline u128 spu_selb(u128 a, u128 b, u128 c) {
 /* Byte shuffle semantics and checked host admission have one owner. */
 #include "spu_shuffle.h"
 
-/* x86 SIMD forms of the hot helpers (this file: rotqby, rotqbyi; the local store
+/* x86 SIMD forms of the hot helpers (this file: rotqby, rotqbyi, cwd, cwx; the local store
  * swap is in spu_context.h; shufb is in spu_shuffle.h). SSE2 and SSSE3 only.
  * Build switch: SPU_SIMD=1 selects the forms, undefined or 0 keeps the scalar
  * bodies. Each form is bit-exact to the scalar body next to it. The forms need
@@ -192,6 +192,19 @@ static inline u128 spu_selb(u128 a, u128 b, u128 c) {
 #if SPU_SIMD_X86
 static inline __m128i spu__x86_ld(u128 a) { __m128i v; memcpy(&v, &a, 16); return v; }
 static inline u128 spu__x86_st(__m128i v) { u128 r; memcpy(&r, &v, 16); return r; }
+#endif
+#if SPU_SIMD_X86
+/* The four values of spu_cwd_pos(pos) as host dwords. Word w of the table
+ * holds the value for (pos >> 2) & 3 == w: 0x10 + t at SPU byte t, and
+ * 0..3 at SPU bytes 4*w .. 4*w+3. SPU byte t is host byte t ^ 3. */
+static inline __m128i spu__x86_cwd_table(uint32_t pos) {
+    static SPU_ALIGN16 const uint32_t table[4][4] = {
+        {0x00010203u, 0x14151617u, 0x18191A1Bu, 0x1C1D1E1Fu},
+        {0x10111213u, 0x00010203u, 0x18191A1Bu, 0x1C1D1E1Fu},
+        {0x10111213u, 0x14151617u, 0x00010203u, 0x1C1D1E1Fu},
+        {0x10111213u, 0x14151617u, 0x18191A1Bu, 0x00010203u}};
+    return _mm_load_si128((const __m128i*)table + ((pos >> 2) & 3));
+}
 #endif
 #if SPU_SIMD_SSSE3
 /* Control vector of the byte rotates, in host byte order: host byte j of
@@ -567,11 +580,19 @@ static inline u128 spu_cdd_pos(int pos) {
 }
 static inline u128 spu_cbd(u128 a, int i7){ return spu_cbd_pos((int)a._u32[0]+i7); }
 static inline u128 spu_chd(u128 a, int i7){ return spu_chd_pos((int)a._u32[0]+i7); }
+#if SPU_SIMD_X86
+static inline u128 spu_cwd(u128 a, int i7){ return spu__x86_st(spu__x86_cwd_table(a._u32[0] + (uint32_t)i7)); }
+#else
 static inline u128 spu_cwd(u128 a, int i7){ return spu_cwd_pos((int)a._u32[0]+i7); }
+#endif
 static inline u128 spu_cdd(u128 a, int i7){ return spu_cdd_pos((int)a._u32[0]+i7); }
 static inline u128 spu_cbx(u128 a, u128 b){ return spu_cbd_pos((int)(a._u32[0]+b._u32[0])); }
 static inline u128 spu_chx(u128 a, u128 b){ return spu_chd_pos((int)(a._u32[0]+b._u32[0])); }
+#if SPU_SIMD_X86
+static inline u128 spu_cwx(u128 a, u128 b){ return spu__x86_st(spu__x86_cwd_table(a._u32[0] + b._u32[0])); }
+#else
 static inline u128 spu_cwx(u128 a, u128 b){ return spu_cwd_pos((int)(a._u32[0]+b._u32[0])); }
+#endif
 static inline u128 spu_cdx(u128 a, u128 b){ return spu_cdd_pos((int)(a._u32[0]+b._u32[0])); }
 
 /* ---- Phase 3: rotate-and-mask family ---- */
