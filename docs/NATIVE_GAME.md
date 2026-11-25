@@ -671,7 +671,47 @@ page, ALIAS page, MIXED page, EA bit 31, raw SPU problem-state register, GCM
 ref-poll address, out of bounds and each diagnostic bit, for reads and
 writes of each width.
 
-Measured result: none. No run yet.
+Measured result of step 3 (lead, game HEAD `5d88051`): no gain. Race
+frames over the same race time: 213, 204, 201 against 208, 212, 209 (race
+time 10 to 40 seconds), three runs each. Static cost: 52.1 x86
+instructions at each `lwz` site of `0xCAFF28`, against 4 plus 34 (call
+site plus callee) before. Exe size 360,416,768 bytes against 148,481,536
+bytes.
+
+## PPU fast memory step 4: lean gate, move 1
+
+The gate of step 3 makes three exact tests at each call site before the
+inline path: the bounds test, the compare with the GCM ref-poll address
+(`read32`) and the test of the read sync. The lean gate moves these three
+decisions into the page byte. The page byte gets two route bits:
+`PPU_FM_K_READ` (`0x08`) and `PPU_FM_K_WRITE` (`0x10`). `PPU_FM4` is 1 by
+default and selects the lean gate. `--ppu-fastmem3 0` (the path before
+step 3) forces it off. No build option is new: the header default applies
+to the runtime and to each lifted unit.
+
+The call site computes `(page byte | ppu_fm_slow) & (read mask or write
+mask)`. A nonzero result sends the access to the out-of-line function.
+That function keeps each exact test: the bounds test with the width of
+the access, the ref-poll compare and `vm_cpu_read_sync` for a read of a
+marked page.
+
+`ppu_fm_arm` fills the page byte at boot. It flags each page that is not
+entirely inside `ppu_vm_size`, and the page before the end. The read sync
+is the one writer at run time. `vm_read_sync_mark_range` calls the hook
+`ppu_fm_mark_sync` after its marks and after its flag. The hook sets
+`PPU_FM_K_READ | PPU_FM_K_SYNC` on the pages of its range and
+`PPU_FM_K_READ` on the page before the range. Each writer changes the
+byte with one atomic operation.
+
+`python scripts/check_ppu_fastmem3.py` builds three paths in two layouts:
+the lean gate, step 3 (`PPU_FM4=0`) and the path before step 3
+(`PPU_FM3=0`). It rejects 41 mutants: 29 of step 3 and 12 of this step.
+The lean path has two more modes. `leanbits` checks each bit of the page
+byte after the arm. `leansync` checks the read sync and the order of its
+hook.
+
+Measured result of step 4: none. No run yet.
+
 ## SPU lane trace gate
 
 `SPU_LANE_TRACE` controls the diagnostic lines of the SPU lane hot paths.
