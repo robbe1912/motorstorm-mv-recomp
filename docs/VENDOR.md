@@ -71,7 +71,7 @@ the inject base `0x7FE00000`. No mutant covers it. Step 4 (lean gate, at
 most 8 x86 instructions at a plain access) is a design only:
 `temp/fastmem3/REPORT.md`, section 9.
 
-## PPU fast memory step 4: lean gate, move 1
+## PPU fast memory step 4: lean gate, moves 1 and 2
 
 Fork branch `codex/ppu-fastmem4`, based on `codex/ppu-fastmem3`
 `cbc220d5`:
@@ -80,6 +80,8 @@ Fork branch `codex/ppu-fastmem4`, based on `codex/ppu-fastmem3`
   `994da1d1`.
 - `6feb73ce` test(ppu): build the coherency stub per tree. The change of
   the stub is in the same game commit `994da1d1`.
+- `4cbad8a2` perf(ppu): put the alias answer in the page byte. Game
+  `b9c52235`.
 
 No build option is new. `PPU_FM4` is 1 by default in the header. The
 lean gate is the default of each build. `--ppu-fastmem3 0` (the path
@@ -89,9 +91,19 @@ The call site makes one test: the page byte and the flag word. Three
 exact tests of step 3 move into the page byte: the bounds test, the GCM
 ref-poll address of `read32` and the read sync. The out-of-line function
 keeps each exact test. The route bits of the page byte are `0x08` (read)
-and `0x10` (write). `0x20` names the read sync as the writer. The read
-sync is the one writer at run time. `vm_read_sync_mark_range` calls a
-new hook (`ppu_fm_mark_sync`) after its marks and after its flag.
+and `0x10` (write). `0x20` names the read sync as its writer. The read
+sync and the alias table are the two writers at run time.
+`vm_read_sync_mark_range` calls the new hook (`ppu_fm_mark_sync`) after
+its marks and after its flag.
+
+Move 2 puts the answer of the alias window into the page byte. The bit
+`PPU_FM_K_ALIAS` (`0x40`) marks a window page with the page answer ALIAS.
+The call site subtracts `0x05000000` and tests the page byte of the
+primary address. A MIXED page keeps the route bits. The writer is
+`spu_alias_page_update` (`runtime/syscalls/spu_ea_alias.c`). It calls
+`ppu_fm_window_begin` before its release store of the page answer and
+`ppu_fm_window_end` after it. The second call sets the final form with one
+compare-and-swap loop and keeps the bits of the read sync.
 
 Checks on 2026-11-25:
 
@@ -99,17 +111,20 @@ Checks on 2026-11-25:
   tree, in batches under the run lock. 3 paths (`PPU_FM4` default,
   `PPU_FM3=1 PPU_FM4=0`, `PPU_FM3=0`) times 2 layouts
   (`PPU_FM_INLINE_FAST` 1 and 0), 12 modes on the lean path and 10 on
-  the other paths. 41 mutants rejected: 29 of step 3, 12 of this step
-  (4 header, 6 arm, 2 read sync).
+  the other paths. 55 mutants rejected: 29 of step 3, 26 of this step
+  (12 of move 1, 14 of move 2).
 - Static cost of a synthetic lifted unit (clang-cl, lifted flags;
-  `temp/fastmem4/REPORT.md`, section 2): 16 x86 instructions for a plain
-  `read32` at a call site, 14 in a loop, and 11 for a plain `write32`.
+  `temp/fastmem4/REPORT.md`, section 2), each instruction of one access
+  counted: a plain `read32` costs 17 x86 instructions after move 1 and 18
+  after move 2, 16 in a loop with the loop overhead. A plain `write32`
+  costs 15 when the SPU coherency is not armed and 24 when it is armed.
+  The target of 8 is not reached in this call form.
 
 Measured result of step 4: none. No run yet.
 
-Open: moves 2 to 4 (alias answer, sampled spin detector, reserved-line
-test of a store), the microbenchmark of the lean gate, and the run of
-the oracle in one piece.
+Open: moves 3 and 4 (sampled spin detector, reserved-line test of a
+store), the microbenchmark of the lean gate, and the run of the oracle in
+one piece.
 
 ## Fast memory gate and call counter (#348)
 
