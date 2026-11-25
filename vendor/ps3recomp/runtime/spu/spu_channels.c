@@ -811,6 +811,8 @@ unsigned g_ms_last_img, g_ms_last_seq;
  * that filler's data source is the broken input. Capped 12 then 1/256. */
 void spu_pm_fill_note(spu_context* ctx, uint32_t lsa, const void* bytes16, const char* src)
 {
+    /* SPU_LANE_TRACE gates the [pm-fill] lines; see spu_context.h. */
+    if (!spu_lane_trace()) return;
     static int _n = 0;
     if (_n++ < 12 || (_n % 256) == 0) {
         const uint8_t* b = (const uint8_t*)bytes16;
@@ -3423,7 +3425,7 @@ void spu_indirect_branch(spu_context* ctx)
         if (ctx->pc == SPURS_PM_SELECT_WORKLOAD_LS) {
             /* Keep the current virtual SPU's workload selected. */
             unsigned n = ++g_spurs_pm_polls;
-            if (n <= 4 || (n % 4096) == 0)
+            if (spu_lane_trace() && (n <= 4 || (n % 4096) == 0))
                 fprintf(stderr, "[spurs-pm] poll #%u (r3=0x%08X) -> continue\n",
                         n, ctx->gpr[3]._u32[0]);
             ctx->gpr[3] = spu_make_preferred_u32(spu_pm_current_workload(ctx));

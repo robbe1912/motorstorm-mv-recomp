@@ -265,7 +265,7 @@ static inline int mfc_do_transfer(spu_context* spu, uint32_t lsa, uint64_t ea,
                * tag=31 polls at 0x4C455400/0x4C46D800/0x4C4CF680). Log dst
                * + the first guest bytes at the polled EA so the polled
                * structure is identifiable. Capped 16. */
-              if (spu->policy_mode && ((cmd & 0xF0u) == 0x40u) && vm_base
+              if (spu->policy_mode && spu_lane_trace() && ((cmd & 0xF0u) == 0x40u) && vm_base
                   && (uint32_t)ea > 0x10000u) {
                   static int _p = 0;
                   if (_p++ < 16) {
@@ -711,7 +711,7 @@ static inline int mfc_do_transfer(spu_context* spu, uint32_t lsa, uint64_t ea,
            * either a legit re-stage (next claim cycle) or a competing
            * overwrite that corrupts the bytes before the PM's sequential
            * walk-in -- the [walkin] probe's match=NEITHER verdict decides. */
-          if (spu->policy_mode && g_ms_last_size
+          if (spu->policy_mode && spu_lane_trace() && g_ms_last_size
               && lsa >= g_ms_last_lsa
               && lsa < g_ms_last_lsa + g_ms_last_size) {
               static int _mw = 0;
@@ -1059,7 +1059,7 @@ static inline int mfc_run_list(spu_context* spu, uint32_t elem_lsa,
             /* Round 12: per-element visibility for the PM MODULE fetch
              * (dest in [0x4000,0x3E000)): sf keeps the S bit so a stall
              * element is identifiable. Capped first 96 then every 256th. */
-            if (spu->policy_mode && ((base_cmd & 0xF0u) == 0x40u)
+            if (spu->policy_mode && spu_lane_trace() && ((base_cmd & 0xF0u) == 0x40u)
                 && transfer_lsa >= 0x4000u && transfer_lsa < 0x3E000u) {
                 static unsigned _mfn = 0; _mfn++;
                 if (_mfn <= 96 || (_mfn % 256u) == 0) {
@@ -1813,7 +1813,7 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
          * table that only HAS four elements is the PM's own size source
          * truncated (upstream of DMA); a five-element table with a
          * missing [pm-fetch] ELEM line below is a dropped walk element. */
-        if (spu->policy_mode && (lsa & SPU_LS_MASK) >= 0x4000u
+        if (spu->policy_mode && spu_lane_trace() && (lsa & SPU_LS_MASK) >= 0x4000u
             && (lsa & SPU_LS_MASK) < 0x3E000u) {
             static int _ml = 0;
             if (_ml++ < 32) {
@@ -1876,7 +1876,7 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
          * arrive as >=5 commands). Log policy GETs into the module span
          * so a fetch that stops at 0x10000 shows which chunk never
          * issued, vs issued-and-rejected (rc, [mfc] REJECTED above). */
-        if (spu->policy_mode && ((cmd & 0xF0u) == 0x40u)
+        if (spu->policy_mode && spu_lane_trace() && ((cmd & 0xF0u) == 0x40u)
             && (lsa & SPU_LS_MASK) >= 0x4000u
             && (lsa & SPU_LS_MASK) < 0x3E000u) {
             static int _mg = 0; _mg++;
