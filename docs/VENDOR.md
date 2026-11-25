@@ -3040,3 +3040,81 @@ rule of the two accessors at addresses 0, `0x3FFF0`, one address above the
 mask and one unaligned address, and each armed probe.
 
 Measured result: none. No run yet.
+
+## SPU owned gate diet
+
+The change is in the fork, branch `codex/spu-gate-diet`, from `codex/spu-ls-gate`
+`aeb050e6`:
+
+| Commit | Content | Game |
+| --- | --- | --- |
+| `1bdafaa4a1` | plain thread-local reads in the owned gate | `a4331f0368` |
+| none (game only) | check of the gate stop list | `214b45b5fb` |
+
+The three environment readers of the owned gate keep their names and their
+text in `runtime/spu/spu_channels.c`. They now store the option value plus one
+into a thread-local word with one merged definition in `spu_native_owned.h`
+(`SPU_GATE SPU_THREAD_LOCAL int`). The inline readers `spu_owned_jobs()`,
+`spu_owned_observed()` and `spu_owned_image()` read that word. The fork tool
+`tools/spu_owned_options.py` copies the three function texts, so their text
+must not change.
+
+`spu_native_owned_run_ok(ctx, pc)` holds the stop list of the gate. The job
+dump probe is its first statement. `spu_native_owned_can_run(ctx, pc)` is
+`spu_native_owned_policy(ctx) && spu_native_owned_run_ok(ctx, pc)`. The drain
+loop in `runtime/spu/spu_drain.c` tests the policy one time per iteration and
+then tests `spu_native_owned_run_ok`. The interpreter (`spu_interp.c`) and the
+dispatch site use the inline readers through `spu_native_owned.h`. The
+generated guest code did not change.
+
+The gate still stops the lifted code for a watch list (`SPU_LS_WATCH`), the
+low read probe (`SPU_LS_LOWREAD`), self-modifying code (`SPU_SMC_WATCH`), a
+pending interrupt and the interrupt state, a pc outside the owner, an owner of
+another image, and each observation option. The job dump probe runs before the
+stop list.
+
+`python scripts/check_spu_gate_diet.py` builds `scripts/fixtures/spu_gate_diet.c`
+with the production runtime. It runs 24 production cases and 20 mutants. Each
+mutant removes one stop test or inverts the policy test; each mutant is
+rejected. No mutant removes the range test of the pc alone, because the owner
+walk holds the same bound when the policy service is off.
+
+Measured result: none. No run yet.
+
+## SPU jobmod hash cap
+
+The change is in the fork, branch `codex/spu-gate-diet`, from `codex/spu-ls-gate`
+`aeb050e6`:
+
+| Commit | Content | Game |
+| --- | --- | --- |
+| `092b2ce6d5` | name the bursts that the jobmod hash needs | `404225ca3d` |
+
+`runtime/spu/spu_jobmod_identity.h` adds `stage_burst_kind(base, lsa,
+header_identity)` and the three kinds `STAGE_SPAN_LEGACY`, `STAGE_SPAN_PENDING`
+and `STAGE_SPAN_DATA`. The block `spu_stage_accumulate` (game only, in
+`runtime/spu/spu_channels.c` between the staged jobmod identity markers) uses
+the kind in header mode (`SPU_JOBMOD_HEADER_FNV=1`):
+
+- A burst with the marker `0xC0DEC0DE` at offset 0x20 and its link base at
+  offset 0x28 is hashed as before. Its legacy key covers all bytes of the burst.
+  Its header key covers the declared image size.
+- A burst with another first 0x20 bytes is data. It is not hashed and it offers
+  no key.
+- A burst that starts with fewer than 0x30 bytes waits for 0x30 bytes. The
+  bytes that landed are hashed after the sort.
+- Header mode off: no change.
+
+The identification did not change. Each registered key is the FNV-1a-64 hash
+of `raw[:image_size - 0x20]` of the image. The replay of the 395 jobs of the
+job dump `pvs-race` gives the same keys before and after the change:
+`registry jobs=395 same_identification=395`. The hash covers 17,053,200 bytes
+after the change and 34,220,720 bytes before the change in that dump.
+
+`python scripts/check_spu_dma_hash.py` runs 18 synthetic cases and replays the
+job dump. It rejects 10 mutants, among them a wrong image size field, a header
+of another link base, a sort before the header lands, a byte order that is
+turned, and a mode that is ignored. `python scripts/check_spu_jobmod_identity.py`
+passes on the new block.
+
+Measured result: none. No run yet.

@@ -9,6 +9,8 @@ succeeds and one scenario then fails. The scenarios:
     SPU_PCHIST, SPU_NATIVE_OWNED_JOBS=0), a state set on the context, a DMA that overwrites the
     owner, a lifted function that arms a stop state and names a lifted target;
   - the job dump probe sees each address that the gate examines.
+No mutant removes the range test of the pc alone: with the policy service off, the owner walk
+holds the same bound (an owner ends at SPU_LS_SIZE), so such a mutant changes no result here.
 """
 import argparse, hashlib, json, os, shutil, subprocess, sys, time
 from pathlib import Path
@@ -38,7 +40,6 @@ MUTANTS={
  'policy-test-inverted':(DRAIN,'const int owned = spu_native_owned_policy(ctx);','const int owned = !spu_native_owned_policy(ctx);'),
  'drain-gate-skipped':(DRAIN,'if (owned && !spu_native_owned_run_ok(ctx,ctx->pc))\n                fn=spu_indirect_branch;','if (0 && owned && !spu_native_owned_run_ok(ctx,ctx->pc))\n                fn=spu_indirect_branch;'),
  'misaligned-pc-dropped':(GATE,'pc >= SPU_LS_SIZE || (pc & 3) ||','pc >= SPU_LS_SIZE ||'),
- 'pc-range-dropped':(GATE,'pc >= SPU_LS_SIZE || (pc & 3) ||','(pc & 3) ||'),
  'no-local-store-dropped':(GATE,'ctx->image_id < 0 || !ctx->ls ||','ctx->image_id < 0 ||'),
  'image-id-dropped':(GATE,'ctx->image_id < 0 || !ctx->ls ||','!ctx->ls ||'),
  'job-dump-probe-lost':(GATE,'if (g_spu_job_dump >= 0) spu_job_dump_probe(ctx, pc);\n',''),
