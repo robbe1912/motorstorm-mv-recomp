@@ -61,6 +61,7 @@ def main():
     b.add_argument('--optimize-renderer',action='store_true',help='Use checked O2/automatic inlining for native video/FIFO sources; requires --optimize')
     b.add_argument('--optimize-guest',action='store_true',help='Use checked O2/automatic inlining for the lifted guest units; requires --optimize')
     b.add_argument('--ppu-fastmem3',choices=('0','1'),default='1',help='1: PPU fast memory step 3, inline read accessors and alias answer of the gate (default); 0: the path before that step, for a comparison build')
+    b.add_argument('--no-spu-simd',action='store_true',help='0 for the SPU_SIMD build switch: scalar bodies of rotqby, rotqbyi, cwd, cwx, fm, shufb and the local store quadword swap, for a comparison build (default: x86 SIMD forms)')
     b.add_argument('--optimize-runtime',action='store_true',help='Use checked O2/automatic inlining for the whole ps3recomp runtime; requires --optimize')
     b.add_argument('--ps3recomp-dir',type=Path,help='Selected toolkit source (default: curated vendor runtime)')
     b.add_argument('--native-world-transforms',action=argparse.BooleanOptionalAction,default=True,
@@ -147,6 +148,7 @@ def main():
         command.append(f'-DPORT_OPTIMIZE_RENDERER={"ON" if args.optimize_renderer else "OFF"}')
         command.append(f'-DPORT_OPTIMIZE_GUEST={"ON" if args.optimize_guest else "OFF"}')
         command.append(f'-DPORT_PPU_FM3={args.ppu_fastmem3}')
+        command.append(f'-DPORT_SPU_SIMD={0 if args.no_spu_simd else 1}')
         capture_options = ('PORT_ENABLE_JOB_CAPTURE', 'PORT_QUEUE_CALL_OBSERVATION',
                            'PS3RECOMP_ATOMIC_OBSERVATION', 'PS3RECOMP_EXECUTION_OBSERVATION',
                            'PS3RECOMP_SPURS_SCHEDULER_OBSERVATION')
@@ -200,6 +202,7 @@ def main():
         identity['renderer_optimization_helper_sha256']=hashlib.sha256((ROOT/'src/renderer_optimization.cmake').read_bytes()).hexdigest()
         identity['guest_optimization']=args.optimize_guest
         identity['ppu_fastmem3']=args.ppu_fastmem3
+        identity['spu_simd']=0 if args.no_spu_simd else 1
         identity['runtime_optimization']=json.loads((binary/'runtime-optimization.json').read_text())
         if identity['runtime_optimization']['enabled'] != args.optimize_runtime:
             raise SystemExit('Runtime build configuration did not match the requested mode')

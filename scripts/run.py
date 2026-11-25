@@ -335,6 +335,7 @@ def main():
     if 'PPU_FM_COUNT' in env:record['environment']['PPU_FM_COUNT']=env['PPU_FM_COUNT']
     if 'PPU_RESV_STORE' in env:record['environment']['PPU_RESV_STORE']=env['PPU_RESV_STORE']
     record['ppu_fastmem3']=admitted['build_identity'].get('ppu_fastmem3')
+    record['spu_simd']=admitted['build_identity'].get('spu_simd')
     if 'SPU_JOB_DUMP' in env:record['environment']['SPU_JOB_DUMP']=env['SPU_JOB_DUMP']
     record['resource_limits']=resource_policy
     record['resource_breach']=None
