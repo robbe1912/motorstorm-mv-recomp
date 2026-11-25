@@ -345,9 +345,10 @@ int spu_workload_dispatch(const uint8_t* image, uint32_t image_size,
         return 0;
     }
 
-    fprintf(stderr,
-        "[spu_workload] dispatch HIT fp=0x%016llX entry=0x%05X args=0x%08X image=%d -> running\n",
-        (unsigned long long)fp, entry, args_ea, image_id);
+    if (spu_lane_trace())
+        fprintf(stderr,
+            "[spu_workload] dispatch HIT fp=0x%016llX entry=0x%05X args=0x%08X image=%d -> running\n",
+            (unsigned long long)fp, entry, args_ea, image_id);
 
     { unsigned long long d0 = loadtime_on() ? loadtime_us() : 0;
       spu_run_lifted_job_img(fn, ls, args_ea, image_id);
@@ -1010,9 +1011,12 @@ static void spu_async_run(spu_async_job* j)
                  * both audio tasks run task 1's descriptor). */
                 if (j->taskset_ea) {
                     spurs_pm_build_context(ls, j->taskset_ea, j->taskid, 0, 0);
-                    fprintf(stderr, "[taskset] built SpursTasksetContext image=%d "
-                            "taskset=0x%08X task=%u\n", j->image_id,
-                            j->taskset_ea, j->taskid); fflush(stderr);
+                    if (spu_lane_trace()) {
+                        fprintf(stderr, "[taskset] built SpursTasksetContext image=%d "
+                                "taskset=0x%08X task=%u\n", j->image_id,
+                                j->taskset_ea, j->taskid);
+                        fflush(stderr);
+                    }
                 }
             }
             /* ---- Bink-layer probe + real-policy A/B (image 3 = binkspu) ----
@@ -1169,8 +1173,9 @@ static void spu_async_run(spu_async_job* j)
                   FILE* f = fopen(path, "wb");
                   if (f) { fwrite(ls, 1, SPU_LS_SIZE, f); fclose(f);
                       fprintf(stderr, "[spu_workload] wrote local store -> %s\n", path); } } }
-            fprintf(stderr, "[spu_workload] async image=%d RETURNED rc=%d "
-                    "(entry returned)\n", j->image_id, rc);
+            if (spu_lane_trace())
+                fprintf(stderr, "[spu_workload] async image=%d RETURNED rc=%d "
+                        "(entry returned)\n", j->image_id, rc);
             { if (j->image_id > 0 && j->image_id < 64)
                   s_async_ret[j->image_id]++; }
             /* Exit-path discriminator: if the taskset still holds THIS task's
@@ -1732,9 +1737,10 @@ int spu_workload_dispatch_owned(const uint8_t* image, uint32_t image_size,
     if (task_arg) { extern uint32_t spu_thread_register_phantom(void);
         j->phantom_tid = spu_thread_register_phantom(); }
 
-    fprintf(stderr,
-        "[spu_workload] dispatch HIT (async) fp=0x%016llX args=0x%08X image=%d -> spawning thread\n",
-        (unsigned long long)fp, args_ea, image_id);
+    if (spu_lane_trace())
+        fprintf(stderr,
+            "[spu_workload] dispatch HIT (async) fp=0x%016llX args=0x%08X image=%d -> spawning thread\n",
+            (unsigned long long)fp, args_ea, image_id);
     if (args_ea) { extern uint8_t* vm_base; const uint8_t* c = vm_base + args_ea;
         static int _d=0; if (_d++ < 1) {
             /* Dump a larger window of the task context buffer + scan for any word
