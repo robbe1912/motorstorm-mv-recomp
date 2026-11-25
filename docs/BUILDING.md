@@ -274,3 +274,27 @@ commits are in [vendor provenance](VENDOR.md#spu-lane-print-gate-step-0).
 `python scripts/check_spu_lane_trace.py` runs the check.
 
 Measured result: none. No run yet.
+
+## SPU SIMD helper forms and SSSE3
+
+The build compiles the lifted SPU units with SSSE3 enabled:
+`/clang:-mssse3` with clang-cl, `-mssse3` with a GNU-style compiler.
+SSSE3 is a host requirement from now on. The forms make no CPUID test.
+The option `PORT_SPU_SIMD` (ON) defines `SPU_SIMD=1`. With it, `rotqby`,
+`rotqbyi`, `shufb`, `cwd`, `cwx`, `fm` and the local store quadword swap use
+x86 SIMD forms. Each form is bit-exact to its scalar body. The commits are
+in [vendor provenance](VENDOR.md#spu-simd-helper-forms).
+
+Build with `--no-spu-simd` for a comparison build with the scalar bodies:
+
+    python scripts/project.py build --no-spu-simd
+
+The switch sets `PORT_SPU_SIMD` to `OFF` and the compile definition
+`SPU_SIMD=0` for each unit. The build identity holds `spu_simd` `0` or `1`.
+Without SSSE3 in a unit, only the SSE2 forms (`cwd`, `cwx`, `fm`) are
+active, and `shufb` keeps its checked dispatch.
+
+`python scripts/quiet_run.py --timeout 900 -- python scripts/check_spu_simd.py`
+runs the oracle of the forms. It needs no game input.
+
+Measured result: none. No run yet.

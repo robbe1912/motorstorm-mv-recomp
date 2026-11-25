@@ -745,3 +745,19 @@ lines and 4,096 `[spurs-pm] DMA` lines to `native.err` before the gate.
 production runtime. It runs 10 environment cases and rejects 21 mutants.
 
 Measured result: none. No run yet.
+
+## SPU SIMD helper forms
+
+The lifted SPU units compile with SSSE3 enabled. With the build switch
+`SPU_SIMD=1` (default), `rotqby`, `rotqbyi`, `shufb`, `cwd`, `cwx`, `fm`
+and the local store quadword swap of `spu_ls_read128` and `spu_ls_write128`
+use x86 SIMD forms. Each form is bit-exact to its scalar body. The forms
+change no guest state. `fm` uses integer code only: no floating-point
+instruction and no change of MXCSR. The commits are in
+[vendor provenance](VENDOR.md#spu-simd-helper-forms).
+
+`python scripts/project.py build --no-spu-simd` builds the scalar bodies for
+a comparison run. The launch record holds `spu_simd` (`0` or `1`).
+`python scripts/check_spu_simd.py` runs the oracle.
+
+Measured result: none. No run yet.

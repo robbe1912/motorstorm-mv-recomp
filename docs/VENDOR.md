@@ -3222,3 +3222,52 @@ scope mutants. Its existing exact-rational oracle passes 36,816 helper lanes.
 These checks need no private input and do not cover SPU FPSCR status flags.
 
 Measured result: none. No run yet.
+
+## SPU SIMD helper forms
+
+Fork branch `codex/spu-simd-helpers` (base `b60efa02`), one commit per
+helper family: `0046b013` (rotqby, rotqbyi), `eb6d0b11` (cwd, cwx),
+`1876da97` (shufb), `192ce3d5` (fm), `57f2e4f8` (local store quadword swap).
+Game commits, in the order of the carry: `86e753a71d` (local store),
+`9914fbf8aa` (shufb), `1ab4585a32` (rotqby, rotqbyi, CMake option),
+`cf3d931112` (cwd, cwx), `302f168356` (fm), `2be34c4ea9` (build switch
+`--no-spu-simd`), `0a1786acd8` (oracle).
+
+The lifted SPU units compile with SSSE3 enabled. The build switch
+`SPU_SIMD=1` selects these x86 forms in `runtime/spu/spu_helpers.h`,
+`runtime/spu/spu_shuffle.h` and `runtime/spu/spu_context.h`:
+
+- `rotqby` and `rotqbyi` are one byte shuffle with a constant control vector
+  (SSSE3).
+- `cwd` and `cwx` are one constant load. The result depends on bits 2 and 3
+  of the sum only (SSE2).
+- `fm` is an integer SSE2 form of the four lanes: no branch, no
+  floating-point instruction, no change of MXCSR.
+- `shufb` calls the SSSE3 form as plain inline code: no CPUID test and no
+  target attribute in a unit with SSSE3.
+- `spu_ls_read128` and `spu_ls_write128` swap the quadword with one byte
+  shuffle (SSSE3). The M42 bridge of `spu_ls_write128` is unchanged.
+
+`rotqbybi` keeps its scalar body. A unit without SSSE3 gets the SSE2 forms
+only. The SPU runtime units of the vendor build with `-msse4.1` and get
+every form. Game sources outside the lifted SPU units that include the SPU
+headers compile without SSSE3. `SPU_SIMD` undefined or 0 keeps every scalar
+body. The existing check scripts define no `SPU_SIMD`, so they see the old
+code. The forms need SSE2 and SSSE3 only: no FMA3, no AVX.
+
+The fork uses the feature macro of the unit as its gate (`__SSSE3__`,
+`__SSE2__`). `SPU_SCALAR_HELPERS` and `SPU_SCALAR_INT` are the off switch of
+the fork. The vendor files differ from the fork files, so each carry is a
+port by hand.
+
+`scripts/check_spu_simd.py` compares each form with the scalar body of the
+same tree. Each helper has more than one million cases, with random vectors
+from a fixed seed. The driver covers the complete small input spaces
+(rotqby, rotqbyi, rotqbybi, cwd, cwx, every shufb selector byte with bit 7
+set and clear), the edge classes of `fm`, and an independent model for each
+helper with a small definition. The vendor tree passes in four builds and
+the fork in three. The check rejects 16 planted mutants per tree.
+`scripts/check_spu_float.py`, `scripts/check_spu_shufb_dispatch.py` and
+`scripts/check_spu_lane_trace.py` pass with `SPU_SIMD` undefined.
+
+Measured result: none. No run yet.
