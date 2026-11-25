@@ -678,7 +678,7 @@ instructions at each `lwz` site of `0xCAFF28`, against 4 plus 34 (call
 site plus callee) before. Exe size 360,416,768 bytes against 148,481,536
 bytes.
 
-## PPU fast memory step 4: lean gate, move 1
+## PPU fast memory step 4: lean gate
 
 The gate of step 3 makes three exact tests at each call site before the
 inline path: the bounds test, the compare with the GCM ref-poll address
@@ -697,18 +697,32 @@ marked page.
 
 `ppu_fm_arm` fills the page byte at boot. It flags each page that is not
 entirely inside `ppu_vm_size`, and the page before the end. The read sync
-is the one writer at run time. `vm_read_sync_mark_range` calls the hook
+and the alias table are the two writers at run time.
+`vm_read_sync_mark_range` calls the hook
 `ppu_fm_mark_sync` after its marks and after its flag. The hook sets
 `PPU_FM_K_READ | PPU_FM_K_SYNC` on the pages of its range and
 `PPU_FM_K_READ` on the page before the range. Each writer changes the
 byte with one atomic operation.
 
+Move 2 puts the answer of the alias window into the page byte. The bit
+`PPU_FM_K_ALIAS` (`0x40`) marks a window page with the page answer ALIAS.
+The first test of the call site has the bit in its mask. A plain page
+costs no instruction more. The access then subtracts `0x05000000` and
+tests the page byte of the primary address. A MIXED page keeps the route
+bits, so its access goes to the out-of-line function. The writer is
+`spu_alias_page_update` (`runtime/syscalls/spu_ea_alias.c`). It calls
+`ppu_fm_window_begin` before it stores the page answer, and
+`ppu_fm_window_end` after it. The first call sets the route bits. So each
+access of the page goes out of line until the page byte holds the new
+answer. The second call sets the final form with one compare-and-swap
+loop.
+
 `python scripts/check_ppu_fastmem3.py` builds three paths in two layouts:
 the lean gate, step 3 (`PPU_FM4=0`) and the path before step 3
-(`PPU_FM3=0`). It rejects 41 mutants: 29 of step 3 and 12 of this step.
-The lean path has two more modes. `leanbits` checks each bit of the page
+(`PPU_FM3=0`). It rejects 55 mutants: 29 of step 3 and 26 of this step.
+The lean path has three more modes. `leanbits` checks each bit of the page
 byte after the arm. `leansync` checks the read sync and the order of its
-hook.
+hook. `leanalias` checks the answer of the window in the page byte.
 
 Measured result of step 4: none. No run yet.
 
