@@ -3271,3 +3271,76 @@ the fork in three. The check rejects 16 planted mutants per tree.
 `scripts/check_spu_lane_trace.py` pass with `SPU_SIMD` undefined.
 
 Measured result: none. No run yet.
+
+## SPU float fast forms
+
+Fork branch `codex/spu-float-fast` (base `57f2e4f8` of `codex/spu-simd-helpers`),
+one commit per helper family: `100d3c8c` (`fa`, `fs`), `24a10038` (`fm`),
+`75d19cc7` (`fma`, `fms`, `fnms`), then `328ec93a` (inline FMA3, no input
+test).
+
+`spu_fa`, `spu_fs`, `spu_fm`, `spu_fma`, `spu_fms` and `spu_fnms` have an x86
+fast form in `runtime/spu/spu_float_simd.h` and `runtime/spu/spu_helpers.h`.
+Inside a float scope the fast form is two x86 operations with no call: the
+operation (`addps`, `subps`, `mulps` or `vfmadd`) and one `addps` with `+0`.
+The result is equal to the result of the earlier path for every input.
+
+The fast form takes a call only when all these tests hold:
+
+- The scope is active (`g_spu_sf_simd_scope` is not 0).
+- A probe of two operations shows that MXCSR rounds toward zero, flushes
+  results to zero (FTZ) and treats denormal operands as zero (DAZ).
+- No result lane has a magnitude of `0x7f000000` or more. An input with
+  exponent field 255 gives a host result of this range (infinity or NaN), so
+  the same test sends these calls to the earlier path.
+
+Each other call takes the earlier path in an out-of-line cold function:
+`spu_sf_simd_binary`, `spu_sf_simd_fused` and the scalar loops.
+
+SPU rules that the fast form keeps:
+
+- Exponent field 255 is an ordinary binade on the SPU and holds infinity and
+  NaN on the host. These inputs take the earlier path, so no result of a
+  host infinity or NaN leaves the helper.
+- A zero result has sign plus. The fast form adds `+0` in the float domain.
+- A denormal operand is zero and a denormal result is zero (DAZ and FTZ).
+- `fma`, `fms` and `fnms` round one time. FMA3 is used only when
+  `spu_sf_simd_enter` has admitted it by CPUID and XGETBV
+  (`g_spu_sf_simd_scope == 2`). Scope value 1 keeps the earlier path.
+- No unit compiles with `-mfma`. `spu_sf_fast_fma` holds the FMA3 instruction
+  in inline assembly.
+
+The probe raises the underflow and inexact flags in each fast call in the mode
+of a scope. A call that takes the earlier path after the operation can also
+raise the overflow or invalid flag. `spu_sf_simd_leave` restores the complete
+MXCSR of the entry. The probe does not test the six exception masks. Game
+code that writes MXCSR keeps the masks set.
+
+The build option `PORT_SPU_FLOAT_FAST` (ON) defines `SPU_FLOAT_FAST` as 1 or
+0. The identity key of the launch record is `spu_float_fast`. An undefined
+`SPU_FLOAT_FAST` selects the fast form. The fast form needs clang or GCC.
+With plain MSVC it is off. The vendor gate does not depend on `SPU_SIMD`.
+
+The vendor files differ from the fork files, so each carry is a port by
+hand. Differences kept:
+
+- The gate has no `SPU_SCALAR_HELPERS`.
+- `spu_fm` stays one line with the macro `SPU_FM_FAST`. The override comes
+  after the block that defines the macro.
+- The fallback of `spu_fm` is `spu__fm_rest` (fork: `spu__fm_slow`).
+- The fallbacks call `spu_sf_add`, `spu_sf_mul` and `spu_sf_madd`. The fork
+  calls its `_ref` forms.
+- The comments of the two headers differ.
+
+`scripts/check_spu_float_fast.py` compares each helper with the earlier path
+of the same tree and with the exact-rational model of
+`scripts/robbe_float_oracle.py`. Each build makes 7,688,212 calls. Each
+helper gets 1,048,576 random vectors with a fixed seed (1,114,112 for the
+fused family), each special value in each lane position, denormal inputs and
+results, signed zero, infinity, NaN with payload and sign, six changed MXCSR
+modes, calls outside a scope and a scope without FMA3. The vendor tree
+passes in four builds and the fork tree in four builds. The check rejects
+18 planted mutants per tree. `scripts/check_spu_float.py` passes with the
+same files.
+
+Measured result: none. No run yet.

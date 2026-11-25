@@ -65,6 +65,18 @@ else()
     add_compile_definitions(SPU_SIMD=0)
 endif()
 
+# SPU_FLOAT_FAST selects the x86 fast forms of the SPU float helpers fa, fs,
+# fm, fma, fms and fnms (one x86 operation inside a float scope). 1, the
+# default: the fast forms are active. 0: the path before the change. The
+# definition reaches each unit of the build. The build identity records the
+# value. The fused family needs FMA3 in the host and makes a CPUID test.
+option(PORT_SPU_FLOAT_FAST "x86 fast forms of the SPU float helpers" ON)
+if(PORT_SPU_FLOAT_FAST)
+    add_compile_definitions(SPU_FLOAT_FAST=1)
+else()
+    add_compile_definitions(SPU_FLOAT_FAST=0)
+endif()
+
 # Prefer Ninja if available
 if(NOT CMAKE_GENERATOR MATCHES "Ninja" AND NOT DEFINED ENV{CMAKE_GENERATOR})
     message(STATUS "Tip: use -G Ninja for faster builds")

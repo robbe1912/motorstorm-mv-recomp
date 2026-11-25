@@ -298,3 +298,26 @@ active, and `shufb` keeps its checked dispatch.
 runs the oracle of the forms. It needs no game input.
 
 Measured result: none. No run yet.
+
+## SPU float fast forms
+
+Inside a float scope, the helpers `fa`, `fs`, `fm`, `fma`, `fms` and `fnms`
+use one x86 operation on the default path. The result is bit-exact to the
+path before the change for every input. A call of another input class takes
+the earlier path. The option `PORT_SPU_FLOAT_FAST` (ON) defines
+`SPU_FLOAT_FAST=1`. The commits are in
+[vendor provenance](VENDOR.md#spu-float-fast-forms).
+
+Build with `--no-spu-float-fast` for a comparison build with the earlier path:
+
+    python scripts/project.py build --no-spu-float-fast
+
+The switch sets `PORT_SPU_FLOAT_FAST` to `OFF` and the compile definition
+`SPU_FLOAT_FAST=0` for each unit. The build identity and the launch record
+hold `spu_float_fast` `0` or `1`. A compiler that is not clang or GCC keeps
+the earlier path. No unit uses `-mfma`. The fused family uses the FMA3
+instruction in inline assembly. A CPUID test admits it.
+`python scripts/quiet_run.py --timeout 900 -- python scripts/check_spu_float_fast.py`
+runs the oracle of the forms. It needs no game input.
+
+Measured result: none. No run yet.

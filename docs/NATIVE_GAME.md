@@ -761,3 +761,22 @@ a comparison run. The launch record holds `spu_simd` (`0` or `1`).
 `python scripts/check_spu_simd.py` runs the oracle.
 
 Measured result: none. No run yet.
+
+## SPU float fast forms
+
+Inside a float scope, `fa`, `fs`, `fm`, `fma`, `fms` and `fnms` use one x86
+operation on the default path. The form applies when a scope is active, the
+host mode is the mode of the scope and no result lane reaches 2^127. An input
+with exponent field 255 gives such a host result and takes the earlier path.
+The fused family also needs FMA3 in the host, admitted by CPUID.
+Each other call takes the earlier path. The result is bit-exact to the
+earlier path for every input. The forms change no guest state. The probe of
+the host mode raises the underflow and inexact flags of the MXCSR inside the
+scope. The scope restores the MXCSR of the caller at leave. The commits are
+in [vendor provenance](VENDOR.md#spu-float-fast-forms).
+
+`python scripts/project.py build --no-spu-float-fast` builds the earlier path
+for a comparison run. The launch record holds `spu_float_fast` (`0` or `1`).
+`python scripts/check_spu_float_fast.py` runs the oracle.
+
+Measured result: none. No run yet.

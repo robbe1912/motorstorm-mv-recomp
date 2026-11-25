@@ -336,8 +336,18 @@ static inline u128 spu_rotqbii(u128 a, int sh) { sh&=7; if(!sh) return a;
 #define SPU_SF_HOST_ARITHMETIC
 #endif
 /* ---- single-precision float (4 lanes) ---- */
+#if SPU_SF_FAST
+/* The earlier path of a helper, out of line and cold: the compiler must not
+ * inline it into the lifted code after the fast form. */
+static inline __attribute__((noinline, cold)) u128 spu__fa_slow(u128 a, u128 b) { u128 r; if(spu_sf_simd_binary(r._u32,a._u32,b._u32,0)) return r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_add(a._u32[i],b._u32[i]); return r; }
+static inline __attribute__((noinline, cold)) u128 spu__fs_slow(u128 a, u128 b) { u128 r; if(spu_sf_simd_binary(r._u32,a._u32,b._u32,1)) return r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_add(a._u32[i],b._u32[i]^0x80000000u); return r; }
+/* Fast forms: one x86 operation inside a scope, see spu_float_simd.h. */
+static inline u128 spu_fa(u128 a, u128 b) { u128 r; if (spu_sf_fast_binary(r._u32, a._u32, b._u32, 0)) return r; return spu__fa_slow(a, b); }
+static inline u128 spu_fs(u128 a, u128 b) { u128 r; if (spu_sf_fast_binary(r._u32, a._u32, b._u32, 1)) return r; return spu__fs_slow(a, b); }
+#else
 static inline u128 spu_fa(u128 a, u128 b) { u128 r; if(spu_sf_simd_binary(r._u32,a._u32,b._u32,0)) return r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_add(a._u32[i],b._u32[i]); return r; }
 static inline u128 spu_fs(u128 a, u128 b) { u128 r; if(spu_sf_simd_binary(r._u32,a._u32,b._u32,1)) return r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_add(a._u32[i],b._u32[i]^0x80000000u); return r; }
+#endif
 
 /* RI8 scale: float-to-int uses 2^(173-i8), int-to-float 2^(i8-155).
  * The canonical immediates 173 and 155 are identity conversions. */
