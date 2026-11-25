@@ -1,6 +1,7 @@
 """Authored binding fixtures; never load original game inputs in CI."""
 import hashlib
 import json
+from dataclasses import replace
 import os
 import shutil
 import subprocess
@@ -146,7 +147,7 @@ def main():
         rejects(lambda:prepare(source,multi,elf,base/'multi.json',contracts=catalog),'changed or stale')
         assert (multi/'ppu/authored.cpp').read_bytes()==code,'Rejected copy must not partially enable another binding'
         assert tu.read_bytes()==code
-        # Both menu entries are in the same generated translation unit.
+        # Both queue candidates are in the same generated translation unit.
         # Toggle each combination without accepting unknown edits or touching inputs.
         (source/'ppu/second.cpp').unlink()
         same_code = code + b'\n' + second_body + b'\nauto second_table=&func_00111110;\n'
@@ -166,6 +167,22 @@ def main():
         assert b'game_original_scene_list_evaluate' not in (same/'ppu/authored.cpp').read_bytes()
         prepare(source,same,elf,base/'same.json',contracts=catalog)
         assert (same/'ppu/authored.cpp').read_bytes()==combined and tu.read_bytes()==same_code
+        # A legacy byte-observer recipe is an alternative for the same symbol.
+        observer = replace(contract, byte_observer='authored_read8')
+        variants = (contract, observer, second)
+        alternative = base/'alternative'
+        prepare(source, alternative, elf, base/'alternative.json',
+                contracts=(observer, second), known_contracts=variants)
+        observed = (alternative/'ppu/authored.cpp').read_bytes()
+        assert b'authored_read8' in observed and b'original_second' in observed
+        prepare(source, alternative, elf, base/'alternative.json',
+                contracts=(contract, second), known_contracts=variants)
+        assert (alternative/'ppu/authored.cpp').read_bytes() == combined
+        prepare(source, alternative, elf, base/'alternative.json',
+                contracts=(second,), known_contracts=variants)
+        restored = (alternative/'ppu/authored.cpp').read_bytes()
+        assert b'authored_read8' not in restored
+        assert b'game_original_scene_list_evaluate' not in restored
         reversed_result=prepare(source,same,elf,base/'same.json',contracts=(second,contract),known_contracts=catalog)
         assert [item['symbol'] for item in reversed_result['bindings']]==[second.symbol,contract.symbol]
         tu.write_bytes(same_code.replace(b'ctx->value+=2',b'ctx->value+=3'))
@@ -209,6 +226,20 @@ def main():
                 + ' message(FATAL_ERROR "Menu boot changed the world binding selection")\nendif()\n')
             options = subprocess.run(['cmake', '-P', str(option_script)], capture_output=True, text=True)
             assert options.returncode == 0, options.stdout + options.stderr
+
+    # Exercise the actual CLI selection, including the derived reset used by live callers.
+    import native_game_binding as binding
+    from unittest.mock import patch
+    import sys
+    arguments = ['native_game_binding', '--generated', 'input', '--output', 'output',
+                 '--elf', 'original.elf', '--manifest', 'manifest.json',
+                 '--without-world-transforms', '--queue-call-observation']
+    with patch.object(sys, 'argv', arguments):
+        with patch.object(binding, 'prepare', return_value={'bindings': []}) as prepared:
+            binding.main()
+    selected = prepared.call_args.kwargs['contracts']
+    assert {entry.symbol for entry in selected} == {
+        'func_00C5BF38', 'func_00C5D4C0', 'func_00C5D1C0', 'func_00C5C6A0'}
 
     print('PASS native binding: exact identities, direct/table callers, unchanged originals, stable copy, duplicate/stale/junction rejection')
 

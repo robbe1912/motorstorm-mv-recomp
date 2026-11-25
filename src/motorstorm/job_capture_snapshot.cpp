@@ -1,6 +1,7 @@
 #include "job_capture_snapshot.h"
 #include <string.h>
 
+#ifndef JOB_CAPTURE_READER_ONLY
 static int write_record(void* user, uint64_t index, const job_capture_record* record) {
     FILE* stream = static_cast<FILE*>(user);
     return fwrite(&index, sizeof(index), 1, stream) == 1 &&
@@ -25,6 +26,7 @@ int job_capture_write_snapshot(const job_capture* capture, FILE* stream) {
     memcpy(footer.magic, "MSEND001", sizeof(footer.magic));
     return fwrite(&footer, sizeof(footer), 1, stream) == 1 && fflush(stream) == 0;
 }
+#endif
 
 int job_capture_read_snapshot(FILE* stream, int (*consumer)(void*, uint64_t,
                               const job_capture_record*), void* user, job_capture_snapshot* out) {

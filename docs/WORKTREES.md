@@ -63,4 +63,14 @@ Directory links write through to their targets. Treat shared generated code, dep
 
 Before removing a worktree, identify its junctions and verify their targets. Remove only the links themselves without recursive deletion; preserve the source checkout and its input directories. Keep needed local evidence before cleanup.
 
+After merging a task branch into `main`, the merging agent retires its completed
+worktree in the same workflow. Preserve active work and required evidence, and
+unlink the inspected private-input junction entries before removal. Run these
+commands from a surviving checkout, supplying the completed worktree's path.
+
+```powershell
+git worktree remove <completed-worktree>
+git worktree prune
+```
+
 Serialize native builds and runs on the same host: the build wrapper uses an image-wide taskkill, while the launcher rejects another native instance. Other tasks can inspect source or existing evidence concurrently. Use a separate host or agree on an idle window for runtime verification.

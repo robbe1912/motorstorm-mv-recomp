@@ -82,18 +82,25 @@ def build(source,label,historical=False,observed=False):
     entry['capability']={'returncode':capability.returncode,'stdout':capability.stdout,'stderr':capability.stderr}
     (out/'result.json').write_text(json.dumps(report,indent=2))
     return binary,entry
-def run(binary,entry,mode,flag='1',observed=False,red=False,pm=False):
+def run(binary,entry,mode,flag='1',observed=False,red=False,pm=False,image=None):
     env={k:v for k,v in os.environ.items() if not k.startswith(('SPU_','SPURS_','YDKJ_','LBP_','GH3_'))}
     env['SPU_NATIVE_OWNED_JOBS']=flag;env['SPU_INTERP_UNLIFTED']='1'
+    if image is not None:env['SPU_NATIVE_OWNED_IMAGE']=image
     if observed:env['SPU_PCHIST']='1'
     if pm:env['SPU_PM_INTERP']='1'
     result=subprocess.run([str(binary),mode],cwd=binary.parent,env=env,capture_output=True,text=True,timeout=10)
-    entry['runs'].append({'mode':mode,'flag':flag,'observed':observed,'red':red,'required_pm_interp':pm,'returncode':result.returncode,'stdout':result.stdout,'stderr':result.stderr})
+    entry['runs'].append({'mode':mode,'flag':flag,'image':image,'observed':observed,'red':red,'required_pm_interp':pm,'returncode':result.returncode,'stdout':result.stdout,'stderr':result.stderr})
     (out/'result.json').write_text(json.dumps(report,indent=2))
-    if red:assert result.returncode!=0 and ('FORBIDDEN compiled policy' in result.stderr or 'invalid SPU_NATIVE_OWNED_JOBS' in result.stderr or 'FAIL native calls=0 expected=1 native_in_irq=0' in result.stderr),entry['runs'][-1]
+    if red and image is not None:
+        assert result.returncode != 0 and 'invalid SPU_NATIVE_OWNED_IMAGE' in result.stderr, entry['runs'][-1]
+    elif red:assert result.returncode!=0 and ('FORBIDDEN compiled policy' in result.stderr or 'invalid SPU_NATIVE_OWNED_JOBS' in result.stderr or 'FAIL native calls=0 expected=1 native_in_irq=0' in result.stderr),entry['runs'][-1]
     else:assert result.returncode==0 and 'PASS' in result.stdout,entry['runs'][-1]
     print(('RED ' if red else 'PASS ')+entry['label']+' '+mode,flush=True)
 binary,entry=build(sdk,'production')
+for mode in ('scoped-nested', 'scoped-overlap', 'owned'):
+    run(binary,entry,mode,pm=True,image='25')
+for invalid in ('', '+25', ' 25', '25x', '0', '2147483648'):
+    run(binary,entry,'owned',pm=True,image=invalid,red=True)
 for mode in ['owned','call-policy','live-explicit-stop','native-call-no-frame','native-call-wrong-return','nested-owned','nested-tail','irq','queued-irq','dma-invalidate','unknown','owner-miss','overlap','invalid-range','budget','global-budget','native-call-global-budget','stop-boundary','admission']:run(binary,entry,mode)
 if entry['musttail_compiled']:run(binary,entry,'musttail')
 run(binary,entry,'observed',observed=True);run(binary,entry,'owned',flag='0',red=True);run(binary,entry,'owned',flag='invalid',red=True)

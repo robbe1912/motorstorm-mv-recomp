@@ -2,6 +2,13 @@
 #include <atomic>
 #include <new>
 
+enum { exclusion_shards = 64 };
+struct alignas(64) exclusion_shard {
+    std::atomic<uint64_t> value;
+};
+struct exclusion_counter {
+    exclusion_shard shards[exclusion_shards];
+};
 struct job_capture {
     job_capture_config config;
     ps3_sized_trace* trace;
@@ -9,7 +16,7 @@ struct job_capture {
     ps3_spu_execution_observer execution;
     ps3_spurs_scheduler_observer scheduler;
     std::atomic<uint64_t> unexpected_failures;
-    std::atomic<uint64_t> excluded_atomic, excluded_execution, excluded_scheduler;
+    exclusion_counter excluded_atomic, excluded_execution, excluded_scheduler, excluded_queue_call;
 };
 /* Setup/teardown are serialized while producers are quiescent. */
 static job_capture* active;
@@ -23,20 +30,39 @@ static void increment(std::atomic<uint64_t>& counter) {
     while (previous != UINT64_MAX && !counter.compare_exchange_weak(
             previous, previous + 1, std::memory_order_relaxed)) {}
 }
+static void initialize(exclusion_counter& counter) {
+    for (auto& shard : counter.shards) shard.value.store(0, std::memory_order_relaxed);
+}
+static void exclude(job_capture* c, exclusion_counter& counter) {
+    // Stable thread IDs spread common producers across independent cache lines.
+    // Unknown IDs and hash collisions still use atomic, saturating increments.
+    const uint64_t thread = c->config.thread_id(c->config.user);
+    const auto index = (thread * UINT64_C(11400714819323198485)) >> 58;
+    increment(counter.shards[index].value);
+}
+static uint64_t total(const exclusion_counter& counter) {
+    uint64_t result = 0;
+    for (const auto& shard : counter.shards) {
+        const auto value = shard.value.load(std::memory_order_relaxed);
+        if (value > UINT64_MAX - result) return UINT64_MAX;
+        result += value;
+    }
+    return result;
+}
 static int accept_atomic(void* p, uint32_t source, uintptr_t context, uint64_t address, uint32_t size) {
     auto* c = static_cast<job_capture*>(p);
     if (!c->config.accept_atomic || c->config.accept_atomic(c->config.user, source, context, address, size)) return 1;
-    increment(c->excluded_atomic); return 0;
+    exclude(c, c->excluded_atomic); return 0;
 }
 static int accept_execution(void* p, uint32_t kind, uintptr_t context, uint32_t source, uint32_t target) {
     auto* c = static_cast<job_capture*>(p);
     if (!c->config.accept_execution || c->config.accept_execution(c->config.user, kind, context, source, target)) return 1;
-    increment(c->excluded_execution); return 0;
+    exclude(c, c->excluded_execution); return 0;
 }
 static int accept_scheduler(void* p, const ps3_spurs_scheduler_event* event) {
     auto* c = static_cast<job_capture*>(p);
     if (!c->config.accept_scheduler || c->config.accept_scheduler(c->config.user, event)) return 1;
-    increment(c->excluded_scheduler); return 0;
+    exclude(c, c->excluded_scheduler); return 0;
 }
 static job_capture_record record_for(job_capture* c, uint32_t kind) {
     job_capture_record r{};
@@ -62,11 +88,30 @@ static void execution_event(void* p, const ps3_spu_execution_event* e) {
     auto r = record_for(c, JOB_CAPTURE_EXECUTION);
     r.value.execution = *e;
     append(c, r);
+    if (c->config.capture_policy_state) {
+        job_policy_observation observation{};
+        if (capture_job_policy_observation(*e, observation, c->config.clock, c->config.user)) {
+            auto policy = record_for(c, JOB_CAPTURE_POLICY);
+            policy.value.policy = observation;
+            append(c, policy);
+        }
+    }
 }
 static void scheduler_event(void* p, const ps3_spurs_scheduler_event* e) {
     auto* c = static_cast<job_capture*>(p);
     auto r = record_for(c, JOB_CAPTURE_SCHEDULER);
     r.value.scheduler = *e;
+    append(c, r);
+}
+void job_capture_queue_call(void* p, const job_queue_event& e) noexcept {
+    auto* c = static_cast<job_capture*>(p);
+    if (!c) return;
+    if (c->config.accept_queue_call && !c->config.accept_queue_call(c->config.user, &e)) {
+        exclude(c, c->excluded_queue_call); return;
+    }
+    auto r = record_for(c, JOB_CAPTURE_QUEUE_CALL);
+    r.value.queue_call.event = e;
+    r.value.queue_call.tick = clock_now(c);
     append(c, r);
 }
 job_capture* job_capture_start(const job_capture_config* config) {
@@ -75,11 +120,13 @@ job_capture* job_capture_start(const job_capture_config* config) {
     auto* c = new (std::nothrow) job_capture{};
     if (!c) return nullptr;
     c->unexpected_failures.store(0, std::memory_order_relaxed);
-    c->excluded_atomic.store(0, std::memory_order_relaxed);
-    c->excluded_execution.store(0, std::memory_order_relaxed);
-    c->excluded_scheduler.store(0, std::memory_order_relaxed);
-    if (!c->unexpected_failures.is_lock_free() || !c->excluded_atomic.is_lock_free() ||
-        !c->excluded_execution.is_lock_free() || !c->excluded_scheduler.is_lock_free()) { delete c; return nullptr; }
+    initialize(c->excluded_atomic);
+    initialize(c->excluded_execution);
+    initialize(c->excluded_scheduler);
+    initialize(c->excluded_queue_call);
+    if (!c->unexpected_failures.is_lock_free() || !c->excluded_atomic.shards[0].value.is_lock_free() ||
+        !c->excluded_execution.shards[0].value.is_lock_free() || !c->excluded_scheduler.shards[0].value.is_lock_free() ||
+        !c->excluded_queue_call.shards[0].value.is_lock_free()) { delete c; return nullptr; }
     c->config = *config;
     c->trace = ps3_sized_trace_create(config->capacity, sizeof(job_capture_record));
     if (!c->trace) { delete c; return nullptr; }
@@ -109,12 +156,14 @@ int job_capture_describe(const job_capture* c, job_capture_info* out) {
     info.run_id = c->config.run_id;
     info.ticks_per_second = c->config.ticks_per_second;
     info.unexpected_append_failures = c->unexpected_failures.load(std::memory_order_relaxed);
-    info.excluded_atomic = c->excluded_atomic.load(std::memory_order_relaxed);
-    info.excluded_execution = c->excluded_execution.load(std::memory_order_relaxed);
-    info.excluded_scheduler = c->excluded_scheduler.load(std::memory_order_relaxed);
+    info.excluded_atomic = total(c->excluded_atomic);
+    info.excluded_execution = total(c->excluded_execution);
+    info.excluded_scheduler = total(c->excluded_scheduler);
+    info.excluded_queue_call = total(c->excluded_queue_call);
     info.filter_mask = (c->config.accept_atomic ? uint32_t(JOB_CAPTURE_FILTER_ATOMIC) : 0u) |
         (c->config.accept_execution ? uint32_t(JOB_CAPTURE_FILTER_EXECUTION) : 0u) |
-        (c->config.accept_scheduler ? uint32_t(JOB_CAPTURE_FILTER_SCHEDULER) : 0u);
+        (c->config.accept_scheduler ? uint32_t(JOB_CAPTURE_FILTER_SCHEDULER) : 0u) |
+        (c->config.accept_queue_call ? uint32_t(JOB_CAPTURE_FILTER_QUEUE_CALL) : 0u);
     info.schema_version = JOB_CAPTURE_SCHEMA_VERSION;
     info.record_size = sizeof(job_capture_record);
     info.pointer_size = sizeof(uintptr_t);

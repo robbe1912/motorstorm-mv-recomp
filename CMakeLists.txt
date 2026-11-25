@@ -35,6 +35,10 @@ if(PORT_OPTIMIZE_NATIVE)
     endif()
 endif()
 
+# O2 with automatic inlining for the lifted guest units only. The guard and the flags are in
+# src/guest_optimization.cmake.
+option(PORT_OPTIMIZE_GUEST "Use O2 and automatic inlining for the lifted guest units; requires PORT_OPTIMIZE_NATIVE" OFF)
+
 # Prefer Ninja if available
 if(NOT CMAKE_GENERATOR MATCHES "Ninja" AND NOT DEFINED ENV{CMAKE_GENERATOR})
     message(STATUS "Tip: use -G Ninja for faster builds")
@@ -110,6 +114,11 @@ add_subdirectory("${PS3RECOMP_DIR}" "${CMAKE_BINARY_DIR}/ps3recomp_sdk"
                  EXCLUDE_FROM_ALL)
 include("${CMAKE_CURRENT_SOURCE_DIR}/src/renderer_optimization.cmake")
 motorstorm_configure_renderer_optimization("${PS3RECOMP_DIR}")
+option(PORT_ENABLE_JOB_CAPTURE "Link the diagnostic native job capture owner" OFF)
+if(PORT_ENABLE_JOB_CAPTURE AND NOT (PS3RECOMP_ATOMIC_OBSERVATION AND
+   PS3RECOMP_EXECUTION_OBSERVATION AND PS3RECOMP_SPURS_SCHEDULER_OBSERVATION))
+    message(FATAL_ERROR "PORT_ENABLE_JOB_CAPTURE requires all three ps3recomp observation options")
+endif()
 # Measurement option (#155/#293): per-batch D3D12 draw records. Empty keeps the
 # backend default (2048); the backend rejects anything but a power of two in
 # 1024..8192 at compile time. Compare with the empty string, not truthiness:
@@ -178,6 +187,10 @@ set(PS3RECOMP_SCAFFOLD
 set(SPU_DIR "${CMAKE_CURRENT_SOURCE_DIR}/build/generated/named/spu" CACHE PATH
     "Directory holding the lifted SPU images (<SPU_DIR>/<image>/spu_recomp.c)")
 option(PORT_ENABLE_SPU "Compile and register the title's lifted SPU images" ON)
+option(PORT_CAPTURE_ALLOW_UNLIFTED "Allow diagnostic capture without lifted SPU workloads" OFF)
+include("${CMAKE_CURRENT_SOURCE_DIR}/scripts/job_capture_spu_guard.cmake")
+job_capture_check_spu("${PORT_ENABLE_JOB_CAPTURE}" "${PORT_CAPTURE_ALLOW_UNLIFTED}"
+                      "${PORT_ENABLE_SPU}" "${SPU_DIR}")
 
 set(SPU_SOURCES "")
 if(PORT_ENABLE_SPU)
@@ -218,6 +231,14 @@ add_executable(${PROJECT_NAME}
     ${RECOMP_SOURCES}
     ${SPU_SOURCES}
 )
+
+if(PORT_ENABLE_JOB_CAPTURE)
+    target_sources(${PROJECT_NAME} PRIVATE
+        src/motorstorm/job_capture.cpp
+        src/motorstorm/job_capture_control.cpp
+        src/motorstorm/job_capture_snapshot.cpp)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE PORT_ENABLE_JOB_CAPTURE=1)
+endif()
 
 motorstorm_configure_world_transforms(${PROJECT_NAME})
 
@@ -329,22 +350,9 @@ elseif(MSVC)
     )
 endif()
 
-# The lifted translation units are machine-generated and can run to hundreds of
-# thousands of lines each, so they get their own flags:
-#
-#   - warnings off. They are about generated code and nobody will act on them,
-#     and at this volume they bury the diagnostics that matter.
-#   - no floating-point contraction. arm64 fuses a multiply and an add by
-#     default; a PPC fmadd is spelt as one where the lifter means one.
-#   - /bigobj on MSVC. A single lifted file routinely passes the 65,536-section
-#     limit of the default object format.
-if(MSVC)
-    set_source_files_properties(${RECOMP_SOURCES} PROPERTIES
-        COMPILE_OPTIONS "/w;/bigobj")
-else()
-    set_source_files_properties(${RECOMP_SOURCES} PROPERTIES
-        COMPILE_OPTIONS "-w;-ffp-contract=off")
-endif()
+# The lifted translation units get their own flags; see src/guest_optimization.cmake.
+include("${CMAKE_CURRENT_SOURCE_DIR}/src/guest_optimization.cmake")
+motorstorm_guest_compile_options("${RECOMP_SOURCES}")
 
 # ---------------------------------------------------------------------------
 # Install

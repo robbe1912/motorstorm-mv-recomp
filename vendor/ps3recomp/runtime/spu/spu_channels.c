@@ -16,6 +16,7 @@
 #include "spu_native_owned.h"
 #include "spu_dma.h"
 #include "ps3emu/native_atomic_observer.h"
+#include "ps3emu/spu_host_line_commit.h"
 void spu_halt(spu_context*); /* Policy trampolines can precede its definition. */
 #include "spu_coherency.h" /* lock-line lock + PPU-write coherence bitmap */
 #include "spu_helpers.h"   /* spu_splat_u32 / spu_ls_read128 (SMC microstep) */
@@ -25,6 +26,7 @@ void spu_halt(spu_context*); /* Policy trampolines can precede its definition. *
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>
 /* ---------------------------------------------------------------------------
  * Slow-quantum guest-read ring (round-5 diagnostics; no behavior change).
  *
@@ -119,6 +121,9 @@ static uint64_t spu_host_ns(void)
  * released. cellSpurs sets it so a PPU blocked in cellSpursEventFlagWait wakes
  * when a task sets the flag, instead of on its next 2 ms poll. */
 void (*g_spu_line_commit_hook)(uint32_t line) = 0;
+/* Independent host waiter, installed only while SPU producers are quiescent.
+ * It must remain valid until all producers have stopped. */
+void (*g_spu_host_line_commit_hook)(uint32_t line) = 0;
 /* SPU_LS_WATCH=0x1BE80[,0x927D80...]: watch up to 4 16-byte LS lines (reads
  * and writes) in every SPU image. See spu_ls_watch_hit2 for the fast path. */
 #define SPU_WATCH_MAX 4
@@ -533,6 +538,24 @@ int spu_native_owned_observed(void) {
     }
     return observed;
 #endif
+}
+int spu_native_owned_image(void) {
+    static SPU_THREAD_LOCAL int image = -1;
+    if (image < 0) {
+        const char* value = getenv("SPU_NATIVE_OWNED_IMAGE");
+        if (!value) {
+            image = 0;
+        } else {
+            unsigned long id = strtoul(value, NULL, 10);
+            if (!id || id > INT_MAX ||
+                value[strspn(value, "0123456789")] != '\0') {
+                fprintf(stderr, "invalid SPU_NATIVE_OWNED_IMAGE: expected a positive decimal image ID\n");
+                abort();
+            }
+            image = (int)id;
+        }
+    }
+    return image;
 }
 void spu_native_owned_interpret(spu_context* ctx) {
     spu_pm_interp_trampoline(ctx);
@@ -1289,6 +1312,7 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
             PS3_ATOMIC_ATTEMPTED | (ctx->atomic_stat == 0 ? PS3_ATOMIC_COMMITTED : 0));
         #endif
         if (ctx->atomic_stat == 0 && g_spu_line_commit_hook) g_spu_line_commit_hook(ea & ~127u);
+        if (ctx->atomic_stat == 0 && g_spu_host_line_commit_hook) g_spu_host_line_commit_hook(ea & ~127u);
         return 1;
 
     case MFC_PUTLLUC_CMD:
@@ -1323,6 +1347,7 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
             PS3_ATOMIC_ATTEMPTED | PS3_ATOMIC_COMMITTED);
         #endif
         if (g_spu_line_commit_hook) g_spu_line_commit_hook(ea & ~127u);
+        if (g_spu_host_line_commit_hook) g_spu_host_line_commit_hook(ea & ~127u);
         return 1;
 
     default:

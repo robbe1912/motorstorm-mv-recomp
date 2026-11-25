@@ -93,8 +93,8 @@ def build_run(name,enabled,changes=None):
     assert fixture.count('/* ACTUAL_RESOLVED_TAIL */')==1
     fixture=fixture.replace('/* ACTUAL_RESOLVED_TAIL */',tail)
     fixture='#include "spu_native_owned.h"\n'+fixture
-    config='#include "spu_native_owned.h"\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n'
-    for signature in ['int spu_native_owned_enabled(void)','int spu_native_owned_observed(void)']:
+    config='#include "spu_native_owned.h"\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <limits.h>\n'
+    for signature in ['int spu_native_owned_enabled(void)','int spu_native_owned_image(void)','int spu_native_owned_observed(void)']:
         config+=function(contents['runtime/spu/spu_channels.c'],signature)+'\n'
     config+='void spu_native_owned_interpret(spu_context* c){(void)c;fputs("unexpected owned adapter\\n",stderr);abort();}\n'
     config+='int g_spu_pm_svc_on=0;int spu_pm_svc_can_run(const spu_context* c,uint32_t pc){(void)c;(void)pc;fputs("unexpected policy service\\n",stderr);abort();}void spu_pm_svc_drain_done(spu_context* c,uint32_t r){(void)c;(void)r;fputs("unexpected policy service\\n",stderr);abort();}'+'\n'

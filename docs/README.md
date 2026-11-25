@@ -20,6 +20,7 @@ Each subject has one canonical owner. Begin with [setup and target](BUILDING.md)
 | Paused retail starvation and exonerated suspects | [Parked mstream](research/PARKED_MSTREAM.md) |
 | Compiler/cache/symbol research and methods | [Translation](research/TRANSLATION.md) |
 | Source provenance, licenses, upstream contribution | [Vendor](VENDOR.md) |
+| Changing the ps3recomp runtime: fork branches, atomic commits, integration, the copy in this repository | [Runtime changes](RUNTIME_CHANGES.md) |
 | Git boundary, audit and legal-certainty limits | [Repository](REPOSITORY.md) |
 | All migrated notes and private evidence locations | [Source coverage](SOURCE_COVERAGE.md) |
 

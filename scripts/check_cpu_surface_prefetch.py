@@ -11,7 +11,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 START = "typedef struct CpuSurfaceRequest {"
-STOP = "static void cpu_surface_service(void) {"
+STOP = "static void cpu_surface_snapshot_trace("
 PREFETCH = "/* Prefetched copies of opted-in surfaces."
 FENCE = "/* GPU fence completion."
 FAIL_STOP = "[CPUSURFACE] "

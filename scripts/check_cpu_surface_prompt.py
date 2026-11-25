@@ -73,7 +73,7 @@ def main():
     pump = backend[backend.index("int rsx_d3d12_backend_pump_messages(void)") :]
     pump = pump[: pump.index("\n}")]
     assert pump.index("cpu_surface_flush_recorded(1);") < pump.index(
-        "cpu_surface_service();"
+        "cpu_surface_service(0);"
     ), "idle pump submits before it serves"
 
     def compose(block, template, flush_block):

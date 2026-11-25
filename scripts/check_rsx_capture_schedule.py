@@ -27,13 +27,19 @@ def screen_launch(tree, out):
     assert len(records) == 1 and isinstance(records[0], ast.Dict), 'ambiguous launch record'
     fields = {key.value: value for key, value in zip(records[0].keys, records[0].values)}
     receipts = []
-    for label, menu, replay in [('raw', False, None), ('menu', True, None),
-                                ('replay', False, 'observed-profile.json')]:
+    for label, menu, replay, stride, schedule in [
+        ('raw', False, None, 120, None),
+        ('menu', True, None, 120, '1:100:120'),
+        ('replay', False, 'observed-profile.json', 120, '1:100:120'),
+        ('fast-replay', False, 'observed-profile.json', 40, '1:300:40'),
+    ]:
         case = out / label
         case.mkdir()
         env = {'RSX_CAP': 'authored-raw-config'}
         namespace = {'env': env, 'out': case,
-                     'args': SimpleNamespace(capture_menu=menu, menu_replay=replay)}
+                     'admitted': {'build_identity': {'replay_backbuffer_capture': label == 'fast-replay'}},
+                     'args': SimpleNamespace(capture_menu=menu, menu_replay=replay,
+                                             replay_screen_stride=stride)}
         exec(compile(ast.Module(body=selections, type_ignores=[]),
                      'actual capture selection', 'exec'), namespace)
         recorded = eval(compile(ast.Expression(fields['environment']),
@@ -43,7 +49,8 @@ def screen_launch(tree, out):
         else:
             assert env.get('RSX_CAP_SCREEN_ONLY') == '1', 'screen mode not selected'
             assert recorded.get('RSX_CAP_SCREEN_ONLY') == '1', 'screen mode not recorded'
-            assert env['RSX_CAP'] == '1:100:120', 'capture budget changed'
+            assert env['RSX_CAP'] == recorded.get('RSX_CAP') == schedule, 'capture window changed'
+            assert recorded.get('RSX_CAP_BACKBUFFER_ONLY') == ('1' if label == 'fast-replay' else None)
         receipts.append(dict(case=label, environment=recorded))
     return receipts
 

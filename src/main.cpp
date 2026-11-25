@@ -39,6 +39,13 @@
 #include "win32_compat.h"
 #include "thread_name.h"   /* ps3_thread_setname */
 #include "ps3emu/loadtime_trace.h"   /* #11 load-stage timing (observer) */
+#ifdef PORT_ENABLE_JOB_CAPTURE
+#include "motorstorm/job_capture_control.h"
+#endif
+#include "motorstorm/no_dialogs.h"   /* a diagnostic build writes its reports to stderr, not to a dialog */
+#if defined(MOTORSTORM_DEFORMATION_DEPTH_OBSERVER)
+#include "motorstorm/deformation_depth_observer.h"
+#endif
 
 #include <stdint.h>
 #include <stdio.h>
@@ -373,6 +380,9 @@ static void harness_guest_caller(uint32_t opd, uint64_t a0, uint64_t a1,
 
 int main(int argc, char** argv)
 {
+    /* First: no modal dialog from the debug CRT or from WER. A dialog stops
+     * the thread until a person clicks it, and an owned run has nobody there. */
+    motorstorm::no_dialogs();
     if (argc < 2) {
         printf("usage: %s <PPU ELF>\n", argv[0]);
         return 2;
@@ -388,6 +398,13 @@ int main(int argc, char** argv)
 #endif
 
     printf("=== ps3recomp game runner ===\n");
+
+#ifdef PORT_ENABLE_JOB_CAPTURE
+    if (!job_capture_control_start()) {
+        fprintf(stderr, "ERROR: job capture setup failed\n");
+        return 1;
+    }
+#endif
 
     if (!alloc_guest_vm()) {
         fprintf(stderr, "ERROR: could not allocate the guest address space\n");
@@ -416,6 +433,11 @@ int main(int argc, char** argv)
     _putenv("PS3_NET_ONLINE=1");
 
     ppu_recomp_register();   /* lifted function table -> address map */
+#if defined(MOTORSTORM_DEFORMATION_DEPTH_OBSERVER)
+    /* The optional observer only shadows exact registered entries and calls
+     * their lifted originals. It is installed while guest dispatch is idle. */
+    deformation_depth_observer_install();
+#endif
     ps3_load_prx_modules();  /* this game's lifted system PRX, if it has any */
     ppu_hle_init();          /* firmware import NID -> HLE handlers */
     ppu_sysprx_register();   /* boot-critical CRT */

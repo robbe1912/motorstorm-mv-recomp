@@ -1,5 +1,317 @@
 # Vendor provenance and upstream
 
+## One source of edits: the fork (2026-11-23)
+
+Every change to the ps3recomp runtime is an atomic commit on its own
+branch of [our fork](https://github.com/robbe1912/ps3recomp), based on
+`combined`. A change that helps in the game goes into `combined`. The
+copy under `vendor/ps3recomp` receives the same change in matching
+commits until it becomes a scripted snapshot of `combined` (#347).
+The setup, the workflow and the current limits are in
+[runtime changes](RUNTIME_CHANGES.md). The sections below stay the
+record of both hashes and the measured result of each change.
+
+## Lean fast memory paths (#348)
+
+Fork branch `codex/frame60-fastmem-diet`, based on `combined` `79e7bb4c`:
+
+- `76ebdb22` perf(spu): export the reserved-line bitmap. Game `cb9db6b`.
+- `34a66dae` perf(memory): skip the read sync table when no page is marked.
+  Game `f49f9af`.
+- Game `ef8fead` perf(ppu): lean fast memory paths. This change is in
+  `ppu_fastmem.h` and `ppu_loader.cpp` only. It is not in the fork yet.
+
+`spu_coherency.h` publishes `g_spu_coh_bitmap` and `spu_coh_bitmap_test`.
+One bit is one 128-byte guest line. `ppu_fastmem.h` holds a copy of the test
+so that the lifted units do not include `spu_context.h`. The check compiles
+both and requires the same result for 3,000,000 addresses.
+
+`vm_cpu_read_sync` returns before it reads the page table while
+`vm_read_sync_any` is zero. `vm_read_sync_mark_range` sets that flag.
+
+The spin detector of the PPU fast memory reads runs while `ppu_fm_spin_det`
+is non-zero. The flag is 1 by default. `ppu_fm_arm` sets it to 0 only for the
+exact environment value `PPU_FM_SPINDET=0`. The launcher option is
+`--fastmem-spin-detector 0`.
+
+Check: `python scripts/check_ppu_fastmem_diet.py` passes. It rejects 11
+header mutants and 4 loader mutants. Fork checks: `tests/check_spu_coh_bitmap.py`
+(6 mutants) and `tests/check_guest_read_sync_gate.py` (5 mutants).
+
+Profile before the change (run `20261124T011533.717404Z`, exe
+`14ecf5d71193d027`, 1177 running samples, exclusive instruction pointer):
+the memory helpers hold 43.1 percent of the main thread. `ppu_fm_read32`
+25.3, `ppu_fm_read64` 5.9, `ppu_fm_write32` 4.7, `spu_coh_is_reserved` 3.9,
+`ppu_fm_read8` 2.5, `sysmem_spu_alias_fixup` 2.0, `ppu_fm_read16` 0.9.
+
+Measured result: none. The lead builds and profiles.
+
+## Per-draw GPU record (#333)
+
+Fork draft PR robbe1912/ps3recomp#11, branch `codex/rsx-draw-gpu-record` on
+`combined` `79e7bb4c`: `27f0ec96` (record), `6c36c810` (check), `6bbf4fcd`
+(depth column), `b5251494` (name fix). Game: `5688bcb`, `ce5b40d`,
+`88bee86`. The game commits name the same change on the stacked branch
+`codex/frame60-draw-gpu-record`: `fe840910`, `09bbeb44`, `b96b844b`,
+`9654c5f4`.
+
+`RSX_PHASE_GPU_DRAWS=1` with a `RSX_PHASE_CSV` path writes `rsx_draws.csv`
+next to `rsx_phases.csv`: one row per timestamped draw, off by default, at
+most 2,000,000 rows. The launcher option is `--profile-renderer-draws`.
+
+Checks: `python tests/check_rsx_draw_record.py` in the fork rejects 14
+mutants; `python scripts/check_rsx_draw_profile.py` here rejects 21. Both pass.
+
+Measured result: none. The record has no run in the game yet.
+
+## Title counts presents (#343)
+
+Fork draft PR robbe1912/ps3recomp#10, branch `codex/rsx-title-counts-presents`
+(`84f0d07f`). Game `bea35dd`.
+
+The window title counted each pass of the present code. A race frame has
+about four passes. The counter now increments only in the Present branch.
+
+Measured result: before the fix the title showed 22.26 against 5.40 presents
+per second in a race (#343). No run read the title after the fix. Use
+`frames.csv` until then.
+
+## Snapshot fast path (#326)
+
+Fork draft PR robbe1912/ps3recomp#9, branch `codex/frame60-snapshot-read-fastpath`
+on the branch of PR #8: `2c343073` (code), `0f4b903d` (check). Game
+`37f4d031a6`, `31243ced06`; launcher `1466cd380d` (`--cpu-surface-snapshot-fast`,
+default off).
+
+`RSX_CPU_SURFACE_SNAPSHOT_FAST=1` serves a snapshot request on its calling
+thread when no recorded draw targets a range and each range lies in one
+current surface that holds it fully, or in no surface. The client repeats the
+check after the read. Other requests take the FIFO boundary path.
+
+Check: `python scripts/check_cpu_surface_snapshot_fast.py` passes. It rejects
+18 behavior mutants and 10 wiring mutants.
+
+Measured result (run `20261123T231436.539891Z`, exe `e8bba906ecd56785`,
+lifted jobs, race proper, last 12 s): 36,864 requests served at once, 1,969
+queued (about one per frame). CPU surface reads stay at 62.9 ms per frame (70
+frames, median 165.8 ms). One request per frame still waits 64 to 108 ms: the
+clamped read at guest `0x4237F500` needs bytes of mip level 1 of the
+deformation texture, which the mip pass re-renders every frame. The change is
+correct and gives no gain. It stays a draft. The fix for this producer is the
+CPU deformation buffer (#346).
+
+## Coherent read fast path (#326)
+
+Fork draft PR robbe1912/ps3recomp#8, branch `codex/frame60-coherent-read-fastpath`
+(`622274a9`). Game `a65cb75`. Default on; `--cpu-surface-fast 0` queues every
+read.
+
+A client read of a surface with no recorded write since its last copy is
+served on the calling thread from that copy. The renderer keeps one view for
+each slot of the surface pool: its guest range and whether a copy would be a
+hit.
+
+Check: `python scripts/check_cpu_surface_fast_read.py` passes. It rejects 25
+behavior mutants and 5 wiring mutants.
+
+Measured result (run `20261123T220742.148077Z`, exe `714ef6f3a198`, lifted
+jobs, last 60 s): fewer than 1,024 reads served at once; the snapshot reads
+still cost 42.4 ms per frame. No gain: the slow requests need a copy or match
+no surface (#326, comment of 2026-11-23).
+
+## PPU wait profile (#327)
+
+Fork draft PR robbe1912/ps3recomp#12, branch `codex/frame60-ppu-wait-profile`
+on `combined` `79e7bb4c`: `c966a319` (code), `bc988f5a` (check),
+`bacac6354b` (threshold of short waits, code and check). Game
+`f76e643235`, `5ae7bf8ced`, `384d505ae0`; launcher `8dc4cbdfe0`
+(`--profile-ppu-waits`, default off).
+
+`PPU_WAIT_PROFILE=1` writes one `[PPU_WAIT_PROFILE]` line per call of
+`sys_cond_wait`, `sys_semaphore_wait`, `sys_mutex_lock`,
+`sys_event_queue_receive` and `sys_event_flag_wait` that lasts at least
+`PPU_WAIT_PROFILE_MIN_US` microseconds: thread, kind, object id, caller
+address, start and end. The default of the threshold is 1000. A value of 0
+writes a line for each call. Off: no line and no clock read.
+
+Checks: `python tests/check_ppu_wait_profile.py` in the fork rejects 12 header
+mutants. `python scripts/check_ppu_wait_profile.py` here rejects 26 launcher
+and source mutants and 12 header mutants, and compiles the four syscall files
+syntax-only. Both pass.
+
+Measured result: none for the frame time. Without the threshold, diagnostic
+race run `20261124T045916` (exe `8856e66571f07c3e`) wrote 17,750 lines in the
+last 12 s for 70 frames: about 1479 lines per frame. No run with the threshold
+yet.
+
+## Deform draw capture (#346)
+
+Fork branch `codex/frame60-deform-cpu-buffer` on the branch of PR #9:
+`7f8ef1ef` (capture), `c91e49bd` (chain dump). Game `f88feaba01`,
+`5fbcb5730e`. Off by default.
+
+`RSX_DEFORM_CAPTURE=1` with `RSX_DEFORM_TARGETS=<offset,...>` writes
+`rsx_deform_draws.txt` next to `rsx_phases.csv`: the first 64 records (clears
+and draws) into a listed RSX surface offset, with state words, texture units,
+stream format, the first vertices and the decompiled programs.
+`RSX_DEFORM_CHAIN=1` adds `rsx_deform_chain.txt`: the next 64 records in FIFO
+order whose colour target 0 is not listed. The launcher needs
+`--profile-renderer` (it sets the output path) and `--rsx-switch` for the
+keys.
+
+Checks: the vendor backend compiles syntax-only. No authored check yet.
+
+Measured result: none. No run yet.
+
+## CPU deformation buffer (#346)
+
+Fork branch `codex/frame60-deform-cpu-buffer` on the branch of PR #9:
+`d912c3c6` (buffer), `d4704cf7` (fix: the B8 brush), `5843b0fd` (shadow
+comparison, header, fork document), `0bc3ac59` (fix: switches on the first
+call), `c7b58208` (fork test), `65e5a82d` (fix: the private copies of the
+shadow mode start as guest memory; dump of the shadow frames), `46ba950e`
+(fix: the paint notes stop with the dump budget), `5bbfff2e` (fix: the
+shadow copies start as the GPU bytes). Game `6638e69c9d`, `e6abdbbeb2`,
+`039a251ddf`, `ee1dfd3fff`, `d906401bd0`, `54379f34e4`, `9812a9ee40`.
+Off by default.
+
+`RSX_DEFORM_BUFFER=1` with `RSX_DEFORM_TARGETS=<offset,...>` keeps level
+0 of each listed surface in host memory. The painter replays each paint
+draw at record time: the vertex stream, the brush, the pixel operation
+`fp16(saturate(fp16(brush - 0.25) * colour.x + dest))` and row 0 of level
+1. The reads of the game then take their bytes from host memory. There is
+no copy of the surface and no wait for a recorded draw. The GPU keeps the
+paint draws. The native depth query of the game takes its four bytes
+through `rsx_deform_sample` in `libs/video/rsx_deform_surface.h`.
+
+`RSX_DEFORM_SHADOW=1` with the buffer is the proof. The runtime paints a
+private copy per pixel operation and compares the painted columns with
+the GPU bytes after a submitted batch. `RSX_DEFORM_OP=<name>` selects
+the operation: `fp16` (default), `fused`, `f32`. `RSX_DEFORM_LOG=<frames>`
+(300) bounds the shadow lines. `RSX_DEFORM_DUMP=<frames>` writes the first
+frames with a difference to a file. The run modes are in
+[operations](OPERATIONS.md).
+
+The private copies start as the GPU bytes: a `[DEFORM_SHADOW] start` line
+marks the first batch end that finds the GPU surface, and each one after
+the backend created it again. That frame does not compare.
+
+Checks: `python scripts/check_deform_cpu_buffer.py` passes. It compiles
+the production switch code and the read block of the query, rejects 13
+runtime mutants, 7 query mutants and 9 wiring mutants, and compiles the
+vendor backend syntax-only. In the fork,
+`python tests/check_rsx_deform_surface.py` compiles the production
+painter, mip row, sampler, shadow comparison and dump, and rejects 30
+mutants. `python scripts/check_deformation_query.py` passes with the new
+header.
+
+Measured result (exe `8856e66571f07c3e`, clean arms with lifted SPU jobs,
+`RSX_DEFORM_TARGETS=00A80500`): the median dt drops from 165.5, 163.7 and
+166.5 ms (control, run `20261124T065129.423997Z`) to 98.6, 98.9 and 96.1 ms
+(buffer on, run `20261124T065827.621038Z`) in the windows 200 to 212 s, 300
+to 312 s and 390 to 402 s. The p95 is 105.0, 106.4 and 102.2 ms with the
+buffer on. The surface reads of the deformation data are gone.
+
+The shadow arms compare the CPU bytes with the GPU bytes. S1
+(`20261124T061644.583391Z`, private copies at zero): 68 to 89 percent of
+the painted texels are equal. S2 (`20261124T101948.193944Z`, exe
+`62fadf7802bd24e4`, private copies as guest memory): 8984 of 28179 texels
+are equal, 1009 differ by one and 18186 by more than one. The dump of S2
+shows the cause: at 425 of its 607 texels the GPU destination is 0 to 5,
+and the CPU destination (guest memory) is 22 to 127. `off_rt_get` fills a
+new GPU surface with 4 guest bytes a texel and a row stride of `4 * width`,
+because the B8 target is RGBA8 on the host. So the GPU surface does not
+start as guest memory. `9812a9ee40` starts the private copies as the GPU
+bytes. It has no run. The emulator does not render level 1: its mip pass
+has positions that are not finite. 30 FPS is not reached.
+
+## SPURS lane count override (#327)
+
+Fork branch `codex/spurs-lane-count` on `combined` `79e7bb4c`: `d3067667`
+(code), `e8dcbfda` (check). Game `9c978b4008`, `91ed55ecd3`. The launcher
+lines of `--spurs-lanes` and their three tests are in `8078679`, committed
+together with the Havok thread switch. Default off.
+
+`SPURS_LANES=N` with `N` in 1..6 replaces the lane count that the game
+requests. `spurs_initialize_common` applies it after its validity check and
+writes the effective count to the instance. The log line of the
+initialization shows `nSpus=<effective> requested=<game>`.
+
+Checks: `python tests/check_spurs_lane_count.py` in the fork rejects 6 header
+mutants and 6 source mutants. `python scripts/check_spurs_lane_count.py` here
+rejects 6 header, 6 source and 5 launcher mutants, and compiles `cellSpurs.c`
+syntax-only. Both pass.
+
+Measured result: none. No run yet.
+
+## SPURS wait priority (#327)
+
+Fork branch `codex/spurs-wait-priority` on `combined` `79e7bb4c`: `a84237da`
+(code), `c90a4099` (check). Game `a0250241a0` carries the code. The check
+`scripts/check_spurs_wait_priority.py`, its fixture, the launcher lines of
+`--spurs-wait-priority`, their two tests and this section are in the commit
+that carries the check. Default off.
+
+`SPURS_WAIT_PRIORITY=1` gives a free lane first to the workload that a PPU
+thread waits on. The job wait adapter registers a callback with the runtime.
+The callback returns the job list address of the marker wait. The coordinator
+maps the address to the first workload of the instance with that data and
+tests that workload at the first position of the scan of each free lane. The
+admission checks do not change. The other workloads keep the order of the
+cursor. The coordinator prints `[SPURS_WAIT_PRIORITY] waits=N boosted_jobs=M`
+at most one line per second.
+
+Checks: `python tests/check_spurs_wait_priority.py` in the fork rejects 22
+header mutants and 10 source mutants. `python scripts/check_spurs_wait_priority.py`
+here rejects 22 header, 10 source, 7 adapter and 5 launcher mutants, and
+compiles `cellSpurs.c` syntax-only. `scripts/check_native_job_wait.py` passes
+with the changed adapter. Both pass.
+
+Measured result: none. No run yet.
+
+## SPURS marker wake (#327)
+
+Fork `combined` `79e7bb4c` holds the host line commit hook in `ab8da921`
+(`feat(spu): add host line commit wakeup`). The fork needs no other change,
+so this item has no new fork commit, fork check or fork doc. The game commit
+that carries the code copies the hook into `vendor/ps3recomp`. The check
+`scripts/check_spurs_marker_wake.py`, its fixture, the launcher lines of
+`--spurs-marker-wake`, their two tests and this section are in the commit
+that carries the check. Default off.
+
+`SPURS_MARKER_WAKE=1` ends a marker wait of the game at the commit of a job.
+Without the switch the wait reads the counters of its job list 64 times and
+sleeps in a high-resolution timer with a due of 100 us. On the build machine
+the timer wakes after 0.52 ms at least, so each cooperation is late by about
+0.4 ms. With the switch on, the runtime calls a host hook after each
+committing PUTLLC on a guest line. The job wait adapter installs the hook,
+keeps the lines of the job list that a marker wait waits on, and signals an
+event when one of these lines commits. The wait blocks on the event and on
+the timer, so a lost wake-up cannot hang. The runtime calls the hook only
+after a successful PUTLLC or PUTLLUC, after the coherence lock is released.
+The line filter and the event are shared by all threads. A second waiting
+thread gets the wake-ups of the first and the timer as its fallback.
+
+Checks: `python scripts/check_spurs_marker_wake.py` here rejects 5 source
+mutants of `spu_channels.c`, 2 adapter audit mutants, 12 adapter mutants and
+5 launcher mutants. It builds the adapter with the wait core and compiles
+`spu_channels.c` syntax-only. `scripts/check_native_job_wait.py` passes with
+the changed adapter. Both pass.
+
+Measured result: none. No run yet.
+
+## Image-scoped native job admission (#219)
+
+The existing fork carries the selector on `codex/native-owned-image-scope`
+at `c5a23d5469dc326c5e1676b35e1389e469f6c5bd`. The runtime checks the
+first containing resident image at lifted entry and continuation. An explicit
+image selection retains interpretation for other images and for policy
+services. Authored runtime tests compare full execution state for nested
+calls and overlapping owners. The policy service fixture also checks that a
+resident job can enter compiled code while its service stays interpreted.
+The Windows MRT fixture also aligns each readback placement to the D3D12
+placement requirement while preserving its pixel and blend checks.
+
 ## Native policy-module services (#327)
 
 Own-fork branch `codex/pm-native-services` carries the reusable runtime and
@@ -149,7 +461,13 @@ fence completion and device state. The toolkit already used overlapped capacity
 drains, so its port preserves that policy. Its snapshot-enabled transport keeps
 the snapshot and queued suffix behind their owned FIFO boundary in both early
 service and flush selection. The shared checker conditionally exercises that
-transport with fourteen mutants, while this byte-read interface has twelve.
+transport with fourteen mutants. The base byte-read port had twelve controls;
+the native-deformation/PVS integration exercises all fourteen. Its regression
+rejected a queued suffix driving submission past a snapshot before the same
+barrier was applied to flush selection. The idle pump retains owned-boundary
+snapshot handling before ordinary flush/service. The authored WARP snapshot
+fixture includes the actual drain selector and environment-cache helper,
+exercises serialized/overlapped modes, and rejects fourteen mutants.
 
 Actual extracted producer/consumer controls cover overlap, adjacency, queue
 tail/order, replay, foreign callers and empty batches. Four clients complete
@@ -177,13 +495,13 @@ It tracks recorded colour-target guest ranges and admits early CPU reads only
 when every pending range is disjoint. Unknown extents and capacity overflow
 retain the queued request. Submission clears the pending set. Copies and
 completion signals execute outside the request lock, on the renderer owner.
-The queue-head hint uses C11 atomic publication. The toolkit additionally
-preserves its snapshot request and suffix until the owned FIFO boundary.
-This curated queue retains its existing byte-read interface.
+The queue-head hint uses C11 atomic publication. Both the toolkit and this native-deformation integration preserve a snapshot
+request and its queued suffix until the owned FIFO boundary.
+The serial integration fixture rejects omitting that barrier.
 
 The authored serial fixture checks adjacency, overlap, splice order/tail,
 submission, replay, owner, disabled, overflow and unknown-height behaviour.
-Six compiled mutants must fail. The atomic declaration is checked
+Seven compiled mutants, including the snapshot-barrier omission, must fail. The atomic declaration is checked
 at compile time. Four real clients enqueue 256 requests while the renderer
 services them, checking pending-write admission and exact completion.
 Windows and Linux source fixtures pass. The toolkit snapshot GPU fixture
@@ -903,6 +1221,14 @@ admission and remaining PVS wait. No upstream PR or native acceptance is claimed
 
 ## Fork-first workflow
 
+Before publishing a toolkit topic branch, run the affected checks and their
+adjacent consumers. SPU runtime changes can affect isolated interpreter
+fixtures on Windows and Linux. Surface submission changes can affect the
+actual D3D12 snapshot fixture on WARP. Send a combined candidate to a
+validation branch and wait for the SDK test steps on Windows, Linux and
+macOS and the focused workflows on that exact commit before updating
+`combined`.
+
 Packed XY16F render-target sampling is authored on own-fork atomic branch
 `codex/rsx-xy16-rtt-view`. The new `rsx_texture_alias.h` helper and its D3D
 float-readback fixture are identical in the curated integration; the older
@@ -1424,6 +1750,66 @@ SHA256, exact PDB field extents and active lists revalidate offline. These
 sequential declarations establish plausible sparse eligibility, not draw-weighted
 usage, ABA-proof snapshots, function costs or frame savings. #155/#26/#27/#137
 and complete typed game-workload replacement remain open.
+
+## Opt-in vertex fetch and upload profile
+
+Fork branch `codex/rsx-vertex-profile`, based on `combined` `79e7bb4c9f8a616e95bfd4e758ca288600049333`:
+
+- `ce01a48b1ea06b8a0191078751e4ea89e0d0f337` uses prepared vertex batches
+  in the D3D12 backend. Game carry: none. The vendor tree already had this
+  change.
+- `5776fd196e557dbcff5b300bdb2e5b36f3dec78c` adds opt-in vertex counters.
+  Game `1118acaf02807369e740fe671c9371cefb352ea4`.
+
+Set `RSX_VERTEX_PROFILE=1` to print one `[VTXPROFILE]` line per frame. The
+line counts fetches, fetch output bytes and time, indexed uploader calls,
+cache hits and misses, direct output bytes, and cache copy bytes and time.
+Fetch bytes are converted output bytes, not guest input bytes. Copy bytes
+include only copies from the indexed cache to the D3D12 upload buffer. The
+default path does not read the profile clock and keeps the same rendering
+result.
+
+Fork `tests/check_rsx_vertex_profile.py` compares exact output bytes and
+rejects nine mutants. Game `scripts/check_rsx_vertex_profile.py` rejects ten
+mutants, including direct output bytes. Both cover disabled mode, frame reset,
+changed guest bytes and repeated ranges. The existing indexed-strip check also
+passes against the fork and vendor backends.
+
+Measured result: none. No run yet.
+
+## Indexed cache miss copies
+
+Fork branch `codex/rsx-vertex-miss-copy`, based on `combined`
+`79e7bb4c9f8a616e95bfd4e758ca288600049333`, stacks the prepared-batch and
+vertex-profile commits. It keeps those changes in separate commits:
+
+- `b60101eb51a3f71b2542dda3a210a86d98d9a4ee` fetches an indexed-cache miss
+  directly into its D3D12 output slot. The cache stores that slot pointer.
+  Game `fafe0fa2477860c5be3d0b2c35a0bf481f544af1`.
+
+A cache hit still copies 256 bytes from the earlier output slot. A miss no
+longer writes the converted vertex twice. The pointers stay valid because the
+uploader reserves storage before it forms the output pointer and uses the cache
+only inside that callback. The default rendering result does not change.
+
+Fork `tests/check_rsx_vertex_profile.py` rejects 13 mutants. Game
+`scripts/check_rsx_vertex_profile.py` rejects 14 mutants. Both compare exact
+output bytes and verify that only hits add copy bytes and copy time. The
+indexed-strip check passes against both backends.
+
+Expected saving `[INFERENCE]`: one 256-byte copy per indexed-cache miss. The
+profile field `misses` counts these removed copies.
+
+Measured result: the change is defective. The game tree reverts it.
+
+- Clean run C3 (exe `f402fa1fe4ffcff4`, run `20261124T121022`, CPU deformation
+  buffer on): 15 frames in 12 seconds at 200 seconds (median 798.0 ms) and 5
+  frames in 12 seconds at 300 seconds (median 2362.6 ms). The frame time grows
+  from the start of the race.
+- The same tree with this commit reverted (exe `316eb63b4e6aef4a`, run
+  `20261124T122733`): 74 frames in 12 seconds (median 160.6 ms).
+
+The cause inside the change is open. Do not carry fork `b60101eb` again.
 
 ## Bounded native job trace foundation
 
@@ -2164,3 +2550,216 @@ The last 60 intact diagnostic groups through nominal second401 recorded
 115.040-355.418ms intervals; rounding bound0.0001645s, no missing groups).
 This single trial is not scanout, matched performance evidence or stable30FPS.
 #71's intermittent freeze and #27's full performance/graphics goal remain open.
+## CPU-surface target fence prerequisite (#302)
+
+The curated readback wait selectively carries fork modular
+`49ac5d3f802c772e64313e7f5b448720d6d9bbef`, through canonical combined
+`f77c7508b63e98850a9ac2aba3f4e1a31d0eb16b`. Its previous function was checked
+against the preserved fork source before replacement. Other surface-copy,
+request, generation and retirement logic is retained. A stale event wake is
+rechecked against the actual target; failure, device removal, sentinel and
+counter overflow remain visible errors under the existing 30-second bound.
+
+Actual function-body CPU tests cover nine outcomes and reject single-wake,
+omitted-sentinel and refreshed-deadline mutants. The authored headless GPU
+fixture uses real RTX 3080 queue/fence/event objects with validation enabled;
+the corrected wait and repeated reuse pass with zero validation messages, while
+the actual historical body returns before its target and fails the assertion.
+Whole backend checked and NDEBUG compilation also pass. These are protocol
+controls, not a game speedup or a complete CPU-surface pixel/coherence proof.
+
+Transactional snapshot transport and a held FIFO boundary callback are adopted
+in the curated integration below, following CPU and GPU validation. The separate
+inherited native-leaf workflow still fails linking its
+unchanged fixture dependencies; this is tracked by #284 and is not reported as
+a passing regression suite. The full native query remains draft PR303.
+
+### Snapshot ownership and pending-work admission (#302)
+
+Own-fork modular `codex/rsx-snapshot-admission` commit `e05383b0` and canonical
+combined `d9ff5563` tighten the existing snapshot provider before game adoption.
+The ownership helper rejects every intersecting second surface, including one
+that overlaps only part of a requested range. Adjacent nonoverlapping surfaces
+remain admissible. The provider returns unavailable while renderer state is
+missing, a primitive is open or CPU draw records await normal submission.
+Existing recorded-write failures remain visible.
+
+Both historical production bodies fail their new authored controls. Ownership
+checks reject five source mutants. The actual provider-body preflight checks
+reject three more while preserving destination bytes and copy counts on
+unavailable results. Transport, held-FIFO and target-fence CPU controls also
+pass. Complete fork backend compilation passes checked and NDEBUG modes on
+Windows. Focused modular and combined workflows pass on Windows, Linux and macOS.
+These establish CPU protocol and compilation gates. The GPU checks below extend
+this evidence.
+The original query remains the reference for the curated integration below.
+
+### Snapshot GPU producer validation (#302)
+
+Own-fork modular `a7397e95` on `codex/rsx-snapshot-gpu-validation` and canonical
+combined `b4d031b6` add `tools/test_rsx_snapshot_gpu.py`. The headless fixture
+compiles the complete production CPU-surface service, snapshot transport and
+packing code against an authored D3D12 producer and renderer-owner thread.
+Nonzero GPU writes exercise dirty copy/clean reuse, a blocked queue with a stale
+event, pitch padding, partial aliases, renderer admission, target resize and
+retirement. Four readers issue 128 concurrent requests. Four further requests
+queued before dirty-target retirement return unavailable with intact outputs;
+previously returned snapshot bytes remain intact after retirement.
+
+Hardware RTX 3080 and D3D12 WARP runs pass with zero validation messages.
+Recorded-write errors, forced device removal and unsupported formats remain
+visible failures. Three real-source mutants lose dirty copy, clean-generation
+tracking or the correct byte channel and fail the result oracle. Windows CI
+runs WARP; Linux and macOS retain the CPU protocol controls.
+
+The fixture schedules known closed boundaries. The actual FIFO protocol has
+separate controls; combined game FIFO/GPU execution, guest-resource identity
+and full-query admission remain required before replacing original readbacks.
+
+### Mixed CPU and GPU snapshot ranges (#302)
+
+Own-fork modular `ba99a491` / fixture correction `ab63c108` are integrated as
+canonical `7150bdc1` / `8926e0b4` and selectively adopted here. Each requested
+range intersecting a live target retains full containment and unique-view
+checks. A batch can include independent GPU targets and mapped CPU ranges,
+including bytes flushed by normal target retirement. The renderer synchronizes
+each selected GPU target once and stages every range through checked process
+memory reads. Unreadable or short reads reject the transaction. Callers retain
+their source allocations throughout the request.
+
+The full provider passes RTX 3080 and WARP controls for nonzero mixed ranges,
+two independent GPU views, inaccessible and partially readable memory, retired
+CPU data and concurrent requests. Thirteen source mutants are rejected. The
+retirement fixture waits for producer GPU completion before releasing its
+resource, matching the backend's normal lifetime ordering. Transport, FIFO,
+ownership, preflight, scalar-profile and checked/NDEBUG backend controls pass.
+Actual game-query admission and matched gameplay timing remain verification
+requirements.
+
+### Curated snapshot runtime integration (#302)
+
+The game overlay selects transactional transport from fork `e7a21c4c`, held-FIFO
+publication from `5a74c6df`, provider `711006ab` / combined `958c0804`, and the
+admission corrections above. Its reviewed reference is canonical `b4d031b6`.
+Renderer initialization installs the provider. Snapshot requests enter the
+renderer queue and run under the held FIFO callback after normal draining,
+with open-primitive, queued-draw and alias admission checks. Dirty copies retain
+the checked GPU fence and original layout conversion. Shutdown rejects pending
+requests with intact caller destinations.
+
+Curated checks compile the vendored transport, FIFO function, ownership helper
+and full provider against authored fixtures. Hardware RTX 3080 and WARP pass
+the nonzero producer, concurrency, retirement and error cases above with zero
+validation messages. Existing scalar-read and request-profile controls cover
+normal completed-batch service alongside the new queue protocol. Linux and
+Windows CI run CPU controls, and Windows also runs WARP.
+
+GetDepth continues through its retained original implementation. A game caller
+still needs authenticated allocation/view identity, the actual combined FIFO
+and GPU chronology, original/native parity and normal-PLAY timing before using
+this provider to replace its scalar reads. Stable 30 FPS and graphics acceptance
+remain separate requirements.
+
+### Snapshot admission observations (#302)
+
+Own-fork modular `677a5ee8` plus fixture correction `0682b7d8`, assembled in
+canonical combined `8f40d59f` plus `2c06f067`, add bounded observations under
+the existing default-off `RSX_CPU_SURFACE_PROFILE` selection. The renderer
+owner records primitive/draw state, actual requested ranges and candidate
+pitch-backed extents/generations immediately before admission. Sequence IDs
+join at most 64 observations to returned statuses, with an explicit cap.
+Admission, copies, synchronization, errors and caller destinations retain
+their existing behavior.
+
+The actual provider fixture verifies default-off silence, exact metadata,
+paired statuses, missing/open/pending-draw states and the cap. Three further
+source mutants lose the trace, corrupt pitch or repeat the cap while retaining
+original output correctness. Hardware and WARP controls retain the three
+existing GPU-data mutants. Scalar-profile fixtures declare the new dependency
+explicitly. These diagnostic observations still require actual game evidence
+before selecting an ownership or publication correction.
+
+### Snapshot submission of completed records (#302)
+
+Own-fork modular `42ef095f` plus declaration correction `1d7baade`, assembled
+in canonical combined `8e0eafcf` plus `316f6ec6`, submit completed CPU draw
+records through the existing nonpresenting capacity path at a closed held-FIFO
+boundary. The curated backend retains its checked pre/post-submission GPU
+retirement. An open primitive retains its pending records until closure.
+Snapshot requests also record their actual client thread identity.
+
+The GPU fixture compiles the actual submission and retirement helpers with
+authored render ports that produce real nonzero D3D12 data. It verifies one
+completed batch, restored presentation state, open-primitive admission, and
+snapshot queue preservation during completed-batch scalar service. Hardware
+and WARP retain zero validation messages and reject ten source mutants,
+including omitted submission, submission during an open primitive, accidental
+presentation and missing requester identity. Combined in-game resource/view
+identity, coherent lifetime and native-query performance remain acceptance
+requirements.
+
+### Fused VMX projection dependency (#302)
+
+The curated lifter routes `vmaddfp` and `vnmsubfp` through the existing fork
+`runtime/ppu/ppu_vmx.h` module from `12158c45`. This preserves fused binary32
+rounding, operand encoding order, big-endian lanes, destination aliases and
+VSCR non-Java denormal handling. The module is copied exactly from canonical
+combined `3df23866`. Its focused regression was published modular `d8dfc805`
+and cherry-picked into that combined commit.
+
+The actual emitted instructions pass 2,304 authored vectors against an exact
+rational binary32 oracle under nearest-even rounding. Three mutations cover
+unfused arithmetic, the wrong addend and disabled denormal handling. Windows,
+Linux and macOS focused CI pass. The historical curated emission fails 528
+lane comparisons. A private pinned projection case wraps to 0.0 with that
+emission and to the expected 1.0 with the fused helper. Gameplay adoption of
+the corrected projection requires private regeneration or a native transform
+binding. Existing native-query runtime evidence retains its generated
+TransformPoint dependency.
+
+### PPU lifted-function lookup prerequisite (#302)
+
+The selective PPU registry lookup carries only the public API from fork modular
+`b69ce0cc` plus `a090402f`, assembled in canonical combined `e44c7d58` plus
+`f38287ad`: public
+`ps3emu/ppu_function_registry.h`, the matching registry query, and its type
+alias. It deliberately leaves the generated function table and all existing
+dispatch behavior unchanged. The API declares the existing quiescent registry
+replacement operation and obtains the exact registered lifted entry before a
+caller replaces it; lookup returns zero for a missing address or null output,
+and preserves the caller's output on a failed lookup. Installation and lookup
+are explicitly quiescent-only with respect to guest dispatch.
+
+This is a generic prerequisite for an opt-in exact-fallback shadow observer;
+no native query replacement, view provider, synchronization bypass, gameplay
+run, or performance claim is part of this overlay. The fork's POSIX
+dispatch-depth fixture covers lookup, replacement and failure semantics. On
+the Windows integration host, the real vendored PPU loader compiled as x64
+clang-cl with a generated smoke header; the POSIX/ucontext fixture was not
+runnable locally.
+
+## Havok PPU worker count switch
+
+The game starts two PPU threads for the Havok step
+(`HavokSystem::NUM_PPU_THREADS`, `0x10066030`). The main thread waits 24 to
+30 ms per frame for that step. An opt-in switch raises the count of workers.
+The switch is a game-side binding of the lifted function
+`hkMultithreadingUtil::initMultithreading(hkWorld*, int)` (`0xA01220`) to
+`src/motorstorm/havok_threads.cpp`. The binding is `HAVOK_THREADS` in
+`scripts/native_game_binding.py`. The SHA-256 of the lifted body is
+`9a263a15562ae116cbd6d9c252383733477e82c9811a7f8b7f27bc74622e443e`.
+
+The switch needs no change in the fork or in `vendor/ps3recomp`. It has no fork
+hash. The extra workers are ordinary guest threads. The runtime creates them
+through the HLE `sys_ppu_thread_create` in
+`vendor/ps3recomp/runtime/syscalls/sys_ppu_thread.c`. Each thread has a stack of
+256 KiB and priority 100. The guest clamp and the worker array of 6 entries set
+the limit to 6. Each worker takes 1,500,016 bytes from the Havok heap of
+17,039,360 bytes.
+
+`python scripts/check_havok_threads.py` covers the launcher lines, the
+registration, the hook (14 cases, 16 mutants) and the identity of the lifted
+body. `python scripts/check_runtime_profile.py` covers the launcher option.
+
+Measured result: none at the time of writing. No run with more than two workers
+exists. `docs/OPERATIONS.md` describes the switch.

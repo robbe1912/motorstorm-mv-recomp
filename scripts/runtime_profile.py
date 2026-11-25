@@ -23,7 +23,10 @@ def _source_capabilities(source):
     # A commented-out historical switch does not provide the capability.
     tokens = re.compile(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', re.DOTALL)
     source = tokens.sub(lambda m: ' ' if m[0].startswith('/') else m[0], source)
-    return {'policy_interpreter': bool(re.search(r'\bgetenv\s*\(\s*"SPU_PM_INTERP"\s*\)', source))}
+    capabilities = {'policy_interpreter': bool(re.search(r'\bgetenv\s*\(\s*"SPU_PM_INTERP"\s*\)', source))}
+    if re.search(r'\bgetenv\s*\(\s*"SPU_NATIVE_OWNED_IMAGE"\s*\)', source):
+        capabilities['native_owned_image'] = True
+    return capabilities
 
 
 def runtime_identity(source_root):
@@ -52,6 +55,22 @@ def execution_environment(profile, capabilities):
     env = dict(SPU_PM_INTERP='1', SPU_PROBE_INTERP='0')
     env.update({key: '0' for key in DISABLED_PROBES})
     return env
+
+
+def supports_job_wait_profile(identity):
+    """Admit explicit capability or the byte-verified legacy profiling adapter."""
+    if identity.get('native_job_wait') is not True:
+        return False
+    if 'native_job_wait_profile' in identity:
+        return identity['native_job_wait_profile'] is True
+    sources = identity.get('native_world_sources_sha256')
+    if not isinstance(sources, dict):
+        return False
+    # Preserved pre-capability builds recorded this exact reviewed adapter.
+    legacy_adapter = '130a5ecc9913fbdcfce80080643aa403e0c4c86bc2e9e62fc2e7f2c5e32bc1f1'
+    return any(isinstance(name, str) and
+               name.replace('\\', '/') == 'src/motorstorm/job_wait_adapter.cpp' and
+               digest == legacy_adapter for name, digest in sources.items())
 
 
 def admit_execution_profile(profile, exe, elf_sha256):

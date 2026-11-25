@@ -1,5 +1,6 @@
 #include "../../src/motorstorm/job_capture.h"
 #include "../../src/motorstorm/job_capture_snapshot.h"
+#include "../../src/motorstorm/job_capture_window.h"
 #include <atomic>
 #include <cassert>
 #include <cstring>
@@ -35,6 +36,8 @@ static std::atomic<uint64_t> ticks{1};
 static thread_local uint64_t tid = 11;
 static uint64_t clock_now(void*) { return ticks.fetch_add(1); }
 static uint64_t thread_now(void*) { return tid; }
+static uint64_t bad_clock(void*) { return 0; }
+static uint64_t backwards_clock(void* p) { return (*static_cast<uint64_t*>(p))--; }
 static int filter_atomic(void*, uint32_t, uintptr_t, uint64_t address, uint32_t) { return address == 42; }
 static int filter_execution(void*, uint32_t, uintptr_t, uint32_t, uint32_t target) { return target == 42; }
 static int filter_scheduler(void*, const ps3_spurs_scheduler_event* e) { return e->info.dispatch == 42; }
@@ -66,7 +69,7 @@ static void produce(unsigned id) {
     }
 }
 int main() {
-    job_capture_config config{7, 10000000, 4004, nullptr, clock_now, thread_now, nullptr, nullptr, nullptr};
+    job_capture_config config{7, 10000000, 4004, nullptr, clock_now, thread_now, nullptr, nullptr, nullptr, nullptr};
     assert(!job_capture_start(nullptr));
     for (int fail = 1; fail <= 4; ++fail) {
         fail_at = fail; install_call = 0;
@@ -154,6 +157,64 @@ int main() {
     assert(job_capture_describe(capture, &info));
     assert(info.filter_mask == 7 && info.excluded_atomic == 4001 && info.excluded_execution == 1 && info.excluded_scheduler == 1);
     assert(info.storage.attempted == 0);
+    job_capture_stop(capture);
+
+    job_capture_window window(config);
+    assert(window.available());
+    auto window_config = window.config();
+    capture = job_capture_start(&window_config); assert(capture);
+    assert(!ppu->accept(ppu->user, PS3_ATOMIC_PPU32, 1, 42, 4));
+    assert(!execution->accept(execution->user, 1, 1, 0, 42));
+    s.info.dispatch = 42; assert(!scheduler->accept(scheduler->user, &s));
+    uint64_t before = 0, after = 0;
+    assert(window.open(nullptr, &after) == job_capture_window::rejected);
+    assert(window.open(&before, &after) == job_capture_window::opened && before && after >= before);
+    assert(window.open(&before, &after) == job_capture_window::rejected);
+    assert(ppu->accept(ppu->user, PS3_ATOMIC_PPU32, 1, 42, 4));
+    assert(!ppu->accept(ppu->user, PS3_ATOMIC_PPU32, 1, 41, 4));
+    assert(execution->accept(execution->user, 1, 1, 0, 42));
+    assert(scheduler->accept(scheduler->user, &s));
+    ps3_atomic_observation admitted{}; admitted.address = 42;
+    ppu->observe(ppu->user, &admitted);
+    assert(job_capture_read(capture, 0, &r) == 1 && r.kind == JOB_CAPTURE_ATOMIC);
+    assert(r.thread == tid);
+    assert(job_capture_describe(capture, &info));
+    assert(info.excluded_atomic == 2 && info.excluded_execution == 1 && info.excluded_scheduler == 1);
+    job_capture_stop(capture);
+    auto invalid = config; invalid.clock = nullptr;
+    job_capture_window invalid_window(invalid);
+    auto invalid_config = invalid_window.config();
+    assert(!job_capture_start(&invalid_config));
+    assert(invalid_window.open(&before, &after) == job_capture_window::rejected);
+    auto bad = config; bad.clock = bad_clock;
+    job_capture_window bad_window(bad);
+    assert(bad_window.open(&before, &after) == job_capture_window::opened_bad_clock);
+    uint64_t backwards = 5; bad.clock = backwards_clock; bad.user = &backwards;
+    job_capture_window backwards_window(bad);
+    assert(backwards_window.open(&before, &after) == job_capture_window::opened_bad_clock && before == 5 && after == 4);
+
+    job_capture_window parallel_window(config);
+    assert(parallel_window.available());
+    auto parallel_config = parallel_window.config();
+    capture = job_capture_start(&parallel_config); assert(capture);
+    auto parallel_batch = [&threads] {
+        for (auto& t : threads) t = std::thread([] {
+            for (unsigned i = 0; i < 1000; ++i) {
+                if (ppu->accept(ppu->user, PS3_ATOMIC_PPU32, 1, 42, 4)) {
+                    ps3_atomic_observation event{}; event.address = 42;
+                    ppu->observe(ppu->user, &event);
+                }
+            }
+        });
+        for (auto& t : threads) t.join();
+    };
+    parallel_batch();
+    assert(job_capture_describe(capture, &info));
+    assert(info.storage.attempted == 0 && info.excluded_atomic == 4000);
+    assert(parallel_window.open(&before, &after) == job_capture_window::opened);
+    parallel_batch();
+    assert(job_capture_describe(capture, &info));
+    assert(info.storage.attempted == 4000 && info.storage.dropped == 0 && info.excluded_atomic == 4000);
     job_capture_stop(capture);
     return 0;
 }

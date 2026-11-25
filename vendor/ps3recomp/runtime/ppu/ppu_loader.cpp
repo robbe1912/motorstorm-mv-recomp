@@ -40,6 +40,7 @@
 #define PPU_FASTMEM_NO_RENAME
 #include "ps3emu/ppu_fastmem.h"
 #include "ppu_recomp.h"
+#include "ps3emu/ppu_function_registry.h"
 #include "ps3emu/milestone.h"   /* ps3_ms / ps3_msf -- boot milestone log */     /* ppu_context, func decls, ppu_recomp_register */
 #include "../memory/vm.h"   /* vm_commit -- sys_mmapper_search_and_map maps for real */
 #include "../platform/win32_compat.h"      /* Win32 types, interlocked ops, Sleep/QPC on POSIX */
@@ -1646,6 +1647,10 @@ static void ppu_spin_yield(void)
  * -----------------------------------------------------------------------*/
 extern "C" volatile uint32_t ppu_fm_diag = 0;
 
+/* Hot-spin detector switch of the inline fast paths: 1 = the detector runs.
+ * Only the exact value PPU_FM_SPINDET=0 turns it off. */
+extern "C" volatile uint32_t ppu_fm_spin_det = 1;
+
 /* Any of these in the environment routes every memory access through the
  * out-of-line family, exactly as before the fast paths existed. PPU_FM=0 is
  * the runtime kill switch: same routing, no rebuild -- the one-binary A/B
@@ -1653,6 +1658,8 @@ extern "C" volatile uint32_t ppu_fm_diag = 0;
 extern "C" void ppu_fm_arm(void)
 {
     if (ppu_fm_diag) return;
+    const char* spindet = getenv("PPU_FM_SPINDET");
+    if (spindet && spindet[0] == '0' && !spindet[1]) ppu_fm_spin_det = 0;
     static const char* const knobs[] = {
         "PPU_RWATCH", "PPU_FORCE_READ_ADDR", "PPU_HOTMAP", "PPU_RVAL",
         "PPU_RVAL64", "YDKJ_RWATCH", "PT", "PPU_WVAL", "PPU_WVAL_LO",
@@ -2196,7 +2203,7 @@ extern "C" uint32_t ppu_active_lr(void)
  * a free slot and spins forever at startup. 2^18 = 262144 slots keeps a 68k
  * image at ~26% load with headroom to ~190k functions at 75%.
  * -----------------------------------------------------------------------*/
-typedef void (*ppu_fn)(ppu_context*);
+typedef ps3emu_ppu_function ppu_fn;
 
 /* 2^18 = 262144 slots. MUST exceed the lifted function count or the open-addressing
  * insertion loop below spins forever (the re-lifted flОw has 104,415 functions; a
@@ -2263,6 +2270,15 @@ static ppu_fn ppu_lookup(uint32_t a)
         i = (i + 1) & PPU_HASH_MASK;
     }
     return nullptr;
+}
+
+extern "C" int ppu_get_registered_function(uint32_t a, ppu_fn* out)
+{
+    if (out == nullptr) return 0;
+    ppu_fn fn = ppu_lookup(a);
+    if (fn == nullptr) return 0;
+    *out = fn;
+    return 1;
 }
 
 extern "C" uint32_t ppu_function_count(void) { return g_fn_count; }

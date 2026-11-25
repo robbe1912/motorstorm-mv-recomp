@@ -45,6 +45,11 @@ def load_profile(path):
             raise ValueError('Optional action requires a valid after_step')
     states = p['steps'] + optional + [p['target']]
     for n, step in enumerate(states):
+        if 'stable_frames' in step and (
+            n >= len(p['steps']) or type(step['stable_frames']) is not int or
+            not 1 <= step['stable_frames'] <= 4
+        ):
+            raise ValueError('Normal replay steps accept 1..4 stable_frames')
         if step.get('kind', 'reference') != 'reference':
             raise ValueError('Secondary luminance gates cannot drive buttons or replace targets')
         if not step.get('reference') or not step.get('label') or not isinstance(step.get('roi'), list) or len(step['roi']) != 4:
@@ -98,6 +103,8 @@ def replay(run, profile_path, timeout=480):
     deadline = time.monotonic() + timeout
     index = 0
     last_input_frame = None
+    last_step_frame = None
+    matching_frames = 0
     optional_done = set()
     result = dict(profile=str(Path(profile_path).resolve()), target_observed=False,
                   graphics_correctness_verified=False, desktop_control=False, inputs=0, optional_inputs=[])
@@ -118,21 +125,28 @@ def replay(run, profile_path, timeout=480):
                         if n not in optional_done and index >= action['after_step'] and matches(frame, action):
                             reference = matching_reference(frame, action)
                             event = send(run, reference, action['roi'], action['mask'], action['polls'],
-                                         action['label'], mode=action.get('mode', 'text'))
+                                         action['label'], mode=action.get('mode', 'text'), expected_frame=frame)
                             last_input_frame = Path(event['observed_frame'])
+                            last_step_frame = None
+                            matching_frames = 0
                             optional_done.add(n)
                             result['optional_inputs'].append(event)
                             handled = True
                             break
                     if handled:
                         continue
-                    if index < len(profile['steps']) and matches(frame, profile['steps'][index]):
+                    if index < len(profile['steps']) and frame != last_step_frame:
                         step = profile['steps'][index]
                         reference = matching_reference(frame, step)
-                        event = send(run, reference, step['roi'], step['mask'], step['polls'],
-                                     step['label'], mode=step.get('mode', 'text'))
-                        last_input_frame = Path(event['observed_frame'])
-                        index += 1
+                        last_step_frame = frame
+                        matching_frames = matching_frames + 1 if reference else 0
+                        if matching_frames >= step.get('stable_frames', 1):
+                            event = send(run, reference, step['roi'], step['mask'], step['polls'],
+                                         step['label'], mode=step.get('mode', 'text'), expected_frame=frame)
+                            last_input_frame = Path(event['observed_frame'])
+                            last_step_frame = None
+                            matching_frames = 0
+                            index += 1
                 except ValueError as exc:
                     # A concurrently completed frame can invalidate the pre-send screen gate.
                     if 'Unexpected screen' not in str(exc) and 'new internal frame' not in str(exc):

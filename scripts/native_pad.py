@@ -108,7 +108,7 @@ def latest_frame(run):
     return max(complete, key=lambda f: int(f.parent.name[6:]), default=None)
 
 
-def send(run, reference, roi, mask, polls, label, timeout=15, mode='text'):
+def send(run, reference, roi, mask, polls, label, timeout=15, mode='text', *, expected_frame=None):
     if mask not in (0x4000, 0x0008, 0x0010, 0x0020, 0x0040, 0x0080) or not 1 <= polls <= 8:
         raise ValueError('Use one normal button with 1..8 polls; no long-hold replay')
     run = Path(run).resolve()
@@ -116,6 +116,8 @@ def send(run, reference, roi, mask, polls, label, timeout=15, mode='text'):
     frame = latest_frame(run)
     if frame is None or time.time() - frame.stat().st_mtime > 30:
         raise ValueError('Need a fresh completed internal frame before input')
+    if expected_frame is not None and frame.resolve() != Path(expected_frame).resolve():
+        raise ValueError('A new internal frame requires replay gate validation')
     if frame.stat().st_mtime < launch['create_time']:
         raise ValueError('Frame predates the owned native process')
     journal = run / 'navigation.jsonl'
@@ -138,6 +140,8 @@ def send(run, reference, roi, mask, polls, label, timeout=15, mode='text'):
             f.write(f'0x{mask:04X} {polls}\n')
         for attempt in range(6):
             owned(run)
+            if expected_frame is not None and latest_frame(run) != frame:
+                raise ValueError('A new internal frame requires replay gate validation')
             try:
                 os.replace(pending, pad)
                 break

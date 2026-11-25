@@ -9,6 +9,7 @@
 - Do not link entire build/, temp/ or game/ directories. Write a worktree-local config/local.json, copy baseline userdata into a local save directory, and use local logs, captures and PAD_FILE.
 - Before staging, follow docs/REPOSITORY.md, then run python scripts/check_repository.py and python scripts/check_docs.py, then git diff --cached --check. Game bytes, generated guest code, keys, saves and captures remain ignored, including link targets. Never force-add them.
 - Before a native run, follow docs/OPERATIONS.md. Tests are muted. Coordinate native runs and builds on this host: project.py build kills every ms1_recomp.exe before relinking. Wait for another task's owned run to finish; do not kill it.
+- After merging a task branch into main, clean up its completed worktree directly as part of the merge workflow. Follow the commands in docs/WORKTREES.md. The merging agent owns cleanup.
 - Supported builds boot to PLAY through the verified native startup policy. Use a menu-start replay profile. Reference startup uses `--original-intro` and its original-start profile. Continue menus with screen-gated normal PAD_FILE replay. See docs/OPERATIONS.md.
 - Preserve debug and retail generated trees separately. Use the original target's inputs; never replace a target tree with a sibling US mirror.
 - Build success, submitted frames and reference gameplay do not establish native gameplay or minimum 60 FPS. Report the actual observations, identities and remaining limits.

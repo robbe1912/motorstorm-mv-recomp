@@ -75,10 +75,38 @@ jobs:
         run: python scripts/check_spu_pm_services.py
       - name: Native world transforms and independent FP oracle
         run: python scripts/check_native_world_transforms.py
+      - name: Native deformation depth and exact rational oracle
+        run: |
+          python scripts/check_deformation_depth.py
+          python scripts/check_deformation_depth_observer.py
+          python scripts/check_deformation_query.py
+          python scripts/check_deformation_projection.py
+          python scripts/check_ppu_vmx_fused.py
+      - name: CPU surface target-fence ownership
+        run: python scripts/check_rsx_surface_fence.py
+      - name: Coherent snapshot transport and renderer admission
+        run: |
+          python scripts/check_guest_read_snapshot.py
+          python scripts/check_fifo_snapshot_boundary.py
+          python scripts/check_rsx_snapshot_ownership.py
+          python scripts/check_rsx_snapshot_preflight.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cpu-snapshot-controls
+          path: |
+            temp/checks/guest-snapshot-*/result.json
+            temp/checks/fifo-boundary-*/result.json
+            temp/checks/cpu-surface-snapshot-*/result.json
+            temp/checks/snapshot-preflight-*/result.json
       - name: Native visibility planes and independent negative controls
         run: python scripts/check_native_visibility_planes.py
+      - name: Native visibility batch and publication checks
+        run: python scripts/check_native_visibility_batch.py
       - name: Native PCM DSP and independent rational oracle
         run: python scripts/check_pcm_cubic.py
+      - name: Standalone particle collision and publication checks
+        run: python scripts/check_native_particle_collision.py
       - name: Native particle scan and independent scalar oracle
         run: python scripts/check_native_threshold_scan.py
       - name: Private particle code binding and output preservation
@@ -89,6 +117,8 @@ jobs:
         run: python scripts/check_native_visibility_binding.py
       - name: Verified native game binding and input isolation
         run: python scripts/check_native_game_binding.py
+      - name: Queue-call observation and concurrent identity controls
+        run: python scripts/check_job_queue_lifecycle.py --mutants
       - name: Native scene transaction and original fallback
         run: python scripts/check_native_scene.py
       - name: Native job dependency wait and negative controls
@@ -186,6 +216,10 @@ jobs:
           path: build/self-tests/spurs-attribute-hle/*.log
       - name: Game job capture owner controls
         run: python scripts/check_job_capture.py --mutants
+      - name: Job capture replay and build guards
+        run: |
+          python scripts/check_job_capture_replay.py
+          python scripts/check_job_capture_spu_guard.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -416,8 +450,39 @@ jobs:
         run: python scripts/check_spu_pm_services.py
       - name: Native world transforms and independent FP oracle
         run: python scripts/check_native_world_transforms.py
+      - name: Native deformation depth and exact rational oracle
+        run: |
+          python scripts/check_deformation_depth.py
+          python scripts/check_deformation_depth_observer.py
+          python scripts/check_deformation_query.py
+          python scripts/check_deformation_projection.py
+          python scripts/check_ppu_vmx_fused.py
+      - name: CPU surface target-fence ownership
+        run: python scripts/check_rsx_surface_fence.py
+      - name: Coherent snapshot transport and renderer admission
+        run: |
+          python scripts/check_guest_read_snapshot.py
+          python scripts/check_fifo_snapshot_boundary.py
+          python scripts/check_rsx_snapshot_ownership.py
+          python scripts/check_rsx_snapshot_preflight.py
+      - name: D3D12 snapshot producer and lifetime with WARP
+        run: python scripts/check_rsx_snapshot_gpu.py --warp
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-snapshot-controls
+          path: |
+            temp/checks/guest-snapshot-*/result.json
+            temp/checks/fifo-boundary-*/result.json
+            temp/checks/cpu-surface-snapshot-*/result.json
+            temp/checks/snapshot-preflight-*/result.json
+            temp/checks/snapshot-gpu-*/result.json
       - name: Native visibility planes and independent negative controls
         run: python scripts/check_native_visibility_planes.py
+      - name: Native visibility batch and publication checks
+        run: python scripts/check_native_visibility_batch.py
+      - name: Standalone particle collision and publication checks
+        run: python scripts/check_native_particle_collision.py
       - name: Native particle scan and independent scalar oracle
         run: python scripts/check_native_threshold_scan.py
       - name: Private particle code binding and output preservation
@@ -428,6 +493,8 @@ jobs:
         run: python scripts/check_native_visibility_binding.py
       - name: Verified native game binding and input isolation
         run: python scripts/check_native_game_binding.py
+      - name: Queue-call observation and concurrent identity controls
+        run: python scripts/check_job_queue_lifecycle.py --mutants
       - name: Native scene transaction and original fallback
         run: python scripts/check_native_scene.py
       - name: Native job dependency wait and negative controls
@@ -484,6 +551,10 @@ jobs:
           path: build/self-tests/spurs-attribute-hle/*.log
       - name: Game job capture owner controls
         run: python scripts/check_job_capture.py --mutants
+      - name: Job capture replay and build guards
+        run: |
+          python scripts/check_job_capture_replay.py
+          python scripts/check_job_capture_spu_guard.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

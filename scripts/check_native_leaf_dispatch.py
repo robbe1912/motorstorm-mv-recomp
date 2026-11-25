@@ -24,7 +24,7 @@ env = {k:v for k,v in os.environ.items() if not k.startswith(('SPU_','SPURS_','Y
 channels=(spu/'spu_channels.c').read_text(encoding='utf-8')
 a=channels.index('int spu_native_owned_enabled(void)');b=channels.index('void spu_native_owned_interpret',a)
 config=out/'owned-config-boundary.c'
-config.write_text('#include "spu_native_owned.h"\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n'+channels[a:b]+
+config.write_text('#include "spu_native_owned.h"\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <limits.h>\n'+channels[a:b]+
     'void spu_native_owned_interpret(spu_context* ctx) { (void)ctx; fputs("Unexpected owned adapter in disabled-mode leaf fixture\\n",stderr); abort(); }\n'+'int g_spu_pm_svc_on=0;int spu_pm_svc_can_run(const spu_context* c,uint32_t pc){(void)c;(void)pc;fputs("unexpected policy service\\n",stderr);abort();}void spu_pm_svc_drain_done(spu_context* c,uint32_t r){(void)c;(void)r;fputs("unexpected policy service\\n",stderr);abort();}'+'\n',encoding='utf-8')
 (out/'owned-config-boundary.json').write_text(json.dumps({'channels_sha256':hashlib.sha256(channels.encode()).hexdigest(),'readers_sha256':hashlib.sha256(channels[a:b].encode()).hexdigest(),'scope':'Actual option readers; aborting unexercised owned adapter, no owned-mode acceptance'},indent=2),encoding='utf-8')
 
@@ -73,7 +73,7 @@ def instrument(contents):
 production=out/'instrumented-interpreter.c'
 production.write_text(instrument(source))
 exe=build('production',production)
-for mode in ['normal','empty','lookups','cold_workers','prefreeze_trace']:
+for mode in ['normal','empty','lookups','cold_workers','prefreeze_trace','unbudgeted']:
     r=run(exe,mode);assert r.returncode==0,r.stdout+r.stderr
 for mode,message in [('bad','continuation/status'),('plan','invalid plan'),('ambiguous','ambiguous guards')]:
     r=run(exe,mode)
@@ -184,10 +184,12 @@ for name,before,after in [
     ('zero-stop-sentinel','(stop && stop>=leaf->begin && stop<leaf->end)','(stop>=leaf->begin && stop<leaf->end)'),
     ('budget-bypass','if (plan.instructions>remaining) continue;','/* omitted budget admission */'),
     ('legacy-budget-bypass','if (legacy<remaining) remaining=legacy;','/* omitted legacy ceiling */'),
+    ('unbudgeted-ceiling-bypass','local_budget || g_spu_interp_budget,&last,&steps','local_budget!=0,&last,&steps'),
 ]:
     assert source.count(before)==1,name
     path=out/(name+'.c');path.write_text(instrument(source.replace(before,after)),encoding='utf-8')
-    r=run(build(name,path),'lookups' if name=='hot-environment-scan' else 'normal')
+    mode = {'hot-environment-scan': 'lookups', 'unbudgeted-ceiling-bypass': 'unbudgeted'}.get(name, 'normal')
+    r=run(build(name,path),mode)
     message='FAIL no warmed native-option environment reads' if name=='hot-environment-scan' else 'FAIL real host execution count'
     assert r.returncode==1 and message in r.stderr,r.stdout+r.stderr
-print('PASS actual interpreter native-leaf state/stop/budget/IRQ/TLS/FP/thread tests and hash-pinned pre-port equivalence; six unsafe dispatch/environment mutants and faulty TLS callback rejected')
+print('PASS actual interpreter native-leaf state/stop/budget/IRQ/TLS/FP/thread tests and hash-pinned pre-port equivalence; seven unsafe dispatch/environment mutants and faulty TLS callback rejected')

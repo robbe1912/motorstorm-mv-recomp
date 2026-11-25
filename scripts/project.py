@@ -59,6 +59,7 @@ def main():
     b=sub.add_parser('build'); b.add_argument('--jobs',type=int,default=8); b.add_argument('--configure-only',action='store_true')
     b.add_argument('--optimize',action='store_true',help='Enable native O1 optimization with symbols and assertions retained')
     b.add_argument('--optimize-renderer',action='store_true',help='Use checked O2/automatic inlining for native video/FIFO sources; requires --optimize')
+    b.add_argument('--optimize-guest',action='store_true',help='Use checked O2/automatic inlining for the lifted guest units; requires --optimize')
     b.add_argument('--ps3recomp-dir',type=Path,help='Selected toolkit source (default: curated vendor runtime)')
     b.add_argument('--native-world-transforms',action=argparse.BooleanOptionalAction,default=True,
                    help='Bind verified native hierarchy work (default on; selected debug-US ELF only)')
@@ -66,16 +67,26 @@ def main():
                    help='Bind verified native cooperative dependency waits (default on)')
     b.add_argument('--native-visibility',action=argparse.BooleanOptionalAction,default=False,
                    help='Bind verified visibility prototype (default off; reference execution remains the runtime default)')
+    b.add_argument('--native-visibility-batch',action='store_true',
+                   help='Build the debug-US native visibility batch trial (default off)')
     b.add_argument('--native-pcm-cubic',action=argparse.BooleanOptionalAction,default=False,
                    help='Bind verified PCM cubic DSP (default off; explicit runtime reference/shadow/native mode)')
+    b.add_argument('--native-particle-collisions',action=argparse.BooleanOptionalAction,default=False,
+                   help='Build the verified standalone particle-box collision batch (default off)')
     b.add_argument('--native-particle-thresholds',action=argparse.BooleanOptionalAction,default=False,
                    help='Bind the verified particle scan (default off; runtime reference/shadow/native policy remains explicit)')
+    b.add_argument('--depth-observer',action='store_true',
+                   help='Build the opt-in raw GetDepth/PixelBuffer Lock observer (default off)')
     b.add_argument('--menu-boot',action=argparse.BooleanOptionalAction,default=True,help='Boot supported original targets directly to PLAY')
+    b.add_argument('--havok-threads',action='store_true',help='Bind the opt-in Havok PPU worker count switch (default off: game count)')
+    b.add_argument('--capture-jobs',action='store_true',help='Build bounded atomic, SPU execution, scheduler and verified queue-call capture')
     g=sub.add_parser('generate'); g.add_argument('--stage',choices=['ppu','spu'],required=True); g.add_argument('--jobs',type=int,default=8)
     sub.add_parser('check')
     args=ap.parse_args()
     if args.cmd=='build' and args.optimize_renderer and not args.optimize:
         ap.error('--optimize-renderer requires --optimize')
+    if args.cmd=='build' and args.optimize_guest and not args.optimize:
+        ap.error('--optimize-guest requires --optimize')
     if args.cmd=='setup':
         c={'elf':str(Path(args.elf).resolve()),'disc':str(Path(args.disc).resolve()),'ffmpeg':str(Path(args.ffmpeg).resolve()),'keys':str(Path(args.keys_dir).resolve()),'userdata':'game/userdata','generated':'build/generated/named'}
         for key in ('elf','disc','ffmpeg'):
@@ -126,12 +137,23 @@ def main():
         from native_game_binding import PRODUCTION
         menu_boot = args.menu_boot and hashlib.sha256(c['elf'].read_bytes()).hexdigest() == PRODUCTION.elf_sha256
         command.append(f'-DPORT_NATIVE_MENU_BOOT={"ON" if menu_boot else "OFF"}')
+        havok_threads = args.havok_threads and hashlib.sha256(c['elf'].read_bytes()).hexdigest() == PRODUCTION.elf_sha256
         command.append(f'-DPORT_OPTIMIZE_RENDERER={"ON" if args.optimize_renderer else "OFF"}')
+        command.append(f'-DPORT_OPTIMIZE_GUEST={"ON" if args.optimize_guest else "OFF"}')
+        capture_options = ('PORT_ENABLE_JOB_CAPTURE', 'PORT_QUEUE_CALL_OBSERVATION',
+                           'PS3RECOMP_ATOMIC_OBSERVATION', 'PS3RECOMP_EXECUTION_OBSERVATION',
+                           'PS3RECOMP_SPURS_SCHEDULER_OBSERVATION')
+        command.extend(f'-D{option}={"ON" if args.capture_jobs else "OFF"}' for option in capture_options)
+        command.append('-DPORT_CAPTURE_ALLOW_UNLIFTED=OFF')
         command.extend([f'-DPORT_NATIVE_WORLD_TRANSFORMS={"ON" if args.native_world_transforms else "OFF"}',
                         f'-DPORT_NATIVE_JOB_WAIT={"ON" if args.native_job_wait else "OFF"}',
                         f'-DPORT_NATIVE_VISIBILITY={"ON" if args.native_visibility else "OFF"}',
+                        f'-DPORT_NATIVE_VISIBILITY_BATCH={"ON" if args.native_visibility_batch else "OFF"}',
                         f'-DPORT_NATIVE_PCM_CUBIC={"ON" if args.native_pcm_cubic else "OFF"}',
+                        f'-DPORT_NATIVE_PARTICLE_COLLISIONS={"ON" if args.native_particle_collisions else "OFF"}',
                         f'-DPORT_NATIVE_PARTICLE_THRESHOLDS={"ON" if args.native_particle_thresholds else "OFF"}',
+                        f'-DPORT_DEFORMATION_DEPTH_OBSERVER={"ON" if args.depth_observer else "OFF"}',
+                        f'-DPORT_HAVOK_THREADS={"ON" if havok_threads else "OFF"}',
                         f'-DPORT_TARGET_ELF={c["elf"]}'])
         logs=ROOT/'temp/builds'/datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
         logged_run(command,logs/'configure.log',env=env)
@@ -144,22 +166,39 @@ def main():
         identity.update(build_type='Debug',optimized_checked=args.optimize,native_world_transforms=args.native_world_transforms,
                         native_job_wait=args.native_job_wait)
         identity.update(runtime_record)
-        identity['menu_boot']=menu_boot
         identity['native_visibility']=args.native_visibility
+        identity['native_visibility_batch']=args.native_visibility_batch
+        dx12_backend = source_root/'libs/video/rsx_d3d12_backend.c'
+        identity['replay_backbuffer_capture'] = (
+            os.name == 'nt' and dx12_backend.is_file() and
+            'RSX_CAP_BACKBUFFER_ONLY' in dx12_backend.read_text(encoding='utf-8'))
         identity['native_pcm_cubic']=args.native_pcm_cubic
         identity['native_particle_thresholds']=args.native_particle_thresholds
+        identity['native_particle_collisions']=args.native_particle_collisions
+        identity['menu_boot']=menu_boot
+        identity['native_job_wait_profile']=args.native_job_wait
+        identity['job_capture']=args.capture_jobs
+        identity['queue_call_observation']=args.capture_jobs
+        identity['job_capture_execution_filter']=args.capture_jobs
+        identity['job_capture_queue_history']=args.capture_jobs
+        identity['job_capture_policy_state'] = args.capture_jobs
+        identity['job_capture_module_identity'] = args.capture_jobs
+        identity['depth_observer']=args.depth_observer
+        identity['native_depth_query']=args.depth_observer
+        identity['havok_threads']=havok_threads
         identity['renderer_optimization']=json.loads((binary/'renderer-optimization.json').read_text())
         if identity['renderer_optimization']['enabled'] != args.optimize_renderer:
             raise SystemExit('Renderer build configuration did not match the requested mode')
         identity['renderer_optimization_helper_sha256']=hashlib.sha256((ROOT/'src/renderer_optimization.cmake').read_bytes()).hexdigest()
+        identity['guest_optimization']=args.optimize_guest
         if args.native_particle_thresholds:
             identity['native_particle_binding']=json.loads((binary/'native-particle-input/identity.json').read_text())
             identity['native_particle_binding_generator_sha256']=hashlib.sha256((ROOT/'scripts/native_particle_binding.py').read_bytes()).hexdigest()
-        if menu_boot or args.native_world_transforms or args.native_job_wait or args.native_visibility or args.native_pcm_cubic:
+        if menu_boot or havok_threads or args.native_world_transforms or args.native_job_wait or args.native_visibility or args.native_pcm_cubic or args.depth_observer or args.capture_jobs:
             identity['native_world_binding']=json.loads((binary/'native-world-binding.json').read_text())
             identity['native_world_sources_sha256']={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in sorted((ROOT/'src/motorstorm').glob('*')) if p.is_file()}
-        elif args.native_particle_thresholds:
+        elif args.native_particle_thresholds or args.native_particle_collisions or args.native_visibility_batch:
             identity['native_world_sources_sha256']={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in sorted((ROOT/'src/motorstorm').glob('*')) if p.is_file()}
         (binary/'build_identity.json').write_text(json.dumps(identity,indent=2)); print('Build identity:',identity['sha256'])

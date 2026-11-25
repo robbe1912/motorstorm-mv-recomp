@@ -1,6 +1,6 @@
 """Prepare a private generated-input copy and bind a verified native game entry."""
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import itertools
 import json
@@ -22,6 +22,7 @@ class Contract:
     directory: str = 'ppu'
     matcher: str = ''
     windows: tuple = ()  # (ELF file offset, local-store offset, byte count)
+    byte_observer: str = ''
 
 
 # Identities only: original/generated program bytes never belong in Git.
@@ -31,6 +32,32 @@ PRODUCTION = Contract(
 JOB_WAIT = Contract(PRODUCTION.elf_sha256,
     'ab53a9f3f0d538a07d6333eb2b45d78a2dd40e2a3dcbe317e08109f96fad5fca',
     'func_00C5C424', 'game_original_job_marker_wait', 'motorstorm_job_marker_wait')
+QUEUE_RESET = Contract(PRODUCTION.elf_sha256,
+    '71b5a619bc898c6c0feca5256696075311122ee31439896da4e4dc395aaf16c9',
+    'func_00C5BF38', 'game_original_queue_reset', 'motorstorm_observe_queue_reset')
+QUEUE_RESET_MULTI = Contract(PRODUCTION.elf_sha256,
+    '8018cd6ea22c22adf260a4eae47a1ed2056a9fabb3cac57fe21e16e93a8f0ce1',
+    'func_00C5D4C0', 'game_original_queue_reset_multi', 'motorstorm_observe_queue_reset_multi')
+QUEUE_INIT = Contract(PRODUCTION.elf_sha256,
+    'fe86f9867d35717633192c4208b308d59f6910d3673572d3f5d8b5f8a1790c63',
+    'func_00C5D1C0', 'game_original_queue_init', 'motorstorm_observe_queue_init')
+QUEUE_ADD_JOB = Contract(PRODUCTION.elf_sha256,
+    'f072ed2dccd0c49c7124e3274ad16be055ce487c965f761e5ec09aeb16b324c2',
+    'func_00C5C6A0', 'game_original_add_job', 'motorstorm_observe_add_job')
+MENU_VIDEO = Contract(PRODUCTION.elf_sha256,
+    '851fe7b89535f0309c489318fc5be5756103557363de0f18c73e2ccb0b735d25',
+    'func_0050C9E8', 'game_original_start_video', 'motorstorm_boot_start_video')
+MENU_LANGUAGE = Contract(PRODUCTION.elf_sha256,
+    'a2ec3a9e721fa5f60a201e579af96d2e4405404b50a7ebf352803f9e38cb5d79',
+    'func_00530A88', 'game_original_language_event', 'motorstorm_boot_language_event')
+HAVOK_THREADS = Contract(PRODUCTION.elf_sha256,
+    '9a263a15562ae116cbd6d9c252383733477e82c9811a7f8b7f27bc74622e443e',
+    'func_00A01220', 'game_original_init_multithreading', 'motorstorm_havok_threads')
+# Direct lifted callers bypass registry-only observation.
+DEPTH_OBSERVER = Contract(PRODUCTION.elf_sha256,
+    'c1569b155b7ff33025877349e330a5a8c8b9c2adc0f62b946d2bcbd5408f6064',
+    'func_0029C684', 'game_original_deformation_depth', 'motorstorm_observe_deformation_depth',
+    byte_observer='motorstorm_observe_depth_byte')
 VISIBILITY = Contract(PRODUCTION.elf_sha256,
     '035be34da5f4b00d47d7c7c0637aeaf93635b53ef209e4033f2ada6f918f7bbf',
     'jobmod_056ac0eea1a6_e12270_spu_func_000083A0',
@@ -46,13 +73,6 @@ PCM_CUBIC = Contract(PRODUCTION.elf_sha256,
     matcher='game_pcm_cubic_code_matches',
     windows=((0xee535c, 0x9d5c, 1140), (0xeeafc0, 0xf9c0, 368)))
 
-
-MENU_VIDEO = Contract(PRODUCTION.elf_sha256,
-    '851fe7b89535f0309c489318fc5be5756103557363de0f18c73e2ccb0b735d25',
-    'func_0050C9E8', 'game_original_start_video', 'motorstorm_boot_start_video')
-MENU_LANGUAGE = Contract(PRODUCTION.elf_sha256,
-    'a2ec3a9e721fa5f60a201e579af96d2e4405404b50a7ebf352803f9e38cb5d79',
-    'func_00530A88', 'game_original_language_event', 'motorstorm_boot_language_event')
 
 def digest(path):
     hasher = hashlib.sha256()
@@ -104,7 +124,19 @@ def transform(source, contract, windows=()):
         raise ValueError('Reference body identity changed; verify it before binding')
     if re.search(rb'\b' + contract.original.encode() + rb'\b', source):
         raise ValueError('Reference symbol already present')
-    renamed = source[:match.start('symbol')] + contract.original.encode() + source[match.end('symbol'):]
+    renamed_body = source[match.start():match.start('symbol')] + contract.original.encode() + source[match.end('symbol'):end]
+    if contract.byte_observer:
+        if contract.context != 'ppu_context' or not re.fullmatch(r'[A-Za-z_]\w*', contract.byte_observer):
+            raise ValueError('Invalid PPU byte observer')
+        # Preserve this TU's actual fast/slow memory policy before temporarily
+        # observing calls inside the exact verified function body only.
+        reader = contract.original + '_read8'
+        prefix = (f'\nuint8_t {contract.byte_observer}(uint64_t, uint8_t (*)(uint64_t));\n'
+                  f'static uint8_t {reader}(uint64_t address) {{ return vm_read8(address); }}\n'
+                  '#pragma push_macro("vm_read8")\n#undef vm_read8\n'
+                  f'#define vm_read8(address) {contract.byte_observer}((address), {reader})\n').encode()
+        renamed_body = prefix + renamed_body + b'\n#pragma pop_macro("vm_read8")\n'
+    renamed = source[:match.start()] + renamed_body + source[end:]
     wrapper = (f'\n// Handwritten game entry; preserve direct and registered callers.\n'
                f'void {contract.native}({contract.context}*);\n'
                f'void {contract.symbol}({contract.context}* ctx) {{ {contract.native}(ctx); }}\n').encode()
@@ -151,9 +183,11 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
     if any(elf_sha != c.elf_sha256 for c in selected):
         raise ValueError('Unsupported original ELF identity for native game binding')
     known = tuple(known_contracts) if known_contracts is not None else (
-        (PRODUCTION, JOB_WAIT, VISIBILITY, PCM_CUBIC, MENU_VIDEO, MENU_LANGUAGE)
-        if elf_sha == PRODUCTION.elf_sha256 else selected)
-    known = tuple(dict.fromkeys((*known, *selected)))
+        (PRODUCTION, JOB_WAIT, VISIBILITY, PCM_CUBIC, DEPTH_OBSERVER, QUEUE_RESET, QUEUE_RESET_MULTI, QUEUE_INIT, QUEUE_ADD_JOB, MENU_VIDEO, MENU_LANGUAGE, HAVOK_THREADS) if elf_sha == PRODUCTION.elf_sha256 else selected)
+    # Older observer copies used the same verified body without byte tracing.
+    # Admit only that exact legacy recipe when enabling/disabling this feature.
+    known = tuple(dict.fromkeys((*known, *selected,
+        *(replace(c, byte_observer='') for c in (*known, *selected) if c.byte_observer))))
     directories = {Path(entry.directory) for entry in known}
     if any(path.is_absolute() or '..' in path.parts for path in directories):
         raise ValueError('Binding directories must stay inside generated inputs')
@@ -215,6 +249,8 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
                         copied_tu=(output/relative).as_posix(),
                         reference_body_sha256=entry.body_sha256,
                         copied_tu_sha256=sha, context=entry.context)
+                    if entry.byte_observer:
+                        binding['byte_observer'] = entry.byte_observer
                     bindings.append(binding)
     order = {entry.symbol: index for index, entry in enumerate(selected)}
     bindings.sort(key=lambda binding: order[binding['symbol']])
@@ -249,7 +285,6 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
     return result
 
 
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('generated', 'output', 'elf', 'manifest'):
@@ -258,11 +293,21 @@ def main():
     parser.add_argument('--job-wait', action='store_true')
     parser.add_argument('--visibility', action='store_true')
     parser.add_argument('--pcm-cubic', action='store_true')
+    parser.add_argument('--depth-observer', action='store_true')
     parser.add_argument('--menu-boot', action='store_true')
+    parser.add_argument('--havok-threads', action='store_true')
+    parser.add_argument('--queue-call-observation', action='store_true',
+                        help='Observe verified queue reset/init/publication calls')
     args = parser.parse_args()
     selected = ([] if args.without_world_transforms else [PRODUCTION]) + ([JOB_WAIT] if args.job_wait else []) + ([VISIBILITY] if args.visibility else []) + ([PCM_CUBIC] if args.pcm_cubic else [])
     if args.menu_boot:
         selected.extend((MENU_VIDEO, MENU_LANGUAGE))
+    if args.havok_threads:
+        selected.append(HAVOK_THREADS)
+    if args.depth_observer:
+        selected.append(DEPTH_OBSERVER)
+    if args.queue_call_observation:
+        selected.extend((QUEUE_RESET, QUEUE_RESET_MULTI, QUEUE_INIT, QUEUE_ADD_JOB))
     result = prepare(args.generated, args.output, args.elf, args.manifest, contracts=selected)
     print('Verified native game bindings:', ', '.join(b['symbol'] for b in result['bindings']))
 
