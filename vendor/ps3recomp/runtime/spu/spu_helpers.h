@@ -273,6 +273,26 @@ static inline int spu_fm_simd(uint32_t* out, const uint32_t* a, const uint32_t* 
 #else
 #define SPU_FM_FAST(out, a, b) spu_sf_simd_binary(out, a, b, 2)
 #endif
+#if SPU_SF_FAST
+/* The fast form replaces both: one x86 multiply inside a scope. */
+#undef SPU_FM_FAST
+#define SPU_FM_FAST(out, a, b) spu_sf_fast_binary(out, a, b, 2)
+#endif
+#if SPU_SF_FAST
+/* The earlier path of spu_fm, out of line and cold: the integer form where it
+ * exists, else the scoped host form. It stays as the fallback. */
+static inline __attribute__((noinline, cold)) u128 spu__fm_rest(u128 a, u128 b) {
+    u128 r;
+#if SPU_SIMD_X86
+    if(spu_fm_simd(r._u32,a._u32,b._u32)) return r;
+#else
+    if(spu_sf_simd_binary(r._u32,a._u32,b._u32,2)) return r;
+#endif
+    for(int i=0;i<4;i++) r._u32[i]=spu_sf_mul(a._u32[i],b._u32[i]); return r;
+}
+#else
+static inline u128 spu__fm_rest(u128 a, u128 b) { u128 r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_mul(a._u32[i],b._u32[i]); return r; }
+#endif
 #if SPU_SIMD_SSSE3
 /* Control vector of the byte rotates, in host byte order: host byte j of
  * the result is host byte SPU_W((SPU_W(j) + sh) & 15) of the operand. */
@@ -359,7 +379,7 @@ SPU_SF_HOST_FN u128 spu_csflt(u128 a, int i8) { SPU_SF_HOST_ARITHMETIC u128 r; u
     for(int i=0;i<4;i++) r._f32[i]=(float)((double)a._s32[i]*f); spu_sf_host_end(env); return r; }
 SPU_SF_HOST_FN u128 spu_cuflt(u128 a, int i8) { SPU_SF_HOST_ARITHMETIC u128 r; uint32_t env=spu_sf_host_begin(); double f=exp2((double)(i8-155));
     for(int i=0;i<4;i++) r._f32[i]=(float)((double)a._u32[i]*f); spu_sf_host_end(env); return r; }
-static inline u128 spu_fm(u128 a, u128 b) { u128 r; if(SPU_FM_FAST(r._u32,a._u32,b._u32)) return r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_mul(a._u32[i],b._u32[i]); return r; }
+static inline u128 spu_fm(u128 a, u128 b) { u128 r; if(SPU_FM_FAST(r._u32,a._u32,b._u32)) return r; return spu__fm_rest(a,b); }
 static inline u128 spu_fma(u128 a, u128 b, u128 c)  { u128 r; if(spu_sf_simd_fused(r._u32,a._u32,b._u32,c._u32,0,0)) return r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_madd(a._u32[i],b._u32[i],c._u32[i],0); return r; }
 static inline u128 spu_fms(u128 a, u128 b, u128 c)  { u128 r; if(spu_sf_simd_fused(r._u32,a._u32,b._u32,c._u32,0,0x80000000u)) return r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_madd(a._u32[i],b._u32[i],c._u32[i]^0x80000000u,0); return r; }
 static inline u128 spu_fnms(u128 a, u128 b, u128 c) { u128 r; if(spu_sf_simd_fused(r._u32,a._u32,b._u32,c._u32,0x80000000u,0)) return r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_madd(a._u32[i],b._u32[i],c._u32[i],0x80000000u); return r; }
