@@ -264,7 +264,9 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
         expected = hashlib.sha256(changes[entry]).hexdigest() if entry in changes else sha
         actual = digest(destination)
         if actual not in {expected, sha, *allowed.get(entry, ())}:
-            raise ValueError(f'Prepared input copy changed or stale: {entry}')
+            raise ValueError(f'Prepared input copy changed or stale: {entry}. '
+                             'The generated tree changed, or an edit touched the copy. '
+                             f'Move {output} away and configure again.')
     # Feature changes may restore only a known, identity-verified transform.
     # Unknown edits still fail before any copy is written.
     for entry in allowed:

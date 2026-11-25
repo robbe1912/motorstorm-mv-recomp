@@ -118,7 +118,7 @@ def main():
             run([sys.executable,TOOLS/'ppu_loader.py',c['elf'],'--output',meta])
             functions=meta/'named.functions.json'
             run([sys.executable,ROOT/'scripts/analysis/debug_elf_functions.py',c['elf'],'--out',functions])
-            run([sys.executable,TOOLS/'ppu_lifter.py',c['elf'],'--functions',functions,'--hle-stubs',meta/(c['elf'].stem+'.imports.json'),'--cpp-nonlocal-jumps','--output',out,'--jobs',args.jobs])
+            run([sys.executable,TOOLS/'ppu_lifter.py',c['elf'],'--functions',functions,'--hle-stubs',meta/(c['elf'].stem+'.imports.json'),'--source-name','ppu_recomp.cpp','--cpp-nonlocal-jumps','--output',out,'--jobs',args.jobs])
         else:
             images=ROOT/'build/extracted/spu'; out=spu_tree
             if out.exists() and any(out.iterdir()): raise SystemExit('Existing SPU tree preserved. Move it to temp/ before regeneration.')
