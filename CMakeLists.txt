@@ -52,6 +52,19 @@ else()
     add_compile_definitions(PPU_FM3=0)
 endif()
 
+# x86 SIMD forms of the hot SPU helpers of the toolkit (rotqby, rotqbyi, cwd,
+# cwx, fm, shufb, and the two local store accessors; SSE2 and SSSE3). 1, the
+# default: the forms are active. 0: the scalar bodies before the change. The
+# definition reaches each unit of the build. The build identity records the
+# value. The SPU units build with SSSE3 enabled: the runtime units use
+# -msse4.1, the lifted SPU units get it below.
+option(PORT_SPU_SIMD "x86 SIMD forms of the hot SPU helpers" ON)
+if(PORT_SPU_SIMD)
+    add_compile_definitions(SPU_SIMD=1)
+else()
+    add_compile_definitions(SPU_SIMD=0)
+endif()
+
 # Prefer Ninja if available
 if(NOT CMAKE_GENERATOR MATCHES "Ninja" AND NOT DEFINED ENV{CMAKE_GENERATOR})
     message(STATUS "Tip: use -G Ninja for faster builds")
@@ -265,6 +278,9 @@ motorstorm_configure_world_transforms(${PROJECT_NAME})
 #   -O2                 -- optional checked native O1 covers huge PPU TUs; the
 #                          SPU sources are small and decode-hot, so they get
 #                          full optimization. The last -O on the line wins.
+#   -mssse3             -- SSSE3 is a host requirement (docs/BUILDING.md). The
+#                          x86 forms of the hot SPU helpers (SPU_SIMD) need it:
+#                          an SSSE3 form exists only in a unit built with SSSE3.
 if(SPU_SOURCES)
     set_source_files_properties(${SPU_SOURCES} PROPERTIES
         INCLUDE_DIRECTORIES "${PS3RECOMP_DIR}/runtime/spu"
@@ -272,9 +288,9 @@ if(SPU_SOURCES)
     if(MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         # /clang arguments are forwarded after ordinary driver arguments.
         # Forward both levels so this per-source override wins.
-        set_source_files_properties(${SPU_SOURCES} PROPERTIES COMPILE_OPTIONS "/clang:-O2")
+        set_source_files_properties(${SPU_SOURCES} PROPERTIES COMPILE_OPTIONS "/clang:-O2;/clang:-mssse3")
     elseif(NOT MSVC)
-        set_source_files_properties(${SPU_SOURCES} PROPERTIES COMPILE_OPTIONS "-O2")
+        set_source_files_properties(${SPU_SOURCES} PROPERTIES COMPILE_OPTIONS "-O2;-mssse3")
     endif()
 endif()
 

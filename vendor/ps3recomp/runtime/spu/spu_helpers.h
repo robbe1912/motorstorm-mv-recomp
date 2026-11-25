@@ -171,6 +171,49 @@ static inline u128 spu_selb(u128 a, u128 b, u128 c) {
 /* Byte shuffle semantics and checked host admission have one owner. */
 #include "spu_shuffle.h"
 
+/* x86 SIMD forms of the hot helpers (this file: rotqby, rotqbyi; the local store
+ * swap is in spu_context.h; shufb is in spu_shuffle.h). SSE2 and SSSE3 only.
+ * Build switch: SPU_SIMD=1 selects the forms, undefined or 0 keeps the scalar
+ * bodies. Each form is bit-exact to the scalar body next to it. The forms need
+ * no CPUID test and no target attribute. An SSSE3 form exists only in a unit
+ * that the compiler builds with SSSE3 enabled. */
+#if defined(SPU_SIMD) && SPU_SIMD && (defined(__SSE2__) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2))
+#include <emmintrin.h>
+#define SPU_SIMD_X86 1
+#else
+#define SPU_SIMD_X86 0
+#endif
+#if SPU_SIMD_X86 && defined(__SSSE3__)
+#include <tmmintrin.h>
+#define SPU_SIMD_SSSE3 1
+#else
+#define SPU_SIMD_SSSE3 0
+#endif
+#if SPU_SIMD_X86
+static inline __m128i spu__x86_ld(u128 a) { __m128i v; memcpy(&v, &a, 16); return v; }
+static inline u128 spu__x86_st(__m128i v) { u128 r; memcpy(&r, &v, 16); return r; }
+#endif
+#if SPU_SIMD_SSSE3
+/* Control vector of the byte rotates, in host byte order: host byte j of
+ * the result is host byte SPU_W((SPU_W(j) + sh) & 15) of the operand. */
+#define SPU__X86_ROT_SRC(sh, j) (((((j) ^ 3) + (sh)) & 15) ^ 3)
+#define SPU__X86_ROT_ROW(sh) { \
+    SPU__X86_ROT_SRC(sh,  0), SPU__X86_ROT_SRC(sh,  1), SPU__X86_ROT_SRC(sh,  2), SPU__X86_ROT_SRC(sh,  3), \
+    SPU__X86_ROT_SRC(sh,  4), SPU__X86_ROT_SRC(sh,  5), SPU__X86_ROT_SRC(sh,  6), SPU__X86_ROT_SRC(sh,  7), \
+    SPU__X86_ROT_SRC(sh,  8), SPU__X86_ROT_SRC(sh,  9), SPU__X86_ROT_SRC(sh, 10), SPU__X86_ROT_SRC(sh, 11), \
+    SPU__X86_ROT_SRC(sh, 12), SPU__X86_ROT_SRC(sh, 13), SPU__X86_ROT_SRC(sh, 14), SPU__X86_ROT_SRC(sh, 15)}
+static inline __m128i spu__x86_rot_mask(int sh) {
+    static SPU_ALIGN16 const unsigned char mask[16][16] = {
+        SPU__X86_ROT_ROW( 0), SPU__X86_ROT_ROW( 1), SPU__X86_ROT_ROW( 2), SPU__X86_ROT_ROW( 3),
+        SPU__X86_ROT_ROW( 4), SPU__X86_ROT_ROW( 5), SPU__X86_ROT_ROW( 6), SPU__X86_ROT_ROW( 7),
+        SPU__X86_ROT_ROW( 8), SPU__X86_ROT_ROW( 9), SPU__X86_ROT_ROW(10), SPU__X86_ROT_ROW(11),
+        SPU__X86_ROT_ROW(12), SPU__X86_ROT_ROW(13), SPU__X86_ROT_ROW(14), SPU__X86_ROT_ROW(15)};
+    return _mm_load_si128((const __m128i*)mask + (sh & 15));
+}
+#undef SPU__X86_ROT_ROW
+#undef SPU__X86_ROT_SRC
+#endif
+
 /* ---- shift / rotate immediate (word lanes) ---- */
 static inline u128 spu_shli(u128 a, int sh)  { u128 r; sh&=0x3F; for(int i=0;i<4;i++) r._u32[i]=(sh>31)?0:(a._u32[i]<<sh); return r; }
 static inline u128 spu_shlhi(u128 a, int sh) { u128 r; sh&=0x1F; for(int i=0;i<8;i++) r._u16[i]=(sh>15)?0:(uint16_t)(a._u16[i]<<sh); return r; }
@@ -180,7 +223,11 @@ static inline u128 spu_rotmi(u128 a, int i7)  { u128 r; int sh=(0-i7)&0x3F; for(
 static inline u128 spu_rotmai(u128 a, int i7) { u128 r; int sh=(0-i7)&0x3F; for(int i=0;i<4;i++) r._s32[i]=(sh>31)?(a._s32[i]>>31):(a._s32[i]>>sh); return r; }
 static inline u128 spu_rotmhi(u128 a, int i7) { u128 r; int sh=(0-i7)&0x1F; for(int i=0;i<8;i++) r._u16[i]=(sh>15)?0:(uint16_t)(a._u16[i]>>sh); return r; }
 static inline u128 spu_shlqbyi(u128 a, int sh) { u128 r=spu_zero(); sh&=0x1F; for(int i=0;i<16;i++){ int s=i+sh; if(s<16) r._u8[SPU_W(i)]=a._u8[SPU_W(s)]; } return r; }
+#if SPU_SIMD_SSSE3
+static inline u128 spu_rotqbyi(u128 a, int sh) { return spu__x86_st(_mm_shuffle_epi8(spu__x86_ld(a), spu__x86_rot_mask(sh))); }
+#else
 static inline u128 spu_rotqbyi(u128 a, int sh) { u128 r; sh&=0x0F; for(int i=0;i<16;i++) r._u8[SPU_W(i)]=a._u8[SPU_W((i+sh)&0x0F)]; return r; }
+#endif
 /* Bit-level quadword shifts/rotates operate on the WHOLE 128-bit big-endian
  * value. Our _u64[0]/_u64[1] are word-SCRAMBLED (host-LE: _u64[0] = word0 |
  * word1<<32, but SPU's MS half is word0<<32 | word1), so native shifts on them
@@ -294,7 +341,11 @@ static inline u128 spu_rotqbi(u128 a, u128 b){ int sh=b._u32[0]&7; if(!sh) retur
     uint64_t nhi=(hi<<sh)|(lo>>(64-sh)), nlo=(lo<<sh)|(hi>>(64-sh));
     u128 r; r._u32[0]=(uint32_t)(nhi>>32); r._u32[1]=(uint32_t)nhi; r._u32[2]=(uint32_t)(nlo>>32); r._u32[3]=(uint32_t)nlo; return r; }
 static inline u128 spu_shlqby(u128 a, u128 b){ int sh=b._u32[0]&0x1F; u128 r=spu_zero(); if(sh>=16) return r; for(int i=0;i<16;i++){ int s=i+sh; if(s<16) r._u8[SPU_W(i)]=a._u8[SPU_W(s)]; } return r; }
+#if SPU_SIMD_SSSE3
+static inline u128 spu_rotqby(u128 a, u128 b) { return spu__x86_st(_mm_shuffle_epi8(spu__x86_ld(a), spu__x86_rot_mask((int)b._u32[0]))); }
+#else
 static inline u128 spu_rotqby(u128 a, u128 b){ int sh=b._u32[0]&0x0F; u128 r; for(int i=0;i<16;i++) r._u8[SPU_W(i)]=a._u8[SPU_W((i+sh)&0x0F)]; return r; }
+#endif
 static inline u128 spu_shlqbybi(u128 a, u128 b){ int sh=(b._u32[0]>>3)&0x1F; u128 r=spu_zero(); if(sh>=16) return r; for(int i=0;i<16;i++){ int s=i+sh; if(s<16) r._u8[SPU_W(i)]=a._u8[SPU_W(s)]; } return r; }
 static inline u128 spu_rotqbybi(u128 a, u128 b){ int sh=(b._u32[0]>>3)&0x0F; u128 r; for(int i=0;i<16;i++) r._u8[SPU_W(i)]=a._u8[SPU_W((i+sh)&0x0F)]; return r; }
 
