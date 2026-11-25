@@ -43,9 +43,15 @@ them; no branch ever names their entries), and an explicit code/data boundary
 cannot seed phantom functions (5 `.word` failures on the mstream module without
 it).
 
+Some entries no static pattern names at all: call tables built or indexed at
+run time and computed entries into the middle of a function. Those are listed
+per module in jobmod_extra_funcs.json (default --extra-funcs-file) and added
+as seeds inside [link+0x30, code_end); without them the owned-job dispatcher
+falls back to the interpreter on every such call.
+
 Usage:
     python lift_ms1_jobmods.py [--jobmods DIR] [--out DIR] [--register FILE]
-                               [--register-fn NAME]
+                               [--register-fn NAME] [--extra-funcs-file FILE]
 """
 import argparse, glob, hashlib, json, os, struct, subprocess, sys
 
@@ -56,6 +62,7 @@ from wrap_spu_elf import wrap                       # noqa: E402
 from lift_jobmods import manual_link_targets, switch_table_targets  # noqa: E402
 
 LIFTER = os.path.join(TOOLS, "spu_lifter.py")
+EXTRA_FUNCS = os.path.join(HERE, "jobmod_extra_funcs.json")
 IMAGE_BASE = 210           # 200 is the wwsjob PM itself; jobmods must not share
                            # its id or spu_lookup dispatches the wrong program's
                            # function at the same LS address.
@@ -161,6 +168,28 @@ def relocated_table_targets(raw, link):
     return sorted(out)
 
 
+def load_extra_funcs(path):
+    """Extra function entries per module, from jobmod_extra_funcs.json:
+    {"<jobmod name>": ["0x9A50", ...], "_comment": [...]}. These are
+    indirect-branch targets seen at run time that no static pattern names
+    (call tables built or indexed at run time, computed entries into a
+    function); without an entry the owned-job dispatcher falls back to the
+    interpreter on every call. A listed address the heuristics already seed
+    changes nothing."""
+    if not path:
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    out = {}
+    for name, addrs in data.items():
+        if name.startswith("_"):
+            continue
+        if not isinstance(addrs, list):
+            sys.exit(f"{path}: {name} must map to a list of addresses")
+        out[name] = {int(a, 16) for a in addrs}
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--jobmods", required=True)
@@ -174,7 +203,13 @@ def main():
                          "reference them; newly registrable modules append "
                          "after the highest assigned id and the file is "
                          "updated in place.")
+    ap.add_argument("--extra-funcs-file", default=EXTRA_FUNCS,
+                    help="JSON {module name: [LS address, ...]} of extra "
+                         "function entries (default: jobmod_extra_funcs.json "
+                         "next to this script; pass an empty string to lift "
+                         "with the heuristics alone)")
     args = ap.parse_args()
+    extra_funcs = load_extra_funcs(args.extra_funcs_file)
     register_c = args.register or os.path.join(args.out, "jobmods_register.c")
     meta_path = args.meta or os.path.normpath(
         os.path.join(args.jobmods, "..", "jobmod_meta.json"))
@@ -208,6 +243,18 @@ def main():
         code_end = data_tail_boundary(raw, link, max(seeds | {entry}), tbl)
         if code_end:
             seeds = {s for s in seeds if s < code_end}
+        # Listed extra entries (jobmod_extra_funcs.json) are added after the
+        # code/data boundary is fixed, so they never move it, and only inside
+        # [base, code_end): a listed address in the const tail or header is
+        # a stale or wrong entry, reported rather than lifted.
+        limit = code_end or link + image_size
+        listed = extra_funcs.pop(name, set())
+        kept = {a for a in listed if a % 4 == 0 and base <= a < limit}
+        for a in sorted(listed - kept):
+            print(f"  WARNING {name}: extra entry 0x{a:X} outside "
+                  f"[0x{base:X}, 0x{limit:X}) or unaligned; dropped",
+                  file=sys.stderr)
+        seeds |= kept
 
         # Wrap MODULE-RELATIVE (PT_LOAD vaddr 0): --base is an additive ELF
         # load bias, applied before discovery. Relative branches, entry and
@@ -249,14 +296,19 @@ def main():
                          "code_end": code_end,
                          "staged_fnv": fnv1a64(raw[:image_size - 0x20]),
                          "funcs": funcs, "unsupported": unsup,
-                         "data_words": data_words})
+                         "data_words": data_words,
+                         "extra_entries": len(kept)})
         flag = "  <-- UNSUPPORTED (left unregistered)" if unsup else ""
         print(f"  {name:40} [{reg_name}] funcs={funcs:3} unsup={unsup:3} "
-              f"datawords={data_words:3} link=0x{link:X} "
+              f"datawords={data_words:3} extra={len(kept)} "
+              f"link=0x{link:X} "
               f"entry=0x{entry:X} code_end="
               f"{'0x%X' % code_end if code_end else '-'}{flag}")
     if os.path.exists(tmp_elf):
         os.remove(tmp_elf)
+    for name in sorted(extra_funcs):
+        print(f"  WARNING extra entries for {name}: no such module in "
+              f"{args.jobmods}; not used", file=sys.stderr)
 
     with open(os.path.join(args.out, "jobmods_manifest.json"), "w") as f:
         json.dump(manifest, f, indent=2)

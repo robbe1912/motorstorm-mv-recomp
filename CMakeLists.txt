@@ -132,6 +132,8 @@ if(PORT_ENABLE_JOB_CAPTURE AND NOT (PS3RECOMP_ATOMIC_OBSERVATION AND
    PS3RECOMP_EXECUTION_OBSERVATION AND PS3RECOMP_SPURS_SCHEDULER_OBSERVATION))
     message(FATAL_ERROR "PORT_ENABLE_JOB_CAPTURE requires all three ps3recomp observation options")
 endif()
+include("${CMAKE_CURRENT_SOURCE_DIR}/src/runtime_optimization.cmake")
+motorstorm_configure_runtime_optimization()
 # Measurement option (#155/#293): per-batch D3D12 draw records. Empty keeps the
 # backend default (2048); the backend rejects anything but a power of two in
 # 1024..8192 at compile time. Compare with the empty string, not truthiness:

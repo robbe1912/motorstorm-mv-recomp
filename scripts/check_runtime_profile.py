@@ -492,6 +492,22 @@ class ExecutionProfileTests(unittest.TestCase):
             with self.subTest(offsets=offsets), self.assertRaises(SystemExit):
                 self.launch(*options)
 
+    def check_submit_draws(self, count):
+        with patch.dict(os.environ, {'RSX_SUBMIT_DRAWS': 'inherited'}):
+            record, env = self.launch('--submit-draws', count)
+        expected = count if count != '0' else None
+        self.assertEqual(env.get('RSX_SUBMIT_DRAWS'), expected)
+        self.assertEqual(record['environment'].get('RSX_SUBMIT_DRAWS'), expected)
+
+    def test_submit_draws_default_clears_inherited_cap(self):
+        self.check_submit_draws('0')
+
+    def test_submit_draws_sets_cap(self):
+        self.check_submit_draws('256')
+
+    def test_submit_draws_rejects_tiny_cap(self):
+        self.rejected('Submit draw cap must be 0', '--submit-draws', '15')
+
     def test_pm_native_services_default_clears_inherited_selection(self):
         with patch.dict(os.environ, {'SPU_PM_NATIVE_SVC': '1', 'SPU_PM_SVC_VERIFY': '1'}):
             record, env = self.launch('--native-owned-jobs')
@@ -681,6 +697,7 @@ class ExecutionProfileTests(unittest.TestCase):
         helper = self.root / 'src/renderer_optimization.cmake'
         helper.parent.mkdir(parents=True, exist_ok=True)
         helper.write_text('# authored renderer-optimization helper identity\n', encoding='utf-8')
+        (self.root / 'src/runtime_optimization.cmake').write_text('# authored runtime-optimization helper identity\n', encoding='utf-8')
         # The wrapper hashes the platform's own output name (ms1_recomp.exe on
         # Windows, ms1_recomp elsewhere). The mocked compiler creates that inert
         # output; the launcher's selected executable fixture is left as it is.
@@ -690,6 +707,7 @@ class ExecutionProfileTests(unittest.TestCase):
             commands.append([str(x) for x in command])
             if command[1] == '-S':
                 (binary / 'renderer-optimization.json').write_text('{"enabled":false}', encoding='utf-8')
+                (binary / 'runtime-optimization.json').write_text('{"enabled":false}', encoding='utf-8')
             if command[1] == '--build':
                 if not output.exists():
                     output.write_bytes(b'authored inert build output; never executed')

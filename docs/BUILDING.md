@@ -160,7 +160,18 @@ does not change the worker count. The count changes only when the launcher sets
 `python scripts/check_havok_threads.py` checks the registration, the hook and
 the identity of the lifted body.
 
-The first native evaluation changed exactly eight object commands, leaving 207
+`--optimize-runtime` (with `--optimize`; CMake `PORT_OPTIMIZE_RUNTIME`, default off)
+applies O2, plus `/Ob2` on clang-cl, to the whole `ps3recomp_runtime` library:
+renderer, GCM/FIFO, SPU runtime and HLE. The toolkit asks for `-O2` in non-Debug
+builds only, and under clang-cl the forwarded `/clang:-O1` wins over it, so the
+level is appended last; a Debug build has no toolkit level to lose. Guest PPU/SPU
+compilation, assertions, aliasing and floating-point contraction settings are
+unchanged. `runtime_optimization` in build identity records the mode, and the
+helper hash is retained. `check_runtime_optimization.py` checks the scope in
+Debug and RelWithDebInfo. It compiles only authored targets. It does not call
+the game build wrapper. Measured result: none. No run yet.
+
+The renderer option's first native evaluation changed exactly eight object commands, leaving 207
 others unchanged. With matching executable/PDB identity, normal gated PLAY
 reached original menu/bike assets and a race. Its unsuspended diagnostic window
 still ended at about 3.81 successful API Presents/s; no controlled game gain was

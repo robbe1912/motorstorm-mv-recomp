@@ -606,22 +606,31 @@ int spu_run_with_halt(void (*entry)(spu_context*), spu_context* ctx)
      * makes a token pause/resume mid-run safe. */
     yz_lockstep_register(ctx);
     const uint32_t stats_mark = spu_interp_stats_mark();
+    /* Both jumps below leave float scopes without running their leave. */
+    const uint64_t sf_mark = spu_sf_simd_mark();
     switch (setjmp(s_spu_halt_env)) {
     case 1:
+        spu_sf_simd_leave(sf_mark);
         spu_interp_stats_unwind(stats_mark);
         halted = 1;
         g_spu_trampoline_fn = 0;
         break;
-    case 2:
+    case 2: {
+        spu_sf_simd_leave(sf_mark);
         spu_interp_stats_unwind(stats_mark);
         /* A one-way guest stack reset invalidates every lifted host caller.
          * Re-enter its target with the same guest state on the driver stack. */
         ctx->host_depth = 0;
         ctx->drain_ret_pc = 0;
         g_spu_trampoline_fn = 0;
+        /* The abandoned callers' scope covered this code; hold one again. A
+         * further jump out of it lands above and restores sf_mark. */
+        const uint64_t sf_scope = spu_sf_simd_enter();
         spu_indirect_branch(ctx);
         SPU_DRAIN(ctx);
+        spu_sf_simd_leave(sf_scope);
         break;
+    }
     default:
         /* SPU_DRAIN trampoline model: the top-level entry runs until its first
          * cross-function tail transfer, which sets g_spu_trampoline_fn and

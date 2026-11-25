@@ -23,8 +23,6 @@ def require_worktree_private_replay(profile_path, profile):
 
 # MotorStorm race surfaces whose CPU reads --surface-prefetch 1 serves from copies queued ahead.
 SURFACE_PREFETCH='01A80500,00A80500,02A30480'
-# MotorStorm race surface whose writes --eager-surface-submit 1 submits at once (HDR exposure target).
-SURFACE_EAGER='02A30480'
 
 def job_dump_directory(value):
     """Directory of <image>:<entry>[:<max jobs>[:<every n-th job>]]:<directory>, the value of SPU_JOB_DUMP.
@@ -86,6 +84,7 @@ def main():
     ap.add_argument('--fastmem-spin-detector',choices=('0','1'),default='1',help='1: the fast memory spin detector runs (default); 0: PPU_FM_SPINDET=0 turns it off')
     ap.add_argument('--fastmem-gate',choices=('0','1'),default='1',help='1: the PPU fast memory paths run (default); 0: PPU_FM=0 sends each guest memory access of the lifted code through the out-of-line family')
     ap.add_argument('--fastmem-count',choices=('0','1'),default='0',help='1: PPU_FM_COUNT=1 turns on the call counter of the PPU fast memory accessors (a diagnostic: it costs speed); 0: default')
+    ap.add_argument('--submit-draws',type=int,default=0,help='Submit the batch at the first draw boundary holding this many draws (0 = off, the default; otherwise 16 up to the build draw-record capacity)')
     ap.add_argument('--cpu-surface-prompt',choices=('default','0','1'),default='default',help='Prompt disjoint CPU surface reads; default preserves backend policy, 0 uses batch-end service')
     ap.add_argument('--cpu-surface-flush',choices=('default','0','1'),default='default',help='Submit recorded writes needed by queued CPU reads at the next draw boundary or idle pump')
     ap.add_argument('--prompt-flip',action='store_true',help='Deliver the drained frame completion at take and wake its guest waiter at the original refresh limit')
@@ -125,6 +124,7 @@ def main():
             not args.capture_jobs or not args.menu_replay or
             not math.isfinite(args.job_capture_seconds) or not .05 <= args.job_capture_seconds <= 5):
         raise SystemExit('--job-capture-seconds requires --capture-jobs, --menu-replay and a duration of 0.05..5 seconds')
+    if args.submit_draws and args.submit_draws<16: raise SystemExit("Submit draw cap must be 0 (off) or at least 16")
     resource_policy=limits(args.min_free_commit_gib, args.min_free_physical_gib)
     if not 0<=args.capture_burst_frames<=120: raise SystemExit('Capture burst must be 0 (disabled) or 1..120 frames')
     if not 0<=args.capture_on_pad<=0xffff: raise SystemExit('Capture event mask must be 0 (disabled) or 1..0xffff')
@@ -288,6 +288,7 @@ def main():
     if args.fastmem_gate=='0':env['PPU_FM']='0'
     env.pop('PPU_FM_COUNT',None)
     if args.fastmem_count=='1':env['PPU_FM_COUNT']='1'
+    if args.submit_draws:env['RSX_SUBMIT_DRAWS']=str(args.submit_draws)
     if args.cpu_surface_flush != 'default':env['RSX_CPU_SURFACE_FLUSH']=args.cpu_surface_flush
     if args.profile_flip:
         env['FLIP_LAT'] = '1'

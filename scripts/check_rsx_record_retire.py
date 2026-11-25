@@ -62,10 +62,24 @@ def main():
             r=subprocess.run([str(exe),*args],capture_output=True,text=True,timeout=10)
             if r.returncode == 0:
                 raise RuntimeError('pre-drain omission was not exposed: ' + ' '.join(args))
+        # RSX_SUBMIT_DRAWS: the cap submits through the capacity drain at the
+        # first boundary at or past it, only once the backend is initialized.
+        unit.write_text((FIX/'rsx_record_retire.c.in').read_text().replace('@FUNCTIONS@', bodies))
+        compile_c(unit, exe, VIDEO, out)
+        r=subprocess.run([str(exe),'0','cap'],capture_output=True,text=True,timeout=10)
+        if r.returncode!=0 or 'PASS: draw cap' not in r.stdout:
+            raise RuntimeError(f'draw cap: {r.returncode} {r.stdout} {r.stderr}')
+        for name, before, after in (('cap-ignored', 'if (cap && s_d3d.initialized && s_d3d.draw_count >= cap)', '(void)cap; if (0)'),
+                                    ('cap-exact', 's_d3d.draw_count >= cap', 's_d3d.draw_count == cap'),
+                                    ('cap-uninitialized', 'cap && s_d3d.initialized && ', 'cap && ')):
+            mutated(name, before, after)
+            r=subprocess.run([str(exe),'0','cap'],capture_output=True,text=True,timeout=10)
+            if r.returncode == 0:
+                raise RuntimeError(name + ' was not exposed')
         # RSX_DRAIN_OVERLAP must actually drop the post-drain wait.
         mutated('overlap-ignored', 'if (!drain_overlap()) record_batch_retire();', 'record_batch_retire();')
         r=subprocess.run([str(exe),'0','overlap'],capture_output=True,text=True,timeout=10)
         if r.returncode == 0:
             raise RuntimeError('ignored overlap switch was not exposed')
-        print('PASS: actual retirement rejects incomplete/device-error fences before and after drain on both frames, serialized and overlapped; post-drain, pre-drain and ignored-switch controls exposed')
+        print('PASS: actual retirement rejects incomplete/device-error fences before and after drain on both frames, serialized and overlapped; draw cap submits at the first boundary at or past it; post-drain, pre-drain, ignored-switch and 3 draw-cap controls exposed')
 if __name__=='__main__': main()

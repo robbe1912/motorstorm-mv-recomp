@@ -608,6 +608,28 @@ init, render_frame and flush wiring; `check_cpu_surface_prompt.py` covers the
 eager request on the shared flush hook. Visual parity in a driven race was
 checked on a local build; broader title coverage is open.
 
+## Draw cap per submitted batch
+
+Fork branch: `review/submit-draws-cap` at
+`8b53c327` ([draft runtime PR #17](https://github.com/robbe1912/ps3recomp/pull/17)).
+Game source commits: `618f6373` and `1ef6555e`. This selective port keeps
+the fork's serialized retirement path. The game retains its existing overlap
+path. `tools/check_submit_draws.py` in the fork checks the parser and boundary
+with five compiled mutants.
+
+`RSX_SUBMIT_DRAWS=<n>` (opt-in; decimal 16..`MAX_DRAWS`; any other value is
+reported once and leaves the cap off) makes `ensure_draw_record_capacity()` submit the batch through
+`submit_record_capacity()` at the first draw boundary with `n` or more draws,
+once the backend is initialized. The check uses `>=`, so a draw added without
+passing a boundary only delays the submission and never trips the capacity
+helper's overflow abort. Draw merges skip the boundary as before. A CPU read
+still waits for the batch that writes its surface; with a cap, less of that
+batch is left to prepare and replay when the read arrives. `run.py
+--submit-draws N` sets it. `check_rsx_submit_draws.py` compiles the production
+parser (5 accepted, 10 rejected values, two mutants); `check_rsx_record_retire.py` runs the
+cap against the production ensure/submit/retire bodies with three mutants.
+Measured result: none. No run yet.
+
 ## Job dispatch log and depth-guard ring (#327)
 
 The reusable depth guard is on own-fork branch `codex/spu-depth-ring` at
@@ -3156,5 +3178,32 @@ job dump. It rejects 10 mutants, among them a wrong image size field, a header
 of another link base, a sort before the header lands, a byte order that is
 turned, and a mode that is ignored. `python scripts/check_spu_jobmod_identity.py`
 passes on the new block.
+
+## Held SPU float controls (#338)
+
+Fork branch: `review/spu-float-held`,
+[draft runtime PR #18](https://github.com/robbe1912/ps3recomp/pull/18).
+Fork port: `376f4efcbd20487f51275dc47fb1ea804842cb6d`.
+Host-token follow-up: `9d631ce6a091191aa020ab487f8fe2c1504d8a9a`.
+Its prerequisite, `07769db067a0c284a7ee76dbf146adb5f4f98657`,
+encodes three comment characters as UTF-8 and keeps CRLF.
+The encoding changes no code and grows the file by four bytes.
+Game source commits: `0c4043c77d82f655eb4ebf96adb35cffbac3f1b1`,
+`40451bbc0f1748959eca5f0c572c50018f423bfe`
+and `d3004f587e1cf62bb8f8286a0939a990e3cbb1bb`.
+
+This selective port holds SPU controls during a float scope. The outermost
+entry records caller controls. Nested entry keeps that record, even after
+controls change. Host arithmetic switches controls only inside an active
+scope. Halt and reset landings restore both MXCSR and the scope state.
+The fork keeps its integer conversions, comparisons and extended-range
+helper semantics. The game keeps its existing curated helper semantics.
+
+`scripts/check_spu_float.py` checks exact-rational scalar/SIMD values,
+host arithmetic, nested controls and normal/forced-kept-MXCSR landings.
+It rejects six scope mutants and five landing mutants.
+The fork's `tools/test_spu_float_scope.py` checks actual helpers and five
+scope mutants. Its existing exact-rational oracle passes 36,816 helper lanes.
+These checks need no private input and do not cover SPU FPSCR status flags.
 
 Measured result: none. No run yet.

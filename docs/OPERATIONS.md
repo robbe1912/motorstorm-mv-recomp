@@ -749,6 +749,19 @@ shortest wait; `0` writes a line for each call. The profile adds two clock
 reads per wait. Do not time a frame interval with it. Game-free coverage:
 [check_ppu_wait_profile.py](../scripts/check_ppu_wait_profile.py).
 
+`--submit-draws N` (default `0`, off) sets `RSX_SUBMIT_DRAWS`. The renderer then
+submits the batch at the first draw boundary where it already holds `N` or
+more draws, through the same nonpresenting capacity path. Smaller batches can
+reduce the work that remains when a CPU read requests a recorded surface.
+Reads stay coherent, and each extra batch costs one `render_frame` and one GPU
+retirement. `N` is 16 up to the build's draw-record capacity (`PORT_RSX_MAX_DRAWS`,
+default 2048); the runtime reports anything else once and leaves the cap off.
+The launcher does not know that capacity, so it still records an `N` above it;
+check stderr for `the cap is off`. Measured result: none. No run yet.
+The launcher clears an inherited cap and records the selection. Game-free
+coverage: [check_rsx_submit_draws.py](../scripts/check_rsx_submit_draws.py)
+and the cap case in [check_rsx_record_retire.py](../scripts/check_rsx_record_retire.py).
+
 Use identical cache targets, validation and profiling settings for comparisons.
 Retention validates every uploaded face with full XXH3; the reference retains
 its sparse source checksum. Complete hashing has a measurable cost. Verify the

@@ -27,6 +27,8 @@ jobs:
         run: python scripts/check_runtime_profile.py --fetch-historical
       - name: Checked renderer optimization scope
         run: python scripts/check_renderer_optimization.py
+      - name: Checked runtime optimization scope
+        run: python scripts/check_runtime_optimization.py
       - name: Run retention filesystem safety
         run: python scripts/check_run_retention.py
       - name: Bounded frame capture selector
@@ -129,6 +131,7 @@ jobs:
         run: |
           python scripts/check_rsx_record_batch.py
           python scripts/check_rsx_record_retire.py
+          python scripts/check_rsx_submit_draws.py
           python scripts/check_rsx_triangle_capacity.py
       - name: Actual indexed strip restart regression
         run: python scripts/check_rsx_restart.py
@@ -302,6 +305,11 @@ jobs:
         run: python scripts/check_task_exit_source.py
   capture-observer:
     runs-on: windows-latest
+    env:
+      # Some runner images pair the MSVC 14.52 STL (which requires Clang 22)
+      # with LLVM 20's clang-cl; the STL then stops every C++ check at
+      # STL1000. clang-cl reads CL, so this applies to each check's build.
+      CL: /D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -364,6 +372,8 @@ jobs:
         run: python scripts/check_runtime_profile.py --fetch-historical
       - name: Checked renderer optimization scope
         run: python scripts/check_renderer_optimization.py
+      - name: Checked runtime optimization scope
+        run: python scripts/check_runtime_optimization.py
       - name: Run retention filesystem safety
         run: python scripts/check_run_retention.py
       - name: Bounded frame capture selector
@@ -372,6 +382,7 @@ jobs:
         run: |
           python scripts/check_rsx_record_batch.py
           python scripts/check_rsx_record_retire.py
+          python scripts/check_rsx_submit_draws.py
           python scripts/check_rsx_triangle_capacity.py
       - name: Actual indexed strip restart regression
         run: python scripts/check_rsx_restart.py
