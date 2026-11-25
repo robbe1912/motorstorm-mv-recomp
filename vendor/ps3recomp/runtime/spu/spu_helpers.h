@@ -171,7 +171,7 @@ static inline u128 spu_selb(u128 a, u128 b, u128 c) {
 /* Byte shuffle semantics and checked host admission have one owner. */
 #include "spu_shuffle.h"
 
-/* x86 SIMD forms of the hot helpers (this file: rotqby, rotqbyi, cwd, cwx; the local store
+/* x86 SIMD forms of the hot helpers (this file: rotqby, rotqbyi, cwd, cwx, fm; the local store
  * swap is in spu_context.h; shufb is in spu_shuffle.h). SSE2 and SSSE3 only.
  * Build switch: SPU_SIMD=1 selects the forms, undefined or 0 keeps the scalar
  * bodies. Each form is bit-exact to the scalar body next to it. The forms need
@@ -205,6 +205,73 @@ static inline __m128i spu__x86_cwd_table(uint32_t pos) {
         {0x10111213u, 0x14151617u, 0x18191A1Bu, 0x00010203u}};
     return _mm_load_si128((const __m128i*)table + ((pos >> 2) & 3));
 }
+#endif
+#if SPU_SIMD_X86
+/* Lanes 0 and 2 (even) or lanes 1 and 3 (odd): the products of ma and mb in
+ * two 64-bit lanes. Returns sig in dwords 0 and 2, and biased through the
+ * last argument. */
+static inline __m128i spu__x86_fm_half(__m128i ma, __m128i mb, __m128i e, __m128i* biased) {
+    const __m128i zero = _mm_setzero_si128();
+    const __m128i p = _mm_mul_epu32(ma, mb);
+    const __m128i q = _mm_srli_epi64(p, 23);            /* 24 or 25 bits in dwords 0 and 2 */
+    const __m128i t = _mm_srli_epi32(q, 24);            /* 0 or 1 */
+    const __m128i tm = _mm_sub_epi32(zero, t);          /* all ones when t is 1 */
+    *biased = _mm_add_epi32(_mm_sub_epi32(e, _mm_set1_epi32(127)), t);
+    return _mm_and_si128(_mm_or_si128(_mm_and_si128(tm, _mm_srli_epi32(q, 1)),
+                                      _mm_andnot_si128(tm, q)), _mm_set1_epi32(0x007FFFFF));
+}
+/* Dwords 0 and 2 of `even` and `odd` in lane order 0, 1, 2, 3. */
+static inline __m128i spu__x86_fm_lanes(__m128i even, __m128i odd) {
+    return _mm_unpacklo_epi32(_mm_shuffle_epi32(even, _MM_SHUFFLE(0, 0, 2, 0)),
+                              _mm_shuffle_epi32(odd, _MM_SHUFFLE(0, 0, 2, 0)));
+}
+/* fm of the four lanes in integer SSE2: the scalar path of spu_fm, spu_sf_mul
+ * (spu_float.h), with no branch. Per lane, with ea and eb the biased exponents:
+ *   m      = (x & 0x7FFFFF) | 0x800000      the 24-bit significand (spu_sf_mantissa)
+ *   p      = m_x * m_y, in [2^46, 2^48)
+ *   t      = bit 47 of p                    the top bit of p is 46 + t
+ *   sig    = (p >> (23 + t)) & 0x7FFFFF     the 23 fraction bits (truncation, spu_sf_pack)
+ *   biased = ea + eb - 127 + t
+ * The lane is sign | biased << 23 | sig, with sign = (x ^ y) & 0x80000000.
+ * A lane with a zero operand or with biased below 1 gives +0. A lane with
+ * biased above 255 gives sign | 0x7FFFFFFF (the SPU extended range). No
+ * floating-point instruction and no change of MXCSR are involved. */
+/* Stores the four products of a and b in out. Returns 1: the form covers
+ * every operand, so a caller needs no other path. */
+static inline int spu_fm_simd(uint32_t* out, const uint32_t* a, const uint32_t* b) {
+    const __m128i av = _mm_loadu_si128((const __m128i*)a), bv = _mm_loadu_si128((const __m128i*)b);
+    const __m128i zero = _mm_setzero_si128();
+    const __m128i kfrac = _mm_set1_epi32((int)0x007FFFFFu), kexp = _mm_set1_epi32(0xFF);
+    const __m128i ma = _mm_or_si128(_mm_and_si128(av, kfrac), _mm_set1_epi32(0x00800000));
+    const __m128i mb = _mm_or_si128(_mm_and_si128(bv, kfrac), _mm_set1_epi32(0x00800000));
+    const __m128i ea = _mm_and_si128(_mm_srli_epi32(av, 23), kexp);
+    const __m128i eb = _mm_and_si128(_mm_srli_epi32(bv, 23), kexp);
+    const __m128i e = _mm_add_epi32(ea, eb);
+    /* _mm_shuffle_epi32 needs a constant: lanes 1 and 3 into the 64-bit lanes. */
+#define SPU__X86_ODD _MM_SHUFFLE(3, 3, 1, 1)
+    __m128i be, bo;
+    const __m128i se = spu__x86_fm_half(ma, mb, e, &be);
+    const __m128i so = spu__x86_fm_half(_mm_shuffle_epi32(ma, SPU__X86_ODD), _mm_shuffle_epi32(mb, SPU__X86_ODD),
+                                        _mm_shuffle_epi32(e, SPU__X86_ODD), &bo);
+#undef SPU__X86_ODD
+    const __m128i sig = spu__x86_fm_lanes(se, so), biased = spu__x86_fm_lanes(be, bo);
+    /* +0: a zero operand, or biased below 1. */
+    const __m128i z = _mm_or_si128(_mm_cmpeq_epi32(ea, zero), _mm_cmpeq_epi32(eb, zero));
+    const __m128i under = _mm_or_si128(_mm_cmplt_epi32(biased, _mm_set1_epi32(1)), z);
+    /* sign | 0x7FFFFFFF: biased above 255. */
+    const __m128i over = _mm_cmpgt_epi32(biased, _mm_set1_epi32(255));
+    const __m128i sign = _mm_and_si128(_mm_xor_si128(av, bv), _mm_set1_epi32((int)0x80000000u));
+    const __m128i value = _mm_or_si128(_mm_or_si128(_mm_slli_epi32(biased, 23), sig), sign);
+    const __m128i sat = _mm_or_si128(sign, _mm_set1_epi32(0x7FFFFFFF));
+    const __m128i r = _mm_or_si128(_mm_and_si128(over, sat), _mm_andnot_si128(over, value));
+    _mm_storeu_si128((__m128i*)out, _mm_andnot_si128(under, r));
+    return 1;
+}
+/* The first path of spu_fm: the integer form, or the host float multiply of
+ * spu_sf_simd_binary when the build switch is off. */
+#define SPU_FM_FAST(out, a, b) spu_fm_simd(out, a, b)
+#else
+#define SPU_FM_FAST(out, a, b) spu_sf_simd_binary(out, a, b, 2)
 #endif
 #if SPU_SIMD_SSSE3
 /* Control vector of the byte rotates, in host byte order: host byte j of
@@ -282,7 +349,7 @@ SPU_SF_HOST_FN u128 spu_csflt(u128 a, int i8) { SPU_SF_HOST_ARITHMETIC u128 r; u
     for(int i=0;i<4;i++) r._f32[i]=(float)((double)a._s32[i]*f); spu_sf_host_end(env); return r; }
 SPU_SF_HOST_FN u128 spu_cuflt(u128 a, int i8) { SPU_SF_HOST_ARITHMETIC u128 r; uint32_t env=spu_sf_host_begin(); double f=exp2((double)(i8-155));
     for(int i=0;i<4;i++) r._f32[i]=(float)((double)a._u32[i]*f); spu_sf_host_end(env); return r; }
-static inline u128 spu_fm(u128 a, u128 b) { u128 r; if(spu_sf_simd_binary(r._u32,a._u32,b._u32,2)) return r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_mul(a._u32[i],b._u32[i]); return r; }
+static inline u128 spu_fm(u128 a, u128 b) { u128 r; if(SPU_FM_FAST(r._u32,a._u32,b._u32)) return r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_mul(a._u32[i],b._u32[i]); return r; }
 static inline u128 spu_fma(u128 a, u128 b, u128 c)  { u128 r; if(spu_sf_simd_fused(r._u32,a._u32,b._u32,c._u32,0,0)) return r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_madd(a._u32[i],b._u32[i],c._u32[i],0); return r; }
 static inline u128 spu_fms(u128 a, u128 b, u128 c)  { u128 r; if(spu_sf_simd_fused(r._u32,a._u32,b._u32,c._u32,0,0x80000000u)) return r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_madd(a._u32[i],b._u32[i],c._u32[i]^0x80000000u,0); return r; }
 static inline u128 spu_fnms(u128 a, u128 b, u128 c) { u128 r; if(spu_sf_simd_fused(r._u32,a._u32,b._u32,c._u32,0x80000000u,0)) return r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_madd(a._u32[i],b._u32[i],c._u32[i],0x80000000u); return r; }
