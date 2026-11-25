@@ -103,6 +103,8 @@ def main():
         (ROOT/'config/local.json').write_text(json.dumps(c,indent=2)+'\n'); print('Local configuration saved (Git-ignored)'); return
     if args.cmd=='check': run([sys.executable,ROOT/'scripts/check_repository.py']); return
     c=config()
+    # local.json key "spu_generated": another lifted SPU tree (a private copy for lift trials); default <generated>/spu
+    spu_tree=c.get('spu_generated',c['generated']/'spu')
     if args.cmd=='generate':
         if args.stage=='ppu':
             out=c['generated']/'ppu'
@@ -113,7 +115,7 @@ def main():
             run([sys.executable,ROOT/'scripts/analysis/debug_elf_functions.py',c['elf'],'--out',functions])
             run([sys.executable,TOOLS/'ppu_lifter.py',c['elf'],'--functions',functions,'--hle-stubs',meta/(c['elf'].stem+'.imports.json'),'--cpp-nonlocal-jumps','--output',out,'--jobs',args.jobs])
         else:
-            images=ROOT/'build/extracted/spu'; out=c['generated']/'spu'
+            images=ROOT/'build/extracted/spu'; out=spu_tree
             if out.exists() and any(out.iterdir()): raise SystemExit('Existing SPU tree preserved. Move it to temp/ before regeneration.')
             named=ROOT/'build/extracted/named'
             run([sys.executable,TOOLS/'extract_spu_images.py',c['elf'],'--output',images])
@@ -131,7 +133,7 @@ def main():
             # Required discipline before relinking. No matching process is harmless.
             subprocess.run(['taskkill','/F','/IM','ms1_recomp.exe'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         env=build_environment(); binary=ROOT/'build/native'
-        command=['cmake','-S',ROOT,'-B',binary,'-G','Ninja','-DCMAKE_BUILD_TYPE=Debug','-DPORT_CPP_NONLOCAL_JUMPS=ON',f'-DRECOMP_DIR={c["generated"]/"ppu"}',f'-DSPU_DIR={c["generated"]/"spu"}',f'-DPS3RECOMP_FFMPEG_ROOT={c["ffmpeg"]}',f'-DPORT_PRIVATE_KEYS_DIR={c.get("keys",ROOT/"game/private_keys")}']
+        command=['cmake','-S',ROOT,'-B',binary,'-G','Ninja','-DCMAKE_BUILD_TYPE=Debug','-DPORT_CPP_NONLOCAL_JUMPS=ON',f'-DRECOMP_DIR={c["generated"]/"ppu"}',f'-DSPU_DIR={spu_tree}',f'-DPS3RECOMP_FFMPEG_ROOT={c["ffmpeg"]}',f'-DPORT_PRIVATE_KEYS_DIR={c.get("keys",ROOT/"game/private_keys")}']
         if 'MV_CLANG' in env: command.extend([f'-DCMAKE_C_COMPILER={env["MV_CLANG"]}',f'-DCMAKE_CXX_COMPILER={env["MV_CLANG"]}'])
         command.append(f'-DPS3RECOMP_DIR={source_root}')
         command.append(f'-DPORT_OPTIMIZE_NATIVE={"ON" if args.optimize else "OFF"}')
@@ -164,7 +166,7 @@ def main():
         if runtime_identity(source_root)!=runtime_record:
             raise SystemExit('Runtime capability source or revision changed during the build; rebuild before running')
         exe=binary/('ms1_recomp.exe' if os.name=='nt' else 'ms1_recomp')
-        identity={'path':str(exe),'sha256':hashlib.sha256(exe.read_bytes()).hexdigest(),'bytes':exe.stat().st_size,'elf_sha256':hashlib.sha256(c['elf'].read_bytes()).hexdigest(),'ppu_tree':str(c['generated']/'ppu'),'spu_tree':str(c['generated']/'spu'),'logs':str(logs)}
+        identity={'path':str(exe),'sha256':hashlib.sha256(exe.read_bytes()).hexdigest(),'bytes':exe.stat().st_size,'elf_sha256':hashlib.sha256(c['elf'].read_bytes()).hexdigest(),'ppu_tree':str(c['generated']/'ppu'),'spu_tree':str(spu_tree),'logs':str(logs)}
         identity.update(build_type='Debug',optimized_checked=args.optimize,native_world_transforms=args.native_world_transforms,
                         native_job_wait=args.native_job_wait)
         identity.update(runtime_record)
