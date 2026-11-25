@@ -380,9 +380,20 @@ SPU_SF_HOST_FN u128 spu_csflt(u128 a, int i8) { SPU_SF_HOST_ARITHMETIC u128 r; u
 SPU_SF_HOST_FN u128 spu_cuflt(u128 a, int i8) { SPU_SF_HOST_ARITHMETIC u128 r; uint32_t env=spu_sf_host_begin(); double f=exp2((double)(i8-155));
     for(int i=0;i<4;i++) r._f32[i]=(float)((double)a._u32[i]*f); spu_sf_host_end(env); return r; }
 static inline u128 spu_fm(u128 a, u128 b) { u128 r; if(SPU_FM_FAST(r._u32,a._u32,b._u32)) return r; return spu__fm_rest(a,b); }
+#if SPU_SF_FAST
+/* The earlier path of the fused family, out of line and cold: the scoped host
+ * form with the CPUID admission, else the exact integer helper. */
+static inline __attribute__((noinline, cold)) u128 spu__fma_slow(u128 a, u128 b, u128 c) { u128 r; if(spu_sf_simd_fused(r._u32,a._u32,b._u32,c._u32,0,0)) return r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_madd(a._u32[i],b._u32[i],c._u32[i],0); return r; }
+static inline __attribute__((noinline, cold)) u128 spu__fms_slow(u128 a, u128 b, u128 c) { u128 r; if(spu_sf_simd_fused(r._u32,a._u32,b._u32,c._u32,0,0x80000000u)) return r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_madd(a._u32[i],b._u32[i],c._u32[i]^0x80000000u,0); return r; }
+static inline __attribute__((noinline, cold)) u128 spu__fnms_slow(u128 a, u128 b, u128 c) { u128 r; if(spu_sf_simd_fused(r._u32,a._u32,b._u32,c._u32,0x80000000u,0)) return r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_madd(a._u32[i],b._u32[i],c._u32[i],0x80000000u); return r; }
+static inline u128 spu_fma(u128 a, u128 b, u128 c)  { u128 r; if (spu_sf_fast_fused(r._u32, a._u32, b._u32, c._u32, 0, 0)) return r; return spu__fma_slow(a, b, c); }
+static inline u128 spu_fms(u128 a, u128 b, u128 c)  { u128 r; if (spu_sf_fast_fused(r._u32, a._u32, b._u32, c._u32, 0, 0x80000000u)) return r; return spu__fms_slow(a, b, c); }
+static inline u128 spu_fnms(u128 a, u128 b, u128 c) { u128 r; if (spu_sf_fast_fused(r._u32, a._u32, b._u32, c._u32, 0x80000000u, 0)) return r; return spu__fnms_slow(a, b, c); }
+#else
 static inline u128 spu_fma(u128 a, u128 b, u128 c)  { u128 r; if(spu_sf_simd_fused(r._u32,a._u32,b._u32,c._u32,0,0)) return r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_madd(a._u32[i],b._u32[i],c._u32[i],0); return r; }
 static inline u128 spu_fms(u128 a, u128 b, u128 c)  { u128 r; if(spu_sf_simd_fused(r._u32,a._u32,b._u32,c._u32,0,0x80000000u)) return r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_madd(a._u32[i],b._u32[i],c._u32[i]^0x80000000u,0); return r; }
 static inline u128 spu_fnms(u128 a, u128 b, u128 c) { u128 r; if(spu_sf_simd_fused(r._u32,a._u32,b._u32,c._u32,0x80000000u,0)) return r; for(int i=0;i<4;i++) r._u32[i]=spu_sf_madd(a._u32[i],b._u32[i],c._u32[i],0x80000000u); return r; }
+#endif
 /* Float compares in integers: the results of host IEEE compares in an
  * ordinary environment (exponent-255 with a fraction is unordered and
  * false, +0 equals -0, denormals compare by value), but independent of the
