@@ -252,3 +252,14 @@ split-packet and cache-work checks remain; the indexed boundary check now
 requires the full draw and preserved prior bytes after growth. These tests do
 not prove GPU resource lifetime or presentation; see the qualified
 [vendor adoption](VENDOR.md#vp-upload-capacity-adoption-issue-129).
+
+## SPU lane trace
+
+The SPU runtime prints its lane diagnostic lines only when the environment
+variable `SPU_LANE_TRACE` is set, is not empty and is not `0`. The default
+run prints no line of the nine gated kinds. Set `SPU_LANE_TRACE=1` for a
+diagnosis run. Error lines and halt lines do not change. The kinds and the
+commits are in [vendor provenance](VENDOR.md#spu-lane-print-gate-step-0).
+`python scripts/check_spu_lane_trace.py` runs the check.
+
+Measured result: none. No run yet.

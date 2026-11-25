@@ -672,3 +672,22 @@ ref-poll address, out of bounds and each diagnostic bit, for reads and
 writes of each width.
 
 Measured result: none. No run yet.
+## SPU lane trace gate
+
+`SPU_LANE_TRACE` controls the diagnostic lines of the SPU lane hot paths.
+The default run prints no line of these nine kinds: `[pm-fetch]`,
+`[spurs-pm] poll`, `[pm-fill]`, `[modspan-w]`, `[spurs-pm] DMA`,
+`[taskset] built`, the `[spu_workload] dispatch HIT` and async `RETURNED`
+lines, and `[WAIT] semaphore_wait`. The variable is on when it is set, not
+empty and not `0`. `SPU_LANE_TRACE=1` prints all nine kinds. The probes
+`SPU_LS_LOWREAD`, `SPU_SMC_WATCH` and `SPU_LS_WATCH` work without it.
+Error lines, halt lines, `[pm-end]` lines and `[svc-fail]` lines stay
+unconditional.
+
+The clean run `20261125T001941.414142Z` wrote 11,384 `[WAIT] semaphore`
+lines and 4,096 `[spurs-pm] DMA` lines to `native.err` before the gate.
+
+`python scripts/check_spu_lane_trace.py` builds the fixture with the
+production runtime. It runs 10 environment cases and rejects 21 mutants.
+
+Measured result: none. No run yet.

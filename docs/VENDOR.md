@@ -2940,3 +2940,43 @@ Facts from the 96 files after the fix was read with a local parser:
 
 A dump of jobs of the race needs `every n-th job`, because the title scene
 makes about 100 jobs a second: `--job-dump 210:0x16270:400:50:<directory>`.
+
+## SPU lane print gate (step 0)
+
+The SPU lane hot paths printed diagnostic lines in each default run. The
+clean run `20261125T001941.414142Z` wrote these lines to the host error
+stream (`native.err`): 11,384 `[WAIT] semaphore`, 6,753 `[taskset] built`,
+6,753 `[spu_workload] dispatch`, 6,752 `[spu_workload] async` and 4,096
+`[spurs-pm] DMA`.
+
+The change is in the fork, branch `codex/spu-ls-gate`, from `combined`
+`79e7bb4c`:
+
+| Commit | Content | Game |
+|---|---|---|
+| `f46b0f51` | One gate for the probes of the local store accessors and `spu_lane_trace()`. The game carry also gates the policy-module line kinds that exist only in the copy. | `dbab5e08e7` |
+| `a70022e3` | The fork test of the gate | None |
+| `dbcaa471` | Five more line kinds behind `spu_lane_trace()` | `10d08c5403` |
+| `aeb050e6` | The fork test uses the fixture of the game check | None |
+| None | `scripts/check_spu_lane_trace.py` and `scripts/fixtures/spu_lane_trace.c` | `5d88051dd3` |
+
+`spu_lane_trace()` reads the environment variable `SPU_LANE_TRACE` one time
+for the process. The variable is on when it is set, not empty and not `0`.
+The default is off. Nine line kinds are behind the gate: `[pm-fetch]`,
+`[spurs-pm] poll`, `[pm-fill]`, `[modspan-w]`, `[spurs-pm] DMA`,
+`[taskset] built`, the `[spu_workload] dispatch HIT` and async `RETURNED`
+lines, and `[WAIT] semaphore_wait`. Error lines, halt lines, `[pm-end]`
+lines and `[svc-fail]` lines do not use the gate.
+
+`g_spu_ls_gate` holds the armed probes as bits: `SPU_LS_LOWREAD`,
+`SPU_SMC_WATCH`, `SPU_LANE_TRACE` and `SPU_LS_WATCH`. The accessors
+`spu_ls_read128` and `spu_ls_write128` test the gate with one load and one
+predicted branch. An armed probe runs out of line with its old code.
+
+`python scripts/check_spu_lane_trace.py` builds the fixture with the
+production runtime. It runs 10 environment cases and rejects 21 mutants.
+The cases cover the nine line kinds with the trace off and on, the byte
+rule of the two accessors at addresses 0, `0x3FFF0`, one address above the
+mask and one unaligned address, and each armed probe.
+
+Measured result: none. No run yet.
