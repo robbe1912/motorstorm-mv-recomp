@@ -1287,6 +1287,16 @@ records and 118 classified contacts without an LS mismatch. It retained original
 execution, was muted and ended through its owned stop after 199.3 s, without a
 resource breach. This is parity coverage, not a timing comparison.
 
+In the 2026-11-26 sprint, the shadow run `20261126T161053.649998Z` and
+diagnostic run `20261126T171259.521477Z` enabled the collision adapter but
+logged no completed collision batch. This does not mean the adapter never
+runs: the earlier diagnostic `20261123T220742.148077Z` logged completed
+batches. The runs use different builds and diagnostic settings. The current
+adapter is registered through the interpreter leaf seam, while lifted
+trampoline dispatch can bypass that seam. The reason for the missing
+completions in the newer runs is not proven. Do not use these runs to claim
+that the collision batch improves gameplay frame time.
+
 The CPU-only warm-stage comparison uses five alternating samples per arm,
 960 captured 128-record batches per sample, matching completed work/checksums
 and all LS bytes against independently executed original output. Original uses
