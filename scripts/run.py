@@ -64,7 +64,7 @@ def main():
     ap.add_argument('--native-particle-random',choices=('0','shadow','1'),default='0',help='Explicit particle random generator mode; requires matching native-enabled build')
     ap.add_argument('--native-particle-thresholds',choices=('0','shadow','1'),default='0',help='Explicit verified particle threshold scan mode; requires matching native-enabled build')
     ap.add_argument('--native-visibility',choices=('0','shadow','1'),default='0',help='Explicit verified visibility mode; requires matching native-enabled build')
-    ap.add_argument('--native-visibility-batch',choices=('0','1'),default='0',help='Enable the debug-US native visibility batch trial')
+    ap.add_argument('--native-visibility-batch',choices=('0','shadow','1'),default='0',help='Explicit visibility batch mode; requires matching native-enabled build')
     ap.add_argument('--depth-observer',action='store_true',help='Enable the bounded raw depth observer; requires a matching observer build')
     ap.add_argument('--native-depth',choices=('0','1'),default='0',help='Experimental native depth query; requires --depth-observer and a matching native-query build')
     ap.add_argument('--d3d12-debug',choices=('default','0','1'),default='default',help='Explicit API validation selection; default preserves build policy and assertions stay enabled')

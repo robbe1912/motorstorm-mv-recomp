@@ -838,7 +838,9 @@ use native/reference modes for subsequent timing and keep the settings matched.
 
 Build with `--native-visibility-batch` and run with
 `--native-visibility-batch 1` to try the debug-US batch classifier.
-Use `--native-visibility-batch 0` for a reference run with the same executable.
+Use `--native-visibility-batch shadow` to run the kernel beside the lifted
+code and compare each batch. Use `--native-visibility-batch 0` for a
+reference run with the same executable.
 The batch runs after input DMA for a recognized image and caller. It leaves
 the original epilogue and completion in place. A batch that may reach a
 16 KiB output PUT uses the original interpreter path.
