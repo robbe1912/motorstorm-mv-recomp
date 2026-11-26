@@ -11,6 +11,26 @@ The setup, the workflow and the current limits are in
 [runtime changes](RUNTIME_CHANGES.md). The sections below stay the
 record of both hashes and the measured result of each change.
 
+## Sprint base of the frame-time work (2026-11-26)
+
+Each sprint branch of the frame-time work starts from fork branch
+`codex/frame60-vendor-sync` at `4630c6bd` (`chore(vendor): sync the tree to
+the game copy at 7b041be4aa`), on `combined` `79e7bb4c`. The tree is
+byte-equal to `vendor/ps3recomp` of game commit `7b041be4aa` in 439 files.
+The base and the sprint branches are local. They are not pushed.
+
+A sprint commit then applies to the game tree as a patch:
+
+    git format-patch 4630c6bd..HEAD -o <dir>
+    git apply --exclude='vendor/ps3recomp/tests/*' --directory=vendor/ps3recomp <patches>
+
+One game commit carries one fork commit. The game tree has no copy of the
+fork tests. A fork check runs from the fork worktree with the compiler
+environment of `scripts/project.py`.
+
+DrawMerge is authored on this base: branch `codex/rsx-draw-merge2`, `2bc2138f`
+to `24cfe9a0`. Its carry and its measured result are open.
+
 ## PPU fast memory step 3: inline reads and alias answer
 
 Fork branch `codex/ppu-fastmem3`, based on `codex/frame60-fastmem-v2`
