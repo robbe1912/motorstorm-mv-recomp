@@ -537,6 +537,9 @@ class PPULifter:
         # legacy behaviour (no bound).
         self.code_lo: int = 0
         self.code_hi: int | None = None
+        # ELF executable sections can lie outside named-function bounds and
+        # have data gaps between them. Empty retains the raw/stripped fallback.
+        self.code_ranges: list[tuple[int, int]] = []
         # Firmware-import stubs: {stub_addr -> NID}. A function lifted at a stub
         # address is emitted as `ps3_hle_call(nid, ctx)` instead of the literal
         # `.lib.stub` trampoline (which derefs an import pointer table the recomp
@@ -549,6 +552,9 @@ class PPULifter:
         # comment above func_ADDR so dispatch stays address-based.
         self.name_map: dict[int, str] = {}
         self.cpp_nonlocal_jumps = False
+        # Lines of the C++ setjmp/longjmp lowering that emission produced.
+        self.nonlocal_throws = 0
+        self.nonlocal_resumes = 0
         # Symbol prefix for every emitted func_* / function_table[] symbol, so
         # a relocated PRX image (e.g. libsre_) can link alongside the main
         # title without func_XXXXXXXX / function_table collisions. Shared types
@@ -3163,8 +3169,11 @@ class PPULifter:
             text_hi = max((f.end_addr for f in self.functions), default=0)
             for target in gap_targets:
                 idx = bisect.bisect_right(boundaries, target)
-                bound = boundaries[idx] if idx < len(boundaries) else text_hi
-                bound = min(bound, target + _MAX_MID_TAIL)   # cap span (see above)
+                region_end = next((b for a, b in self.code_ranges if a <= target < b), text_hi)
+                bound = boundaries[idx] if idx < len(boundaries) else region_end
+                bound = min(bound, region_end, target + _MAX_MID_TAIL)
+                if self.code_hi is not None:
+                    bound = min(bound, self.code_hi)
                 if bound <= target:
                     continue
                 gap_func = self.lift_function(_insn_slice(target, bound), target, bound)
@@ -3184,7 +3193,7 @@ class PPULifter:
         cont = func.fallthrough_to
         if not cont:
             return
-        if self.code_hi is not None and not (self.code_lo <= cont < self.code_hi):
+        if self._outside_code(cont):
             return
         self.branch_targets.add(cont)
 
@@ -3354,11 +3363,11 @@ class PPULifter:
         clean build.
 
         A stub address is declared callable by definition, so exempt it."""
-        if self.code_hi is None:
-            return False
         if tgt in self.hle_stub_nids:
             return False
-        return not (self.code_lo <= tgt < self.code_hi)
+        if self.code_hi is not None and not (self.code_lo <= tgt < self.code_hi):
+            return True
+        return bool(self.code_ranges) and not any(a <= tgt < b for a, b in self.code_ranges)
 
     def _function_def_lines(self, func, func_by_addr, sorted_addrs,
                             addr_index) -> list[str]:
@@ -3403,11 +3412,13 @@ class PPULifter:
                 if match and int(match[2], 16) in aliases:
                     pc = int(match[1], 16)
                     resume_points.append(pc)
+                    self.nonlocal_resumes += 1
                     rewritten.append(f"    _nonlocal_sp_{pc:08X} = ctx->gpr[1];")
                     rewritten.append(bline)
                     rewritten.append(f"loc_nonlocal_{pc:08X}: ;")
                 elif label and label.lstrip(".") in ("longjmp", "_longjmp") and bline.strip() == "return;":
                     rewritten.append("    throw ppu_nonlocal_jump{ctx, (uint32_t)ctx->lr, ctx->gpr[1]};")
+                    self.nonlocal_throws += 1
                 else:
                     rewritten.append(bline)
             body = rewritten
@@ -4102,7 +4113,7 @@ _WORKER_STATE: dict = {}
 
 def _worker_init(segs, big_endian, name_map, prefix, hle_stub_nids=None,
                  function_entries=None, code_lo=0, code_hi=None, jump_tables=None,
-                 toc_base=0):
+                 toc_base=0, code_ranges=None):
     _WORKER_STATE["segs"] = segs
     _WORKER_STATE["be"] = big_endian
     _WORKER_STATE["names"] = name_map
@@ -4116,6 +4127,7 @@ def _worker_init(segs, big_endian, name_map, prefix, hle_stub_nids=None,
     _WORKER_STATE["function_entries"] = function_entries or set()
     _WORKER_STATE["code_lo"] = code_lo
     _WORKER_STATE["code_hi"] = code_hi
+    _WORKER_STATE["code_ranges"] = code_ranges or []
     _WORKER_STATE["jump_tables"] = jump_tables or {}
 
 
@@ -4130,6 +4142,7 @@ def _worker_lift(task):
     lifter.function_entries = _WORKER_STATE.get("function_entries", set())
     lifter.code_lo = _WORKER_STATE.get("code_lo", 0)
     lifter.code_hi = _WORKER_STATE.get("code_hi", None)
+    lifter.code_ranges = _WORKER_STATE.get("code_ranges", [])
     lifter.jump_tables = _WORKER_STATE.get("jump_tables", {})
     lifter.toc_base = _WORKER_STATE.get("toc_base", 0)
     results = []
@@ -4166,7 +4179,7 @@ def _parallel_lift(lifter, func_bounds, segs, big_endian, jobs):
                    initargs=(segs, big_endian, lifter.name_map, lifter.prefix,
                              lifter.hle_stub_nids, lifter.function_entries,
                              lifter.code_lo, lifter.code_hi, lifter.jump_tables,
-                             getattr(lifter, "toc_base", 0)))
+                             getattr(lifter, "toc_base", 0), lifter.code_ranges))
     try:
         for idx0, results, ct, bt in pool.imap_unordered(_worker_lift, tasks):
             results_by_idx[idx0] = results
@@ -4191,6 +4204,52 @@ def _parallel_lift(lifter, func_bounds, segs, big_endian, jobs):
                 body_lines=body, calls=calls, fallthrough_to=ft))
 
 
+def _elf_function_symbols(elf) -> dict[int, str]:
+    """Function symbols (STT_FUNC) of the symbol table: address -> name.
+
+    The first symbol at an address names it. The names keep their leading
+    dot (.longjmp), the form the nonlocal-jump lowering reads."""
+    from elf_parser import BinaryReader
+    rd = BinaryReader(elf.raw_data, elf.elf_header.big_endian)
+    is64 = elf.elf_header.is64
+    names: dict[int, str] = {}
+    sections = elf.section_headers
+    for sh in sections:
+        if sh.sh_type != 2 or sh.sh_link >= len(sections):
+            continue                      # SHT_SYMTAB and its string table
+        strtab = sections[sh.sh_link]
+        entsize = sh.sh_entsize or (24 if is64 else 16)
+        for i in range(sh.sh_size // entsize):
+            off = elf.elf_offset + sh.sh_offset + i * entsize
+            if off + entsize > len(elf.raw_data):
+                break
+            if is64:
+                st_name, st_info, value = rd.u32(off), rd.u8(off + 4), rd.u64(off + 8)
+            else:
+                st_name, value, st_info = rd.u32(off), rd.u32(off + 4), rd.u8(off + 12)
+            if st_info & 0xF != 2 or not st_name:
+                continue                  # STT_FUNC with a name
+            start = elf.elf_offset + strtab.sh_offset + st_name
+            end = elf.raw_data.find(b"\0", start)
+            if end > start:
+                names.setdefault(value, elf.raw_data[start:end].decode("utf-8", "replace"))
+    return names
+
+
+def _check_nonlocal_jumps(lifter, lifted: set[int], elf_names: dict[int, str]) -> None:
+    """Stop the lift when a lifted setjmp or longjmp function got no lowering."""
+    standard = ("setjmp", "_setjmp", "longjmp", "_longjmp")
+    present = sorted(a for a in lifted
+                     if elf_names.get(a, "").lstrip(".") in standard
+                     or lifter.name_map.get(a, "").lstrip(".") in standard)
+    if present and not lifter.nonlocal_throws and not lifter.nonlocal_resumes:
+        listed = ", ".join(f"0x{a:08X} ({elf_names.get(a) or lifter.name_map.get(a)})"
+                           for a in present)
+        print("ppu_lifter.py: error: --cpp-nonlocal-jumps lowered no setjmp or "
+              f"longjmp (no throw line and no resume point): {listed}", file=sys.stderr)
+        sys.exit(1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="PPU to C lifter for PS3 recompilation")
     parser.add_argument("input", help="Input ELF or raw binary")
@@ -4210,7 +4269,8 @@ def main() -> None:
                         help="JSON file with function list [{start, end}, ...]")
     parser.add_argument("--names", metavar="FILE", default=None,
                         help="JSON name map from ghidra_names.py "
-                             "({\"0xADDR\": {\"label\": ...}}); emitted as comments")
+                             "({\"0xADDR\": {\"label\": ...}}); emitted as comments; "
+                             "adds to and overrides the ELF symbol names")
     parser.add_argument("--jobs", "-j", type=int,
                         default=max(1, os.cpu_count() or 1),
                         help="Worker processes for the main lift "
@@ -4256,6 +4316,8 @@ def main() -> None:
 
     # Get instructions (and keep the raw executable blobs for worker processes)
     seg_blobs: list[tuple[int, bytes]] = []
+    code_ranges: list[tuple[int, int]] = []
+    elf_names: dict[int, str] = {}
     if args.raw:
         all_insns = disassemble_bytes(file_data, base_addr, big_endian)
         seg_blobs = [(base_addr, file_data)]
@@ -4265,6 +4327,10 @@ def main() -> None:
             elf = ELFFile(args.input)
             elf.load()
             big_endian = elf.elf_header.big_endian
+            elf_names = _elf_function_symbols(elf)
+            code_ranges = sorted((sh.sh_addr, sh.sh_addr + sh.sh_size)
+                                 for sh in elf.section_headers
+                                 if sh.sh_flags & 4 and sh.sh_size and sh.sh_type != 8)
             all_insns = []
             for ph in elf.program_headers:
                 if ph.p_type == PT_LOAD and (ph.p_flags & 1):
@@ -4280,6 +4346,8 @@ def main() -> None:
                         break
         except Exception as exc:
             print(f"Warning: ELF parse failed ({exc}), treating as raw", file=sys.stderr)
+            code_ranges = []
+            elf_names = {}
             all_insns = disassemble_bytes(file_data, base_addr, big_endian)
             seg_blobs = [(base_addr, file_data)]
 
@@ -4657,12 +4725,16 @@ def main() -> None:
     if len(toc_candidates) == 1:
         lifter.toc_base = toc_candidates[0]
     lifter.code_hi = args.code_end
-    # Without --code-end, default the executable window to the function-bounds
-    # span so branches into data still get clamped. With no window at all, a
-    # garbage target decoded from data (e.g. dead bytes after a blrl reached by
-    # fallthrough) is emitted as a call to a nonexistent func_XXXXXXXX and the
-    # link fails (LBP: func_FFFFFFEC from a literal pool misread as a bc).
-    if lifter.code_hi is None and func_bounds:
+    # Named functions need not cover executable linkage/init/fini sections.
+    # Admit those bytes without admitting data gaps in the same R-X segment.
+    # Keep --code-end as an additional ceiling, and the historical bounded
+    # function-span fallback when a raw/stripped input has no section metadata.
+    lifter.code_ranges = code_ranges
+    if code_ranges:
+        lifter.code_lo = min(a for a, _ in code_ranges)
+        if lifter.code_hi is None:
+            lifter.code_hi = max(b for _, b in code_ranges)
+    elif lifter.code_hi is None and func_bounds:
         lifter.code_lo = min(s for s, _ in func_bounds)
         lifter.code_hi = max(e for _, e in func_bounds)
     lifter.hle_stub_nids = hle_stubs
@@ -4686,6 +4758,12 @@ def main() -> None:
                 lifter.name_map[addr] = label
                 loaded += 1
         print(f"  Loaded {loaded} recovered names from {args.names}")
+
+    # The ELF symbol table names the functions. --names adds addresses and
+    # overrides ELF names.
+    for addr, label in elf_names.items():
+        lifter.name_map.setdefault(addr, label)
+    print(f"  names: {len(elf_names)} function symbols from the ELF symbol table")
 
     if args.jobs > 1:
         _parallel_lift(lifter, func_bounds, seg_blobs, big_endian, args.jobs)
@@ -4747,6 +4825,8 @@ def main() -> None:
         print(f"Wrote {header_path}")
         print(f"Wrote {len(paths)} source chunks: "
               f"{os.path.basename(paths[0])} .. {os.path.basename(paths[-1])}")
+    if args.cpp_nonlocal_jumps:
+        _check_nonlocal_jumps(lifter, {f.start_addr for f in lifter.functions}, elf_names)
     print(f"  {len(lifter.functions)} functions lifted")
     print(f"  {len(lifter.call_targets)} unique call targets")
 

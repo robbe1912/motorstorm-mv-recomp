@@ -65,6 +65,15 @@ python scripts/project.py generate --stage spu
 
 PPU: loader/import metadata, named executable .symtab bounds, preserved lifter with HLE imports and C++ nonlocal jumps. Stripped retail needs independently validated function metadata. SPU: embedded ELF extraction, symtab-named job/policy extraction (`scripts/spu/extract_ms1_named.py`, identity-checked against `scripts/spu/jobmod_meta.json`), build_spu_workloads and the job-module lift. Review unsupported-instruction diagnostics and registration; firmware codecs (9-13) and DSP captures (14, 15, 20, 21) remain outside this stage.
 
+The PPU lifter admits each call target in an executable section of the ELF
+and takes the function names from the ELF symbol table. Two checks prove a
+lifted PPU tree. `python scripts/check_ppu_lift_coverage.py --tree DIR` finds
+a dropped call and a missing `setjmp` or `longjmp` lowering.
+`python scripts/check_ppu_jumptables.py --tree DIR` finds a jump table that
+the lift did not emit. A regenerated tree has no hand-patched probe line: the
+`bike_probe_entry` and `havok_record_raw_oct10` calls of the first tree are
+not in it, so those captures record nothing.
+
 The named extractor requires `--out` to be absent or completely empty. Its
 `--images` directory may contain the class-A ELFs, but an existing policy ELF
 is preserved by refusing extraction. All named inputs are validated before

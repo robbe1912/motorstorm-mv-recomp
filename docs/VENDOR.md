@@ -3352,3 +3352,45 @@ passes in four builds and the fork tree in four builds. The check rejects
 same files.
 
 Measured result: none. No run yet.
+
+## PPU lifter: executable sections and ELF names
+
+The first PPU tree (10 units, lifted 2026-10-07 to 2026-10-11) holds
+`func_00010200` and 26,350 label comments. The documented command with the
+game lifter file produced neither. Two runs of the regenerated tree stopped
+at the boot:
+
+- `bl 0x10200` (the start of section `.init`, called by `__init`) was dropped
+  as `/* bl -> non-code 0x00010200 */`. The executable window of the game
+  file is the span of the function list, and that list starts at `0x10210`.
+- The function names were missing, so `setjmp` and `longjmp` got no C++
+  lowering.
+
+The game carries two fixes of the fork in `tools/ppu_lifter.py`. The game
+file is a curated copy (no fork revision is byte-identical), so the carry is
+a patched file and not a cherry-pick.
+
+- Fork `59d35b7ef646` (2026-10-20, branch `combined`): the lifter admits each
+  call target in an executable section of the ELF.
+- Fork `9acbd17162d7` (branch `codex/ppu-lift-call-targets`): the lifter reads
+  the `STT_FUNC` names from the ELF symbol table, and it stops when a lifted
+  `setjmp` or `longjmp` gets no lowering.
+
+Two oracles prove a lifted tree. `scripts/check_ppu_lift_coverage.py` (game
+commit `c9fce88cec`) fails on a dropped call and on a missing lowering.
+`scripts/check_ppu_jumptables.py` (game commit `35a8a3d`) fails on a jump
+table that the lift did not emit. The first tree fails the second oracle with
+14 gaps: one of them caused the Havok worker freeze.
+
+A lift with the carried file gives 34,219 functions. Each function has the
+same text as in the first tree, with two classes of change: 1,204 functions
+use the fused VMX form (game commit `143cb3d`), and 14 dispatchers use a
+switch in place of a table-less jump. The first tree also holds hand-patched
+probe lines (`bike_probe_entry`, `havok_record_raw_oct10`). The carried
+lifter does not emit them.
+
+Fork commit `f5757561` (max-end tree for overlapping tails) is not carried.
+
+Measured result with the regenerated tree: every run has 0 `unresolved
+indirect call` lines. The race frame time did not change against the first
+tree (exe `87f5f3c3ca97ca6e`, three runs, median 91.3 to 94.0 ms).
