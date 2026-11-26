@@ -7,7 +7,7 @@ the next coordinated run; these hooks alone establish no FPS improvement.
 
 [GitHub issues](https://github.com/robbe1912/motorstorm-mv-recomp/issues) are the authoritative atomic todo list. This page describes how to use it; it does not maintain a second backlog.
 
-The main goal is stable 30 FPS on Windows DX12 at normal game start, while progressively replacing interpreted game workloads with native x86 game code. Performance has the highest priority. Use [the measured job producer (#155)](https://github.com/robbe1912/motorstorm-mv-recomp/issues/155) to select the next bounded replacement and [native acceptance (#27)](https://github.com/robbe1912/motorstorm-mv-recomp/issues/27) to judge the result. Vulkan and retail mstream remain parked.
+The main goal is stable 60 FPS in a race on Windows DX12 at normal game start, while replacing the hot game workloads with native x86 game code. One frame is then at most 16.7 ms. The measured race median is 75 to 78 ms (2026-11-26, three clean runs of build `e789dafb`). Performance has the highest priority. Use [the measured job producer (#155)](https://github.com/robbe1912/motorstorm-mv-recomp/issues/155) to select the next bounded replacement and [native acceptance (#27)](https://github.com/robbe1912/motorstorm-mv-recomp/issues/27) to judge the result. Vulkan and retail mstream remain parked.
 
 The [modern-engine scheduling comparison](research/NATIVE_SCHEDULING.md) maps
 the current persistent workers, policy execution, marker waits and renderer
@@ -51,7 +51,7 @@ enabled slots. [#71](https://github.com/robbe1912/motorstorm-mv-recomp/issues/71
 now targets the actual task-exit lifecycle and slot recycling; distinguish a
 genuine destruction request from ordinary async entry return before a fix.
 
-The initial native acceptance requires an observed race through normal PLAY, original main-menu assets displaying normally and stable 30 FPS on DX12 at game start. A 30 FPS cap is acceptable when gameplay, video and UI actually sustain it. Preserve driving, opponents, audio and saves as further verification requirements. A diagnostic checkpoint or present/title counter does not satisfy acceptance; report interpreter coverage and remaining migration work alongside performance.
+The initial native acceptance requires an observed race through normal PLAY, original main-menu assets displaying normally and stable 60 FPS on DX12 at game start. A race at 30 FPS is a checkpoint on the way, not the goal. Preserve driving, opponents, audio and saves as further verification requirements. A diagnostic checkpoint or present/title counter does not satisfy acceptance; report interpreter coverage and remaining migration work alongside performance.
 
 Original binaries, assets, firmware, generated guest code, keys, dumps and captures stay local. Issue/PR comments may contain source changes, hashes, identities and non-payload findings; follow the [source boundary](REPOSITORY.md) and [operating rules](OPERATIONS.md).
 
