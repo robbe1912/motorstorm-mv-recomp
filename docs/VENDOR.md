@@ -652,7 +652,10 @@ batch is left to prepare and replay when the read arrives. `run.py
 --submit-draws N` sets it. `check_rsx_submit_draws.py` compiles the production
 parser (5 accepted, 10 rejected values, two mutants); `check_rsx_record_retire.py` runs the
 cap against the production ensure/submit/retire bodies with three mutants.
-Measured result: none. No run yet.
+Measured result (2026-11-26): one race run with the cap at 256 is slower than
+the three runs without the cap, so the cap stays off. The numbers are in the
+measured result paragraph of the section "Early submission for pending CPU
+reads (#321)".
 
 ## Job dispatch log and depth-guard ring (#327)
 
@@ -754,6 +757,19 @@ RSX diagnostics are cleared. Five actual-launcher tests cover defaults,
 both explicit values and independent mixed settings. Author measurements remain
 original-revision evidence. Corrected native visuals, matched performance,
 minimum 30 FPS and interpreter removal remain unverified.
+
+Measured result (2026-11-26), build `021a9dccf5bccc04`, race time 25 to 105 s
+after the race clock start, screen-gated replay, three clean runs for each
+setting. With `RSX_DRAIN_OVERLAP=1` the median frame is 79.2, 84.6 and 84.4 ms
+and p95 is 121.5, 123.4 and 121.7 ms (runs `20261126T055713.613876Z`,
+`20261126T060220.051643Z` and `20261126T060626.087707Z`). Without the switch the
+same build gives a median of 91.0, 85.5 and 85.6 ms and p95 of 142.2, 130.2 and
+132.5 ms. The median gain is within the run-to-run spread of about 5 ms. p95
+improves by 10 to 18 ms. The backend default stays serialized. The frame-time
+work sets the switch through `run.py --drain-overlap 1` and states it with each
+result. `RSX_SUBMIT_DRAWS=256` on the same build gave one run with a median of
+94.8 ms, p95 152.3 ms and a menu median of 162.7 ms against 134 to 152 ms. The
+cap stays off.
 
 ## Prompt CPU surface reads (#319)
 

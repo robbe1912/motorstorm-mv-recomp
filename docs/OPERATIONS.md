@@ -763,10 +763,24 @@ Reads stay coherent, and each extra batch costs one `render_frame` and one GPU
 retirement. `N` is 16 up to the build's draw-record capacity (`PORT_RSX_MAX_DRAWS`,
 default 2048); the runtime reports anything else once and leaves the cap off.
 The launcher does not know that capacity, so it still records an `N` above it;
-check stderr for `the cap is off`. Measured result: none. No run yet.
+check stderr for `the cap is off`. Measured result (2026-11-26): one race run
+with `N=256` is slower. It has a median of 94.8 ms and p95 of 152.3 ms. The
+three runs without the cap have a median of 85.5 to 91.0 ms and p95 of 130 to
+142 ms. The cap stays off.
 The launcher clears an inherited cap and records the selection. Game-free
 coverage: [check_rsx_submit_draws.py](../scripts/check_rsx_submit_draws.py)
 and the cap case in [check_rsx_record_retire.py](../scripts/check_rsx_record_retire.py).
+
+`--drain-overlap default|0|1` sets `RSX_DRAIN_OVERLAP` for `0` and `1`. With
+`1` the renderer records the next batch while a submitted capacity batch
+executes on the GPU. The GPU wait after the drain is skipped. At most one
+batch stays in flight. The backend default is `0`: the drain stays serialized.
+Measured result (2026-11-26), build `021a9dccf5bccc04`: three race runs with
+the switch have a median of 79.2 to 84.6 ms and p95 of 121 to 123 ms. Three
+runs without the switch have a median of 85.5 to 91.0 ms and p95 of 130 to
+142 ms. p95 improves. The median gain is within the run-to-run spread. State
+the switch with each frame-time result. See the measured result in
+[VENDOR.md](VENDOR.md), section "Early submission for pending CPU reads".
 
 Use identical cache targets, validation and profiling settings for comparisons.
 Retention validates every uploaded face with full XXH3; the reference retains
