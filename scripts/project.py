@@ -82,6 +82,8 @@ def main():
                    help='Build the verified standalone particle-box collision batch (default off)')
     b.add_argument('--native-particle-random',action=argparse.BooleanOptionalAction,default=False,
                    help='Build the native random generator of SPU job image 213 (default off)')
+    b.add_argument('--native-vehicle-update',action=argparse.BooleanOptionalAction,default=False,
+                   help='Build the verified native vehicle update kernel of SPU image 219 (default off)')
     b.add_argument('--native-particle-thresholds',action=argparse.BooleanOptionalAction,default=False,
                    help='Bind the verified particle scan (default off; runtime reference/shadow/native policy remains explicit)')
     b.add_argument('--depth-observer',action='store_true',
@@ -174,6 +176,7 @@ def main():
                         f'-DPORT_NATIVE_PARTICLE_COLLISIONS={"ON" if args.native_particle_collisions else "OFF"}',
                         f'-DPORT_NATIVE_PARTICLE_RANDOM={"ON" if args.native_particle_random else "OFF"}',
                         f'-DPORT_NATIVE_PARTICLE_THRESHOLDS={"ON" if args.native_particle_thresholds else "OFF"}',
+                        f'-DPORT_NATIVE_VEHICLE_UPDATE={"ON" if args.native_vehicle_update else "OFF"}',
                         f'-DPORT_DEFORMATION_DEPTH_OBSERVER={"ON" if args.depth_observer else "OFF"}',
                         f'-DPORT_HAVOK_THREADS={"ON" if havok_threads else "OFF"}',
                         f'-DPORT_TARGET_ELF={c["elf"]}'])
@@ -198,6 +201,7 @@ def main():
         identity['native_particle_thresholds']=args.native_particle_thresholds
         identity['native_particle_collisions']=args.native_particle_collisions
         identity['native_particle_random']=args.native_particle_random
+        identity['native_vehicle_update']=args.native_vehicle_update
         identity['menu_boot']=menu_boot
         identity['native_job_wait_profile']=args.native_job_wait
         identity['job_capture']=args.capture_jobs
@@ -231,11 +235,11 @@ def main():
         if args.native_particle_thresholds:
             identity['native_particle_binding']=json.loads((binary/'native-particle-input/identity.json').read_text())
             identity['native_particle_binding_generator_sha256']=hashlib.sha256((ROOT/'scripts/native_particle_binding.py').read_bytes()).hexdigest()
-        if menu_boot or havok_threads or args.native_world_transforms or args.native_job_wait or args.native_visibility or args.native_pcm_cubic or args.native_particle_random or args.native_particle_collisions or args.native_visibility_batch or args.depth_observer or args.capture_jobs:
+        if menu_boot or havok_threads or args.native_world_transforms or args.native_job_wait or args.native_visibility or args.native_pcm_cubic or args.native_particle_random or args.native_particle_collisions or args.native_visibility_batch or args.native_vehicle_update or args.depth_observer or args.capture_jobs:
             identity['native_world_binding']=json.loads((binary/'native-world-binding.json').read_text())
             identity['native_world_sources_sha256']={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in sorted((ROOT/'src/motorstorm').glob('*')) if p.is_file()}
-        elif args.native_particle_thresholds or args.native_particle_collisions or args.native_visibility_batch or args.native_particle_random:
+        elif args.native_particle_thresholds or args.native_particle_collisions or args.native_visibility_batch or args.native_particle_random or args.native_vehicle_update:
             identity['native_world_sources_sha256']={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in sorted((ROOT/'src/motorstorm').glob('*')) if p.is_file()}
         (binary/'build_identity.json').write_text(json.dumps(identity,indent=2)); print('Build identity:',identity['sha256'])

@@ -836,6 +836,22 @@ and original particle publication and completion remain in place. Inspect
 to verify actual coverage. Shadow checks add substantial diagnostic work;
 use native/reference modes for subsequent timing and keep the settings matched.
 
+Build with `--native-vehicle-update` and select
+`--native-vehicle-update 0|shadow|1` during runs. The default `0` overrides
+inherited `MS_NATIVE_VEHICLE_UPDATE`; shadow and native require the matching
+capability and executable hash in the adjacent build identity. The build
+binds the lifted function `0x11FE0` of SPU image 219 (`spuvehicle`) and adds
+the native kernel `vehicle_update.c`. The kernel is the native form of the
+vehicle update from `0x11FE0` to its return address `0x20CE0`. It is
+bit-exact on the 211 dumped jobs. An unknown module, an interrupt, a stall or
+a reservation keeps the lifted code. Mode 1 prints
+`[native-vehicle-update] completed=N compared=N fallbacks=N` at the first
+call and then each 256 calls. Each refusal prints
+`[native-vehicle-update] ORIGINAL fallback=N reason=<reason>` and runs the
+lifted function. Shadow runs the lifted code and the kernel and compares the
+context; a difference aborts on `NATIVE_VEHICLE_UPDATE_SHADOW_MISMATCH`.
+These lines do not establish frame-time acceptance.
+
 Build with `--native-visibility-batch` and run with
 `--native-visibility-batch 1` to try the debug-US batch classifier.
 Use `--native-visibility-batch shadow` to run the kernel beside the lifted

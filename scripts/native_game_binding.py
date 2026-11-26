@@ -102,6 +102,14 @@ PARTICLE_COLLISION = Contract(PRODUCTION.elf_sha256,
     matcher='game_particle_collision_code_matches',
     windows=((0xf62700, 0xa700, 0x4ec), (0xf6f360, 0x17360, 0x50),))
 
+VEHICLE_UPDATE = Contract(PRODUCTION.elf_sha256,
+    '70924550221ba0c8bb06a6a83ad0459f78662c9ccdd541a922613ef4467d17fb',
+    'jobmod_8de1770ee613_e1cd40_spu_func_00011FE0',
+    'game_original_vehicle_update', 'motorstorm_vehicle_update_entry',
+    context='spu_context', directory='spu/jobmod_8de1770ee613_e1cd40',
+    matcher='game_vehicle_update_code_matches',
+    windows=((0xf98d60, 0x11fe0, 416), (0xf9b234, 0x144b4, 1100), (0xfa7a30, 0x20cb0, 64)))
+
 
 def digest(path):
     hasher = hashlib.sha256()
@@ -220,7 +228,7 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
     if any(elf_sha != c.elf_sha256 for c in selected):
         raise ValueError('Unsupported original ELF identity for native game binding')
     known = tuple(known_contracts) if known_contracts is not None else (
-        (PRODUCTION, JOB_WAIT, VISIBILITY, VISIBILITY_BATCH, PCM_CUBIC, PARTICLE_RANDOM, PARTICLE_RANDOM_INIT, PARTICLE_COLLISION,
+        (PRODUCTION, JOB_WAIT, VISIBILITY, VISIBILITY_BATCH, PCM_CUBIC, PARTICLE_RANDOM, PARTICLE_RANDOM_INIT, PARTICLE_COLLISION, VEHICLE_UPDATE,
          DEPTH_OBSERVER, QUEUE_RESET, QUEUE_RESET_MULTI, QUEUE_INIT, QUEUE_ADD_JOB, MENU_VIDEO, MENU_LANGUAGE, HAVOK_THREADS) if elf_sha == PRODUCTION.elf_sha256 else selected)
     # Older observer copies used the same verified body without byte tracing.
     # Admit only that exact legacy recipe when enabling/disabling this feature.
@@ -355,6 +363,8 @@ def main():
                         help='Bind the verified particle random generator of SPU image 213')
     parser.add_argument('--particle-collisions', action='store_true',
                         help='Bind the verified particle-box collision loop of SPU image 213')
+    parser.add_argument('--native-vehicle-update', action='store_true',
+                        help='Bind the verified vehicle update of SPU image 219')
     parser.add_argument('--spu-generated', type=Path,
                         help='Second generated tree that holds the lifted SPU images')
     args = parser.parse_args()
@@ -371,6 +381,8 @@ def main():
         selected.extend((PARTICLE_RANDOM, PARTICLE_RANDOM_INIT))
     if args.particle_collisions:
         selected.append(PARTICLE_COLLISION)
+    if args.native_vehicle_update:
+        selected.append(VEHICLE_UPDATE)
     result = prepare(args.generated, args.output, args.elf, args.manifest, contracts=selected,
                      spu_generated=args.spu_generated)
     print('Verified native game bindings:', ', '.join(b['symbol'] for b in result['bindings']))

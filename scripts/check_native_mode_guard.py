@@ -21,7 +21,8 @@ def main():
     body = next(n for n in ast.parse((root/'scripts/run.py').read_text()).body
                 if isinstance(n, ast.FunctionDef) and n.name == 'main').body
     flags = {'--native-pcm-cubic', '--native-visibility', '--native-visibility-batch',
-             '--native-particle-thresholds', '--native-particle-collisions', '--native-particle-random'}
+             '--native-particle-thresholds', '--native-particle-collisions', '--native-particle-random',
+             '--native-vehicle-update'}
     init = next(n for n in body if isinstance(n, ast.Assign)
                 and isinstance(n.targets[0], ast.Name) and n.targets[0].id == 'ap')
     arguments = [n for n in body if isinstance(n, ast.Expr)
@@ -37,7 +38,7 @@ def main():
                  and ast.unparse(n.target) == '(selected, flag, description)')
     environment = [n for n in body if isinstance(n, ast.Assign)
                    and ast.unparse(n.targets[0]) in
-                   ('env', "env['MS_NATIVE_PCM_CUBIC']", "env['MS_NATIVE_PARTICLE_THRESHOLDS']", "env['MS_NATIVE_PARTICLE_COLLISIONS']", "env['MS_NATIVE_VISIBILITY']",
+                   ('env', "env['MS_NATIVE_PCM_CUBIC']", "env['MS_NATIVE_PARTICLE_THRESHOLDS']", "env['MS_NATIVE_PARTICLE_COLLISIONS']", "env['MS_NATIVE_VEHICLE_UPDATE']", "env['MS_NATIVE_VISIBILITY']",
                     "env['MS_NATIVE_VISIBILITY_BATCH']", "env['MS_NATIVE_PARTICLE_RANDOM']")]
     assert len(environment) == len(flags) + 1
     depth_guard = next(n for n in body if isinstance(n, ast.If)
@@ -61,64 +62,50 @@ def main():
         exe.write_bytes(b'Only hash admission is tested; never executed.')
         digest = hashlib.sha256(exe.read_bytes()).hexdigest()
 
+        order = sorted(flags)
+        keys = [flag[2:].replace('-', '_') for flag in order]
+
+        def program(nodes):
+            tree = ast.fix_missing_locations(ast.Module(body=copy.deepcopy(nodes), type_ignores=[]))
+            return compile(tree, str(root/'scripts/run.py'), 'exec')
+
         def cases(selected_guard, selected_environment):
             nonlocal count
-            for pcm, visibility, batch, particle, collision, random in product(
-                    ('0', 'shadow', '1'), ('0', 'shadow', '1'), ('0', 'shadow', '1'), ('0', 'shadow', '1'), ('0', 'shadow', '1'), ('0', 'shadow', '1')):
-                for pcm_build, visibility_build, batch_build, particle_build, collision_build, random_build, stale in product((False, True), repeat=7):
-                    metadata = dict(native_pcm_cubic=pcm_build, native_visibility=visibility_build,
-                                    native_visibility_batch=batch_build,
-                                    native_particle_thresholds=particle_build,
-                                    native_particle_collisions=collision_build,
-                                    native_particle_random=random_build,
-                                    sha256='stale' if stale else digest)
-                    (native/'build_identity.json').write_text(json.dumps(metadata))
-                    ns = dict(argparse=argparse, __doc__=__doc__, ROOT=sandbox, exe=exe,
-                              hashlib=hashlib, json=json,
-                              os=SimpleNamespace(environ={'MS_NATIVE_PCM_CUBIC':'1',
-                                                         'MS_NATIVE_PARTICLE_THRESHOLDS':'1',
-                                                         'MS_NATIVE_PARTICLE_COLLISIONS':'1',
-                                                         'MS_NATIVE_PARTICLE_RANDOM':'1',
-                                                         'MS_NATIVE_VISIBILITY':'shadow',
-                                                         'MS_NATIVE_VISIBILITY_BATCH':'1'}))
-                    # run.py admits the selected executable's adjacent record
-                    # first; the guard reads that admitted record.
-                    ns['admitted'] = dict(build_identity=json.loads((native/'build_identity.json').read_text()),
-                                          exe_sha256=digest)
-                    execute([init, *arguments], ns)
-                    ns['args'] = ns['ap'].parse_args([
-                        '--native-pcm-cubic', pcm, '--native-visibility', visibility,
-                        '--native-visibility-batch', batch,
-                        '--native-particle-thresholds', particle,
-                        '--native-particle-collisions', collision,
-                        '--native-particle-random', random,
-                    ])
-                    expected = all(mode == '0' or built and not stale for mode, built in (
-                        (pcm, pcm_build), (visibility, visibility_build), (batch, batch_build),
-                        (particle, particle_build), (collision, collision_build),
-                        (random, random_build),
-                    ))
+            # One parser per candidate: parsing does not change it.
+            namespace = dict(argparse=argparse, __doc__=__doc__)
+            exec(program([init, *arguments]), namespace)
+            parser = namespace['ap']
+            admission = program([selected_guard, *selected_environment])
+            # No mode selects this value: a missing override differs in every case.
+            inherited = {'MS_' + key.upper(): 'inherited' for key in keys}
+            for bits in product((False, True), repeat=len(keys) + 1):
+                built, stale = bits[:-1], bits[-1]
+                metadata = dict(zip(keys, built), sha256='stale' if stale else digest)
+                (native/'build_identity.json').write_text(json.dumps(metadata))
+                # run.py admits the selected executable's adjacent record
+                # first; the guard reads that admitted record.
+                record = dict(build_identity=json.loads((native/'build_identity.json').read_text()),
+                              exe_sha256=digest)
+                for modes in product(('0', 'shadow', '1'), repeat=len(keys)):
+                    ns = dict(admitted=record, os=SimpleNamespace(environ=dict(inherited)))
+                    ns['args'] = parser.parse_args([item for pair in zip(order, modes) for item in pair])
+                    expected = all(mode == '0' or built and not stale for mode, built in zip(modes, built))
                     try:
-                        execute([selected_guard, *selected_environment], ns)
-                        admitted = True
+                        exec(admission, ns)
+                        accepted = True
                     except SystemExit as error:
                         assert 'matching --native-' in str(error)
-                        admitted = False
-                    assert admitted == expected, (pcm, visibility, batch, particle, collision, random, metadata, admitted)
-                    if admitted:
-                        assert ns['env']['MS_NATIVE_PCM_CUBIC'] == pcm
-                        assert ns['env']['MS_NATIVE_PARTICLE_THRESHOLDS'] == particle
-                        assert ns['env']['MS_NATIVE_PARTICLE_COLLISIONS'] == collision
-                        assert ns['env']['MS_NATIVE_VISIBILITY'] == visibility
-                        assert ns['env']['MS_NATIVE_VISIBILITY_BATCH'] == batch
-                        assert ns['env']['MS_NATIVE_PARTICLE_RANDOM'] == random
+                        accepted = False
+                    assert accepted == expected, (dict(zip(order, modes)), metadata, accepted)
+                    if accepted:
+                        assert all(ns['env']['MS_' + key.upper()] == mode for key, mode in zip(keys, modes))
                     count += 1
             for flag in flags:
                 invalid_modes = ['2', 'yes', '-1']
                 for invalid in invalid_modes:
                     with contextlib.redirect_stderr(io.StringIO()):
                         try:
-                            ns['ap'].parse_args([flag, invalid])
+                            parser.parse_args([flag, invalid])
                         except SystemExit as error:
                             assert error.code == 2
                         else:
@@ -127,14 +114,17 @@ def main():
         cases(guard, environment)
         admitted_cases = count
         mutant = ast.parse(ast.unparse(guard).replace('not identity.get(flag) or ', '', 1)).body[0]
+
+        def without(name):
+            return [n for n in environment if ast.unparse(n.targets[0]) != f"env['{name}']"]
+
         for label, candidate, env in [
                 ('missing build flag', mutant, environment),
-                ('inherited visibility', guard, environment[:-2] + environment[-1:]),
-                ('inherited particle thresholds', guard,
-                 [n for n in environment if ast.unparse(n.targets[0]) != "env['MS_NATIVE_PARTICLE_THRESHOLDS']"]),
-                ('inherited particle collisions', guard,
-                 [n for n in environment if ast.unparse(n.targets[0]) != "env['MS_NATIVE_PARTICLE_COLLISIONS']"]),
-                ('inherited visibility batch', guard, environment[:-1])]:
+                ('inherited visibility', guard, without('MS_NATIVE_VISIBILITY')),
+                ('inherited particle thresholds', guard, without('MS_NATIVE_PARTICLE_THRESHOLDS')),
+                ('inherited particle collisions', guard, without('MS_NATIVE_PARTICLE_COLLISIONS')),
+                ('inherited visibility batch', guard, without('MS_NATIVE_VISIBILITY_BATCH')),
+                ('inherited vehicle update', guard, without('MS_NATIVE_VEHICLE_UPDATE'))]:
             try:
                 cases(candidate, env)
             except (AssertionError, KeyError):
