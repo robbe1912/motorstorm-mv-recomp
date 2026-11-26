@@ -3289,7 +3289,8 @@ test). The game carries these four commits in this order: `b567a4a914`,
 `4705cebbd8`, `bacaed8389` and `8525086c8a`. `b567a4a914` also holds the
 build option, the oracle and this documentation. Fork commit `e0afc08e` gives
 `fnms` its own FMA3 function (`spu_sf_fast_fnma`). The game carries it in
-`<game commit>`; `temp/spufloat/carry_fnms/CARRY.txt` holds the hashes.
+`f74b8a5f39`, the commit that also carries the miss counter;
+`temp/spufloat/carry_fnms/CARRY.txt` holds the hashes.
 
 `spu_fa`, `spu_fs`, `spu_fm`, `spu_fma`, `spu_fms` and `spu_fnms` have an x86
 fast form in `runtime/spu/spu_float_simd.h` and `runtime/spu/spu_helpers.h`.
@@ -3355,14 +3356,18 @@ modes, calls outside a scope and a scope without FMA3. Measured on 2026-11-26
 game tree pass, and the check rejects 21 planted mutants there. The four
 builds of the fork tree at `e0afc08e` pass. On that tree the check rejects 17
 mutants: five mutants changed one FMA3 function only, and `fnms` calls the
-second function there. These five mutants now change both functions. A run
-with these anchors is open. `scripts/check_spu_float.py` passed before
-`8525086c8a`: its six files are the files of `8525086c8a`, with
-`spu_float_simd.h` of `bacaed8389`
-(`temp/checks/spu-float-1795648822468345900`). It did not run with the files
-of `8525086c8a`.
+second function there. These five mutants now change both functions. With
+these anchors, measured on 2026-11-26
+(`temp/checks/spu-float-fast-1795667579729197600`): 8 builds pass and the
+check rejects 42 mutants. `scripts/check_spu_float.py` passed with the six
+files of `8525086c8a` before this carry
+(`temp/checks/spu-float-1795648822468345900`), and with the files of
+`f74b8a5f39` after it (`temp/checks/spu-float-1795667630249568300`).
 
-Measured result: none. No run yet.
+Measured result: build `f7d90152` (tree `ppu5` with this carry and with the
+miss counter of `f74b8a5f39`) against `338a9175` (tree `ppu5` without them):
+three race runs each, race time 25 to 105 s. Median 87.5, 85.0 and 90.7 ms
+against 93.9, 94.7 and 89.6 ms; p95 133 to 136 ms against 145 to 166 ms.
 
 ## PPU lifter: executable sections and ELF names
 
