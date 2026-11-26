@@ -64,7 +64,7 @@ def main():
         def cases(selected_guard, selected_environment):
             nonlocal count
             for pcm, visibility, batch, particle, collision, random in product(
-                    ('0', 'shadow', '1'), ('0', 'shadow', '1'), ('0', '1'), ('0', 'shadow', '1'), ('0', 'shadow', '1'), ('0', 'shadow', '1')):
+                    ('0', 'shadow', '1'), ('0', 'shadow', '1'), ('0', 'shadow', '1'), ('0', 'shadow', '1'), ('0', 'shadow', '1'), ('0', 'shadow', '1')):
                 for pcm_build, visibility_build, batch_build, particle_build, collision_build, random_build, stale in product((False, True), repeat=7):
                     metadata = dict(native_pcm_cubic=pcm_build, native_visibility=visibility_build,
                                     native_visibility_batch=batch_build,
@@ -115,8 +115,6 @@ def main():
                     count += 1
             for flag in flags:
                 invalid_modes = ['2', 'yes', '-1']
-                if flag == '--native-visibility-batch':
-                    invalid_modes.append('shadow')
                 for invalid in invalid_modes:
                     with contextlib.redirect_stderr(io.StringIO()):
                         try:
