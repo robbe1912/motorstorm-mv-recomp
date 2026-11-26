@@ -698,6 +698,7 @@ class ExecutionProfileTests(unittest.TestCase):
         helper.parent.mkdir(parents=True, exist_ok=True)
         helper.write_text('# authored renderer-optimization helper identity\n', encoding='utf-8')
         (self.root / 'src/runtime_optimization.cmake').write_text('# authored runtime-optimization helper identity\n', encoding='utf-8')
+        (self.root / 'src/native_game_optimization.cmake').write_text('# authored native-game-optimization helper identity\n', encoding='utf-8')
         # The wrapper hashes the platform's own output name (ms1_recomp.exe on
         # Windows, ms1_recomp elsewhere). The mocked compiler creates that inert
         # output; the launcher's selected executable fixture is left as it is.
@@ -708,6 +709,13 @@ class ExecutionProfileTests(unittest.TestCase):
             if command[1] == '-S':
                 (binary / 'renderer-optimization.json').write_text('{"enabled":false}', encoding='utf-8')
                 (binary / 'runtime-optimization.json').write_text('{"enabled":false}', encoding='utf-8')
+                # The two build levels write their records in the configure step. The
+                # boundary mirrors the command unless the test authors the record.
+                authored = getattr(self, 'level_records', {})
+                (binary / 'native-game-optimization.json').write_text(authored.get('native-game-optimization.json',
+                    '{"enabled":%s}' % ('true' if '-DPORT_OPTIMIZE_NATIVE_GAME=ON' in command else 'false')), encoding='utf-8')
+                (binary / 'crt.json').write_text(authored.get('crt.json',
+                    '{"release":%s}' % ('true' if '-DPORT_RELEASE_CRT=ON' in command else 'false')), encoding='utf-8')
             if command[1] == '--build':
                 if not output.exists():
                     output.write_bytes(b'authored inert build output; never executed')
@@ -720,6 +728,18 @@ class ExecutionProfileTests(unittest.TestCase):
              patch.object(sys, 'argv', ['project.py', 'build', *options]), redirect_stdout(io.StringIO()):
             project.main()
         return commands, json.loads((self.exe.parent / 'build_identity.json').read_text())
+
+    def test_build_wrapper_records_build_levels(self):
+        _, record = self.build(['--optimize', '--optimize-native-game', '--release-crt'])
+        self.assertIs(record['native_game_optimization']['enabled'], True)
+        self.assertIs(record['release_crt'], True)
+
+    def test_build_wrapper_refuses_a_disagreeing_level_record(self):
+        self.level_records = {'native-game-optimization.json': '{"enabled":false}', 'crt.json': '{"release":false}'}
+        with self.assertRaisesRegex(SystemExit, 'did not match the requested mode'):
+            self.build(['--optimize', '--optimize-native-game'])
+        with self.assertRaisesRegex(SystemExit, 'did not match the requested mode'):
+            self.build(['--release-crt'])
 
     def test_build_wrapper_records_curated_default_and_capabilities(self):
         commands, record = self.build()

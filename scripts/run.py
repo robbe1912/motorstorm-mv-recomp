@@ -61,6 +61,7 @@ def main():
     ap.add_argument('--job-capture-execution-pc',type=lambda value:int(value,0),action='append',default=[],help='Retain execution events matching a raw source or target SPU PC; repeat up to 32 times')
     ap.add_argument('--native-pcm-cubic',choices=('0','shadow','1'),default='0',help='Explicit verified PCM DSP mode; requires matching native-enabled build')
     ap.add_argument('--native-particle-collisions',choices=('0','shadow','1'),default='0',help='Explicit particle-box collision mode; requires matching native-enabled build')
+    ap.add_argument('--native-particle-random',choices=('0','shadow','1'),default='0',help='Explicit particle random generator mode; requires matching native-enabled build')
     ap.add_argument('--native-particle-thresholds',choices=('0','shadow','1'),default='0',help='Explicit verified particle threshold scan mode; requires matching native-enabled build')
     ap.add_argument('--native-visibility',choices=('0','shadow','1'),default='0',help='Explicit verified visibility mode; requires matching native-enabled build')
     ap.add_argument('--native-visibility-batch',choices=('0','1'),default='0',help='Enable the debug-US native visibility batch trial')
@@ -167,6 +168,7 @@ def main():
         raise SystemExit('Replay startup differs from selected executable mode; select a menu-start profile or --original-intro')
     for selected,flag,description in ((args.native_pcm_cubic,'native_pcm_cubic','PCM DSP'),
                                      (args.native_particle_collisions,'native_particle_collisions','Particle-box collision batch'),
+                                     (args.native_particle_random,'native_particle_random','Particle random generator'),
                                      (args.native_particle_thresholds,'native_particle_thresholds','Particle threshold scan'),
                                      (args.native_visibility,'native_visibility','Visibility'),
                                      (args.native_visibility_batch,'native_visibility_batch','Visibility batch')):
@@ -208,6 +210,7 @@ def main():
     env['MS_NATIVE_PCM_CUBIC']=args.native_pcm_cubic
     env['MS_NATIVE_PARTICLE_THRESHOLDS']=args.native_particle_thresholds
     env['MS_NATIVE_PARTICLE_COLLISIONS']=args.native_particle_collisions
+    env['MS_NATIVE_PARTICLE_RANDOM']=args.native_particle_random
     env['MS_NATIVE_VISIBILITY']=args.native_visibility
     env['MS_NATIVE_VISIBILITY_BATCH']=args.native_visibility_batch
     env['MS_DEPTH_OBSERVER']='1' if args.depth_observer else '0'

@@ -645,6 +645,27 @@ separates stage evidence from the still-open 33 ms gameplay goal.
 
 `python scripts/check_particle_batches.py`.
 
+## Particle random generator (SPU image 213)
+
+The particle job of SPU image 213 (`jobmod_556b30b5e654_e12e20`) takes its
+random numbers from a table generator at local store `0x170D0` to `0x17258`:
+a linear step on four lanes, a table of 32 numbers and an index.
+[The kernel](../src/motorstorm/particle_random.c) computes one call of the
+generator in native C. The registers r2 to r11, the seed at `0x174A0` and the
+state at `0x17DD0` to `0x17E70` equal the values that the original
+instructions leave. [The adapter](../src/motorstorm/particle_random_adapter.cpp)
+registers one native leaf over the extent and acts at two entry addresses:
+`0x170D0` (run) and `0x17248` (init). `MS_NATIVE_PARTICLE_RANDOM` selects the
+mode: unset or `0` keeps the lifted code, `shadow` runs the original
+instructions and compares the whole local store with the native result, `1`
+uses the native result. The adapter keeps interpretation when the entry is not
+a call of the extent, when a resident code span crosses the extent, when a
+lock line or an event is pending, or when the FNV-1a hash of the extent bytes
+is not the hash of image 213. `python scripts/check_particle_random.py`
+replays 8 dumped jobs of a race: 3,252 native calls equal the lifted code and
+7 mutants are rejected. The dumps are private, so the check reads them from
+`temp/jobdump/particles213`. Measured gain in the game: open.
+
 ## PPU fast memory step 3: alias window and gate
 
 The lifted code reads guest memory through the accessors of

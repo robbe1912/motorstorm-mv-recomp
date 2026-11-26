@@ -118,6 +118,22 @@ function(motorstorm_configure_world_transforms target)
         endif()
     endif()
 
+    if(PORT_NATIVE_PARTICLE_RANDOM)
+        set(random_sources "${MOTORSTORM_NATIVE_SOURCE_DIR}/particle_random.c"
+            "${MOTORSTORM_NATIVE_SOURCE_DIR}/particle_random_adapter.cpp")
+        target_sources(${target} PRIVATE ${random_sources})
+        set_source_files_properties(${random_sources} PROPERTIES
+            INCLUDE_DIRECTORIES "${PS3RECOMP_DIR}/runtime/spu")
+        if(MSVC)
+            set_source_files_properties(${random_sources} PROPERTIES COMPILE_OPTIONS "/O2")
+            if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+                set_property(SOURCE ${random_sources} APPEND PROPERTY COMPILE_OPTIONS "/clang:-O2")
+            endif()
+        else()
+            set_source_files_properties(${random_sources} PROPERTIES COMPILE_OPTIONS "-O2")
+        endif()
+    endif()
+
     if(PORT_NATIVE_VISIBILITY_BATCH)
         set(batch_source "${MOTORSTORM_NATIVE_SOURCE_DIR}/visibility_batch.c")
         set(batch_adapter "${MOTORSTORM_NATIVE_SOURCE_DIR}/visibility_batch_adapter.cpp")

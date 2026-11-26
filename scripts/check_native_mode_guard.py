@@ -21,7 +21,7 @@ def main():
     body = next(n for n in ast.parse((root/'scripts/run.py').read_text()).body
                 if isinstance(n, ast.FunctionDef) and n.name == 'main').body
     flags = {'--native-pcm-cubic', '--native-visibility', '--native-visibility-batch',
-             '--native-particle-thresholds', '--native-particle-collisions'}
+             '--native-particle-thresholds', '--native-particle-collisions', '--native-particle-random'}
     init = next(n for n in body if isinstance(n, ast.Assign)
                 and isinstance(n.targets[0], ast.Name) and n.targets[0].id == 'ap')
     arguments = [n for n in body if isinstance(n, ast.Expr)
@@ -38,7 +38,7 @@ def main():
     environment = [n for n in body if isinstance(n, ast.Assign)
                    and ast.unparse(n.targets[0]) in
                    ('env', "env['MS_NATIVE_PCM_CUBIC']", "env['MS_NATIVE_PARTICLE_THRESHOLDS']", "env['MS_NATIVE_PARTICLE_COLLISIONS']", "env['MS_NATIVE_VISIBILITY']",
-                    "env['MS_NATIVE_VISIBILITY_BATCH']")]
+                    "env['MS_NATIVE_VISIBILITY_BATCH']", "env['MS_NATIVE_PARTICLE_RANDOM']")]
     assert len(environment) == len(flags) + 1
     depth_guard = next(n for n in body if isinstance(n, ast.If)
                        and ast.unparse(n.test) == 'args.depth_observer')
@@ -63,13 +63,14 @@ def main():
 
         def cases(selected_guard, selected_environment):
             nonlocal count
-            for pcm, visibility, batch, particle, collision in product(
-                    ('0', 'shadow', '1'), ('0', 'shadow', '1'), ('0', '1'), ('0', 'shadow', '1'), ('0', 'shadow', '1')):
-                for pcm_build, visibility_build, batch_build, particle_build, collision_build, stale in product((False, True), repeat=6):
+            for pcm, visibility, batch, particle, collision, random in product(
+                    ('0', 'shadow', '1'), ('0', 'shadow', '1'), ('0', '1'), ('0', 'shadow', '1'), ('0', 'shadow', '1'), ('0', 'shadow', '1')):
+                for pcm_build, visibility_build, batch_build, particle_build, collision_build, random_build, stale in product((False, True), repeat=7):
                     metadata = dict(native_pcm_cubic=pcm_build, native_visibility=visibility_build,
                                     native_visibility_batch=batch_build,
                                     native_particle_thresholds=particle_build,
                                     native_particle_collisions=collision_build,
+                                    native_particle_random=random_build,
                                     sha256='stale' if stale else digest)
                     (native/'build_identity.json').write_text(json.dumps(metadata))
                     ns = dict(argparse=argparse, __doc__=__doc__, ROOT=sandbox, exe=exe,
@@ -77,6 +78,7 @@ def main():
                               os=SimpleNamespace(environ={'MS_NATIVE_PCM_CUBIC':'1',
                                                          'MS_NATIVE_PARTICLE_THRESHOLDS':'1',
                                                          'MS_NATIVE_PARTICLE_COLLISIONS':'1',
+                                                         'MS_NATIVE_PARTICLE_RANDOM':'1',
                                                          'MS_NATIVE_VISIBILITY':'shadow',
                                                          'MS_NATIVE_VISIBILITY_BATCH':'1'}))
                     # run.py admits the selected executable's adjacent record
@@ -89,10 +91,12 @@ def main():
                         '--native-visibility-batch', batch,
                         '--native-particle-thresholds', particle,
                         '--native-particle-collisions', collision,
+                        '--native-particle-random', random,
                     ])
                     expected = all(mode == '0' or built and not stale for mode, built in (
                         (pcm, pcm_build), (visibility, visibility_build), (batch, batch_build),
                         (particle, particle_build), (collision, collision_build),
+                        (random, random_build),
                     ))
                     try:
                         execute([selected_guard, *selected_environment], ns)
@@ -100,13 +104,14 @@ def main():
                     except SystemExit as error:
                         assert 'matching --native-' in str(error)
                         admitted = False
-                    assert admitted == expected, (pcm, visibility, batch, particle, collision, metadata, admitted)
+                    assert admitted == expected, (pcm, visibility, batch, particle, collision, random, metadata, admitted)
                     if admitted:
                         assert ns['env']['MS_NATIVE_PCM_CUBIC'] == pcm
                         assert ns['env']['MS_NATIVE_PARTICLE_THRESHOLDS'] == particle
                         assert ns['env']['MS_NATIVE_PARTICLE_COLLISIONS'] == collision
                         assert ns['env']['MS_NATIVE_VISIBILITY'] == visibility
                         assert ns['env']['MS_NATIVE_VISIBILITY_BATCH'] == batch
+                        assert ns['env']['MS_NATIVE_PARTICLE_RANDOM'] == random
                     count += 1
             for flag in flags:
                 invalid_modes = ['2', 'yes', '-1']

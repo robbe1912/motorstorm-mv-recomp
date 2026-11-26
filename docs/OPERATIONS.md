@@ -803,6 +803,19 @@ Unsupported images, inputs, ownership or observation/budget boundaries retain
 interpretation. Count actual completed batches and contacts; shadow and stage
 timings do not establish frame-time acceptance. See [the operation contract](NATIVE_GAME.md#particle-box-collision-batch-337).
 
+Build with `--native-particle-random` and select
+`--native-particle-random 0|shadow|1`. The default `0` overrides inherited
+`MS_NATIVE_PARTICLE_RANDOM`; nonzero modes require the matching capability and
+executable identity. The port replaces the random generator of SPU job image
+213 (local store `0x170D0` to `0x17258`). Shadow runs the original
+instructions and compares the whole local store with the native result, then
+keeps the original result. Native writes the registers r2 to r11, the seed at
+`0x174A0` and the generator state at `0x17DD0` to `0x17E70`. An unknown image,
+an entry that is not a call, or a pending event keeps interpretation. A
+mismatch or an invalid mode writes `NATIVE_PARTICLE_RANDOM_ERROR` and ends the
+run. Count the `[native-particle-random]` lines; they do not establish
+frame-time acceptance.
+
 Build with `--native-particle-thresholds` and select
 `--native-particle-thresholds 0|shadow|1` during runs. The default `0`
 overrides inherited `MS_NATIVE_PARTICLE_THRESHOLDS`; shadow and native require
