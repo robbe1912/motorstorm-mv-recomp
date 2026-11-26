@@ -364,6 +364,50 @@ class MenuReplayTests(unittest.TestCase):
             self.assertEqual(calls, [0x4000, 0x40])
             self.assertEqual(result['optional_inputs'], [])
 
+    def test_optional_retry_waits_for_its_delay_after_the_last_input(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            frames = []
+            for n, left in enumerate((5, 25, 60)):
+                p = root / f'{n}.bmp'
+                synthetic_bmp(p, left)
+                frames.append(p)
+            def state(n, **kw):
+                return dict(reference=str(frames[n]), roi=[0, 0, 80, 40], label=f'state{n}', **kw)
+            retry = dict(state(1), mask=0x4000, polls=4, after_step=1, delay_s=25)
+            profile = dict(schema=1, elf_sha256='synthetic identity',
+                           steps=[state(0, mask=0x4000, polls=4)], optional_actions=[retry], target=state(2))
+            path = root / 'route.json'
+            path.write_text(json.dumps(profile))
+            calls = []
+            def acknowledged(run, reference, roi, mask, polls, label, **kwargs):
+                calls.append(label)
+                return dict(observed_frame=str(reference), acknowledged=True)
+            # The clock advances 10 seconds per read. The confirmation screen stays after the first send.
+            with patch('menu_replay.owned', return_value={'elf_sha256': 'synthetic identity'}), \
+                 patch('menu_replay.latest_frame', side_effect=[frames[0], frames[1], frames[1], frames[1], frames[1], frames[2]]), \
+                 patch('menu_replay.send', side_effect=acknowledged), \
+                 patch('menu_replay.time.monotonic', side_effect=itertools.count(0, 10)), patch('menu_replay.time.sleep'):
+                result = replay(root, path, timeout=1000)
+            self.assertEqual(calls, ['state0', 'state1'])
+            self.assertEqual(len(result['optional_inputs']), 1)
+            self.assertTrue(result['target_observed'])
+            # Without the delay the retry follows the first send at once.
+            calls.clear()
+            del profile['optional_actions'][0]['delay_s']
+            path.write_text(json.dumps(profile))
+            with patch('menu_replay.owned', return_value={'elf_sha256': 'synthetic identity'}), \
+                 patch('menu_replay.latest_frame', side_effect=[frames[0], frames[1], frames[2]]), \
+                 patch('menu_replay.send', side_effect=acknowledged), patch('menu_replay.time.sleep'):
+                result = replay(root, path, timeout=1000)
+            self.assertEqual(calls, ['state0', 'state1'])
+            for invalid in (True, '5', -1, 500, float('nan')):
+                with self.subTest(delay=invalid):
+                    profile['optional_actions'][0]['delay_s'] = invalid
+                    path.write_text(json.dumps(profile))
+                    with self.assertRaises(ValueError):
+                        load_profile(path)
+
     def test_historical_blind_six_press_recipe_is_rejected(self):
         # OPERATIONS' historical "7-press" recipe was actually six timed presses.
         with tempfile.TemporaryDirectory() as d:

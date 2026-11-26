@@ -219,7 +219,13 @@ screen-gated intro skips in `optional_actions`.
 Each uses the same observed reference/ROI/label/button/polls as a required step,
 plus `after_step` (the number of required steps already acknowledged). An action
 sends once when observed; an absent intro does not block the route. The target
-is checked first. Use `mode: "contrast"` for colored or fading intro captions:
+is checked first. An optional action can carry `delay_s` (0 to 120 seconds).
+The action then sends only when its screen still matches that long after the
+last acknowledged input. A route uses this for a confirmation that the game
+ignored: list the same gate again as an optional action with `after_step`
+equal to the number of required steps and `delay_s` 8. The target is checked
+first, so the retry stops when the next screen is there.
+Use `mode: "contrast"` for colored or fading intro captions:
 normalized grayscale correlation retains the 0.95 match threshold and rejects
 flat references/observations. For visibly verified fades, `reference_variants`
 lists additional private BMP paths using the same ROI/mode. They belong to the

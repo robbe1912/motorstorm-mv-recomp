@@ -50,6 +50,10 @@ def load_profile(path):
             not 1 <= step['stable_frames'] <= 4
         ):
             raise ValueError('Normal replay steps accept 1..4 stable_frames')
+        if len(p['steps']) <= n < len(states) - 1 and 'delay_s' in step and (
+                type(step['delay_s']) not in (int, float) or not math.isfinite(step['delay_s']) or
+                not 0 <= step['delay_s'] <= 120):
+            raise ValueError('Optional action delay_s must be a finite number of seconds in 0..120')
         if step.get('kind', 'reference') != 'reference':
             raise ValueError('Secondary luminance gates cannot drive buttons or replace targets')
         if not step.get('reference') or not step.get('label') or not isinstance(step.get('roi'), list) or len(step['roi']) != 4:
@@ -106,10 +110,14 @@ def replay(run, profile_path, timeout=480):
     last_step_frame = None
     matching_frames = 0
     optional_done = set()
+    last_input_at = None
     result = dict(profile=str(Path(profile_path).resolve()), target_observed=False,
                   graphics_correctness_verified=False, desktop_control=False, inputs=0, optional_inputs=[])
     try:
-        while time.monotonic() < deadline:
+        while True:
+            now = time.monotonic()
+            if now >= deadline:
+                break
             owned(run)
             if (run / 'stop.txt').exists():
                 raise RuntimeError('Owned stop requested before replay target')
@@ -122,10 +130,13 @@ def replay(run, profile_path, timeout=480):
                         return result
                     handled = False
                     for n, action in enumerate(profile.get('optional_actions', [])):
-                        if n not in optional_done and index >= action['after_step'] and matches(frame, action):
+                        delay = action.get('delay_s', 0)
+                        if n not in optional_done and index >= action['after_step'] and matches(frame, action) and \
+                                (not delay or (last_input_at is not None and now - last_input_at >= delay)):
                             reference = matching_reference(frame, action)
                             event = send(run, reference, action['roi'], action['mask'], action['polls'],
                                          action['label'], mode=action.get('mode', 'text'), expected_frame=frame)
+                            last_input_at = time.monotonic()
                             last_input_frame = Path(event['observed_frame'])
                             last_step_frame = None
                             matching_frames = 0
@@ -143,6 +154,7 @@ def replay(run, profile_path, timeout=480):
                         if matching_frames >= step.get('stable_frames', 1):
                             event = send(run, reference, step['roi'], step['mask'], step['polls'],
                                          step['label'], mode=step.get('mode', 'text'), expected_frame=frame)
+                            last_input_at = time.monotonic()
                             last_input_frame = Path(event['observed_frame'])
                             last_step_frame = None
                             matching_frames = 0
