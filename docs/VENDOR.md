@@ -105,6 +105,15 @@ primary address. A MIXED page keeps the route bits. The writer is
 `ppu_fm_window_end` after it. The second call sets the final form with one
 compare-and-swap loop and keeps the bits of the read sync.
 
+Both hooks are defined in `runtime/ppu/ppu_loader.cpp`. Six checks compile
+`spu_ea_alias.c` without that file: `check_spu_gate_diet.py`,
+`check_spu_native_owned.py`, `check_spu_pm_services.py`,
+`check_spurs_policy_counters.py`, `check_spurs_scheduler.py` and
+`check_memory_capacity.py`. They link `scripts/fixtures/ppu_fm_window_off.c`
+instead: the two empty functions of the production build without fastmem.
+These checks failed at the link from game commit `b9c5223` to `41e982ed14`.
+All six pass again on 2026-11-26.
+
 Checks on 2026-11-25:
 
 - `scripts/check_ppu_fastmem3.py`: PASS on the game tree and on the fork
