@@ -41,7 +41,7 @@ def main(argv=None) -> int:
     if args.build or not engine.exists():
         args.engines, args.force = 'check', ''
         k5_build.build(args)
-    ok = k5_build.binding(args)
+    ok = k5_build.binding_check(args)
     print('PVS_KERNEL_BINDING_CHECK', 'PASS' if ok else 'FAIL')
     return 0 if ok else 1
 
