@@ -64,6 +64,9 @@ def main():
     b.add_argument('--no-spu-simd',action='store_true',help='0 for the SPU_SIMD build switch: scalar bodies of rotqby, rotqbyi, cwd, cwx, fm, shufb and the local store quadword swap, for a comparison build (default: x86 SIMD forms)')
     b.add_argument('--no-spu-float-fast',action='store_true',help='0 for the SPU_FLOAT_FAST build switch: the float helpers fa, fs, fm, fma, fms and fnms keep the path before the fast forms inside a float scope, for a comparison build (default: x86 fast forms)')
     b.add_argument('--optimize-runtime',action='store_true',help='Use checked O2/automatic inlining for the whole ps3recomp runtime; requires --optimize')
+    b.add_argument('--optimize-native-game',action='store_true',help='Use checked O2/automatic inlining for the native game sources of src/motorstorm; requires --optimize')
+    b.add_argument('--release-crt',action='store_true',help='Link the release CRT in the Debug build (measurement build; default off)')
+    b.add_argument('--build-dir',type=Path,help='Build directory, absolute or relative to the project root (default build/native)')
     b.add_argument('--ps3recomp-dir',type=Path,help='Selected toolkit source (default: curated vendor runtime)')
     b.add_argument('--native-world-transforms',action=argparse.BooleanOptionalAction,default=True,
                    help='Bind verified native hierarchy work (default on; selected debug-US ELF only)')
@@ -93,6 +96,8 @@ def main():
         ap.error('--optimize-guest requires --optimize')
     if args.cmd=='build' and args.optimize_runtime and not args.optimize:
         ap.error('--optimize-runtime requires --optimize')
+    if args.cmd=='build' and args.optimize_native_game and not args.optimize:
+        ap.error('--optimize-native-game requires --optimize')
     if args.cmd=='setup':
         c={'elf':str(Path(args.elf).resolve()),'disc':str(Path(args.disc).resolve()),'ffmpeg':str(Path(args.ffmpeg).resolve()),'keys':str(Path(args.keys_dir).resolve()),'userdata':'game/userdata','generated':'build/generated/named'}
         for key in ('elf','disc','ffmpeg'):
@@ -137,7 +142,7 @@ def main():
         if os.name=='nt':
             # Required discipline before relinking. No matching process is harmless.
             subprocess.run(['taskkill','/F','/IM','ms1_recomp.exe'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        env=build_environment(); binary=ROOT/'build/native'
+        env=build_environment(); binary=ROOT/args.build_dir if args.build_dir else ROOT/'build/native'
         command=['cmake','-S',ROOT,'-B',binary,'-G','Ninja','-DCMAKE_BUILD_TYPE=Debug','-DPORT_CPP_NONLOCAL_JUMPS=ON',f'-DRECOMP_DIR={c["generated"]/"ppu"}',f'-DSPU_DIR={spu_tree}',f'-DPS3RECOMP_FFMPEG_ROOT={c["ffmpeg"]}',f'-DPORT_PRIVATE_KEYS_DIR={c.get("keys",ROOT/"game/private_keys")}']
         if 'MV_CLANG' in env: command.extend([f'-DCMAKE_C_COMPILER={env["MV_CLANG"]}',f'-DCMAKE_CXX_COMPILER={env["MV_CLANG"]}'])
         command.append(f'-DPS3RECOMP_DIR={source_root}')
@@ -157,6 +162,8 @@ def main():
         command.extend(f'-D{option}={"ON" if args.capture_jobs else "OFF"}' for option in capture_options)
         command.append('-DPORT_CAPTURE_ALLOW_UNLIFTED=OFF')
         command.append(f'-DPORT_OPTIMIZE_RUNTIME={"ON" if args.optimize_runtime else "OFF"}')
+        command.append(f'-DPORT_OPTIMIZE_NATIVE_GAME={"ON" if args.optimize_native_game else "OFF"}')
+        command.append(f'-DPORT_RELEASE_CRT={"ON" if args.release_crt else "OFF"}')
         command.extend([f'-DPORT_NATIVE_WORLD_TRANSFORMS={"ON" if args.native_world_transforms else "OFF"}',
                         f'-DPORT_NATIVE_JOB_WAIT={"ON" if args.native_job_wait else "OFF"}',
                         f'-DPORT_NATIVE_VISIBILITY={"ON" if args.native_visibility else "OFF"}',
@@ -210,6 +217,13 @@ def main():
         if identity['runtime_optimization']['enabled'] != args.optimize_runtime:
             raise SystemExit('Runtime build configuration did not match the requested mode')
         identity['runtime_optimization_helper_sha256']=hashlib.sha256((ROOT/'src/runtime_optimization.cmake').read_bytes()).hexdigest()
+        identity['native_game_optimization']=json.loads((binary/'native-game-optimization.json').read_text())
+        if identity['native_game_optimization']['enabled'] != args.optimize_native_game:
+            raise SystemExit('Native game build configuration did not match the requested mode')
+        identity['native_game_optimization_helper_sha256']=hashlib.sha256((ROOT/'src/native_game_optimization.cmake').read_bytes()).hexdigest()
+        identity['release_crt']=json.loads((binary/'crt.json').read_text())['release']
+        if identity['release_crt'] != args.release_crt:
+            raise SystemExit('CRT build configuration did not match the requested mode')
         if args.native_particle_thresholds:
             identity['native_particle_binding']=json.loads((binary/'native-particle-input/identity.json').read_text())
             identity['native_particle_binding_generator_sha256']=hashlib.sha256((ROOT/'scripts/native_particle_binding.py').read_bytes()).hexdigest()

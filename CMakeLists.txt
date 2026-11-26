@@ -39,6 +39,24 @@ endif()
 # src/guest_optimization.cmake.
 option(PORT_OPTIMIZE_GUEST "Use O2 and automatic inlining for the lifted guest units; requires PORT_OPTIMIZE_NATIVE" OFF)
 
+# O2 with automatic inlining for the authored native game sources (src/motorstorm)
+# of the game target. The guard and the flags are in
+# src/native_game_optimization.cmake.
+option(PORT_OPTIMIZE_NATIVE_GAME "Use checked O2 and automatic inlining for the native game sources of src/motorstorm; requires PORT_OPTIMIZE_NATIVE" OFF)
+
+# Measurement option: the release CRT (/MD) in the Debug build. The Debug CRT
+# adds heap checks and checked iterators to the host code. Assertions stay on:
+# nothing defines NDEBUG. Set the variable before the targets: each target reads
+# it when CMake generates its compile command. The build identity records it.
+option(PORT_RELEASE_CRT "Link the release CRT in the Debug build" OFF)
+if(PORT_RELEASE_CRT)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
+    set(port_release_crt true)
+else()
+    set(port_release_crt false)
+endif()
+file(WRITE "${CMAKE_BINARY_DIR}/crt.json" "{\"release\":${port_release_crt}}\n")
+
 # PPU fast memory step 3. 1, the default: the read accessors of
 # include/ps3emu/ppu_fastmem.h hold no label address, so Clang inlines them
 # into the lifted code, and the gate gives the alias answer of a page of the
@@ -281,6 +299,9 @@ if(PORT_ENABLE_JOB_CAPTURE)
 endif()
 
 motorstorm_configure_world_transforms(${PROJECT_NAME})
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/src/native_game_optimization.cmake")
+motorstorm_configure_native_game_optimization("${PROJECT_NAME}")
 
 # The lifted SPU sources use bare #include "spu_context.h". Scope that include
 # directory (and their flags) to those TUs alone: adding it to the whole target

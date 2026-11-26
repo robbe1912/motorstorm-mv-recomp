@@ -185,6 +185,31 @@ noise, so the option stays off. Build `021a9dcc` (runtime O2) against `f7d90152`
 against 133 to 136 ms. The boot run of `021a9dcc` is equal to the one of
 `f7d90152` (0 unresolved calls, 2 null reads).
 
+`--optimize-native-game` (with `--optimize`; CMake `PORT_OPTIMIZE_NATIVE_GAME`,
+default off) applies O2, plus `/Ob2` on clang-cl, to the authored sources of the
+game target under `src/motorstorm/` only. The runtime, the guest PPU/SPU units
+and the lifted sources keep their levels. `native_game_optimization` in build
+identity records the mode and the source count, and the helper hash is retained.
+`check_build_levels.py` checks the scope on a fixture with a subdirectory and
+rejects 7 mutants. Measured result (2026-11-26): no gain outside run noise, so
+the option stays off. The authored sources of that date are a small share of
+the frame. Build `dd5fd6f6` against `4089966d` (baseline), same tree, three
+interleaved race runs each, race time 25 to 105 s. Median 80.4, 91.4 and
+82.6 ms against 80.0, 84.4 and 98.7 ms; p95 105 to 132 ms against 105 to
+146 ms.
+
+`--release-crt` (CMake `PORT_RELEASE_CRT`, default off) builds the Debug
+configuration with the release CRT (`/MD`) in every target, also in the
+subdirectories of the toolkit. Assertions stay on: no `NDEBUG` is defined, and
+`/UNDEBUG` stays on the native sources. `release_crt` in build identity records
+the mode. A second build directory comes from `--build-dir` of
+`scripts/project.py`: absolute, or relative to the project root; the default
+is `build/native`. Measured result (2026-11-26): no gain outside run noise, so
+the option stays off. Build `170f1d44` (`build/native-rcrt`) against `4089966d`
+(baseline), three interleaved race runs each, race time 25 to 105 s. Median
+83.9, 83.7 and 86.7 ms against 80.0, 84.4 and 98.7 ms; p95 112 to 120 ms
+against 105 to 146 ms.
+
 The renderer option's first native evaluation changed exactly eight object commands, leaving 207
 others unchanged. With matching executable/PDB identity, normal gated PLAY
 reached original menu/bike assets and a race. Its unsuspended diagnostic window
