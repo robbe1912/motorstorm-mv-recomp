@@ -548,7 +548,7 @@ def audit(source, launcher, samplers):
         "float* vpx = (float*)(dst + RSX_MAX_VERTEX_CONSTANTS * 16);" in record_cb, \
         "vp_record_cb writes the vertex constants and the viewport epilogue of b0"
     b1 = function(source, "vp_record_fp_b1")
-    assert "if (n) memcpy(ks, blk.values, (size_t)n * 16u);" in b1 and \
+    assert "if (n) memcpy(ks, fpk.values, (size_t)n * 16u);" in b1 and \
         "u32 shader_n = n ? n : 1u;" in b1 and "memcpy(ks + shader_n * 4u, &ref, 4);" in b1, \
         "vp_record_fp_b1 writes n constants and the alpha reference of b1"
     samplers_helper = function(text, "phase_draw_samplers")
