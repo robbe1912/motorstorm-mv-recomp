@@ -3105,6 +3105,14 @@ The default is off. Nine line kinds are behind the gate: `[pm-fetch]`,
 lines, and `[WAIT] semaphore_wait`. Error lines, halt lines, `[pm-end]`
 lines and `[svc-fail]` lines do not use the gate.
 
+`SPU_NATIVE_OWNED_MISS_LOG=1` turns on the miss counter of
+`spu_native_owned.h`. While it is on, each host thread that runs owned SPU
+code writes one `[spu-miss]` line per second with a miss. The line holds
+the misses of that second by image id and by cause: `gate stop <reason>`
+for a stop of the gate, and `no lifted entry <pc>` for a target without a
+lifted function. The default is off. The path then has one predicted
+branch on the dispatch to the interpreter.
+
 `g_spu_ls_gate` holds the armed probes as bits: `SPU_LS_LOWREAD`,
 `SPU_SMC_WATCH`, `SPU_LANE_TRACE` and `SPU_LS_WATCH`. The accessors
 `spu_ls_read128` and `spu_ls_write128` test the gate with one load and one
