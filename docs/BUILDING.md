@@ -178,7 +178,12 @@ compilation, assertions, aliasing and floating-point contraction settings are
 unchanged. `runtime_optimization` in build identity records the mode, and the
 helper hash is retained. `check_runtime_optimization.py` checks the scope in
 Debug and RelWithDebInfo. It compiles only authored targets. It does not call
-the game build wrapper. Measured result: none. No run yet.
+the game build wrapper. Measured result (2026-11-26): no gain outside run
+noise, so the option stays off. Build `021a9dcc` (runtime O2) against `f7d90152`
+(runtime O1), same tree, three race runs each, race time 25 to 105 s. Median
+91.0, 85.5 and 85.6 ms against 87.5, 85.0 and 90.7 ms; p95 130 to 142 ms
+against 133 to 136 ms. The boot run of `021a9dcc` is equal to the one of
+`f7d90152` (0 unresolved calls, 2 null reads).
 
 The renderer option's first native evaluation changed exactly eight object commands, leaving 207
 others unchanged. With matching executable/PDB identity, normal gated PLAY
