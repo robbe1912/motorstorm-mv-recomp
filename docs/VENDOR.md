@@ -3285,7 +3285,11 @@ Measured result: none. No run yet.
 Fork branch `codex/spu-float-fast` (base `57f2e4f8` of `codex/spu-simd-helpers`),
 one commit per helper family: `100d3c8c` (`fa`, `fs`), `24a10038` (`fm`),
 `75d19cc7` (`fma`, `fms`, `fnms`), then `328ec93a` (inline FMA3, no input
-test).
+test). The game carries these four commits in this order: `b567a4a914`,
+`4705cebbd8`, `bacaed8389` and `8525086c8a`. `b567a4a914` also holds the
+build option, the oracle and this documentation. Fork commit `e0afc08e` gives
+`fnms` its own FMA3 function (`spu_sf_fast_fnma`). The game carries it in
+`<game commit>`; `temp/spufloat/carry_fnms/CARRY.txt` holds the hashes.
 
 `spu_fa`, `spu_fs`, `spu_fm`, `spu_fma`, `spu_fms` and `spu_fnms` have an x86
 fast form in `runtime/spu/spu_float_simd.h` and `runtime/spu/spu_helpers.h`.
@@ -3346,10 +3350,17 @@ of the same tree and with the exact-rational model of
 helper gets 1,048,576 random vectors with a fixed seed (1,114,112 for the
 fused family), each special value in each lane position, denormal inputs and
 results, signed zero, infinity, NaN with payload and sign, six changed MXCSR
-modes, calls outside a scope and a scope without FMA3. The vendor tree
-passes in four builds and the fork tree in four builds. The check rejects
-18 planted mutants per tree. `scripts/check_spu_float.py` passes with the
-same files.
+modes, calls outside a scope and a scope without FMA3. Measured on 2026-11-26
+(`temp/checks/spu-float-fast-1795653852845054600`): the four builds of the
+game tree pass, and the check rejects 21 planted mutants there. The four
+builds of the fork tree at `e0afc08e` pass. On that tree the check rejects 17
+mutants: five mutants changed one FMA3 function only, and `fnms` calls the
+second function there. These five mutants now change both functions. A run
+with these anchors is open. `scripts/check_spu_float.py` passed before
+`8525086c8a`: its six files are the files of `8525086c8a`, with
+`spu_float_simd.h` of `bacaed8389`
+(`temp/checks/spu-float-1795648822468345900`). It did not run with the files
+of `8525086c8a`.
 
 Measured result: none. No run yet.
 

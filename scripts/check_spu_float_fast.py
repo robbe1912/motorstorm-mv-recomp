@@ -14,9 +14,11 @@ field 255, one million random vectors per helper (fixed seed), inputs that need
 one rounding, six host modes changed from outside the scope, a scope without
 FMA3, and calls outside a scope. Rows from the exact-rational model
 (robbe_float_oracle.py) go through stdin.
-Each planted mutant changes one text of a private copy of the headers. The
-check needs a value mismatch, a host mismatch or a wrong path in a helper that
-the mutant names. Authored inputs only: no game input.
+Each planted mutant changes one text of a private copy of the headers. A
+mutant of the fused family changes the same text at each FMA3 function that
+the header has. The check needs a value mismatch, a host mismatch or a wrong
+path in a helper that the mutant names. Authored inputs only: no game input.
+--mutant runs named mutants only, with no build of the forms.
 """
 import argparse
 import hashlib
@@ -44,21 +46,34 @@ MIN_SLOW = 100000     # calls of each helper on the earlier path in the random g
 NO_FAST_GROUPS = ('mode-nearest-ftz-daz', 'mode-down-ftz-daz', 'mode-up-ftz-daz', 'mode-rtz-no-ftz',
                   'mode-rtz-ftz-no-daz', 'mode-nearest-no-ftz', 'outside-scope-spu-mode', 'outside-scope-nearest')
 PROBE_ADD = '0x42800001u, 0xc2800001u, 0x80800000u, 0x00000000u'
-# name, file, text before, text after, helpers that must show a mismatch, trees (None: both)
+# The operand list of the two FMA3 functions in spu_float_simd.h: the second line of each function.
+OPERANDS = '\n' + ' ' * 25 + ': [a] "+x"(a) : [b] "x"(b), [c] "x"(c), [z] "x"('
+# Form 1: (name, file, text before, text after, helpers that must show a mismatch, trees (None: both)).
+# Form 2: (name, file, [(text before, text after, mark), ...], helpers, trees). mark '' : the text must be
+# in the header one time. mark 'fnma': the same, in a header that has the function spu_sf_fast_fnma.
+# A header without that function has only spu_sf_fast_fma, and fnms uses it: there the first edit
+# covers fnms.
 MUTANTS = [
     ('mul-is-add', 'spu_float_simd.h', 'SPU_SF_FAST_OP(spu_sf_fast_mul, "mulps")',
      'SPU_SF_FAST_OP(spu_sf_fast_mul, "addps")', ('fm',), None),
     ('sub-is-add', 'spu_float_simd.h', 'SPU_SF_FAST_OP(spu_sf_fast_sub, "subps")',
      'SPU_SF_FAST_OP(spu_sf_fast_sub, "addps")', ('fs',), None),
-    # The binary forms use the SPU_SF_FAST_OP macro, the fused family uses spu_sf_fast_fma.
+    # The binary forms use the SPU_SF_FAST_OP macro. The fused family uses spu_sf_fast_fma. A header
+    # with the function spu_sf_fast_fnma (fork commit e0afc08e) has fnms call that function.
     ('binary-zero-fix-lost', 'spu_float_simd.h', r'instruction " %[b], %[a]\n\taddps %[z], %[a]"',
      r'instruction " %[b], %[a]"', BINARY, None),
-    ('fused-zero-fix-lost', 'spu_float_simd.h', r'"vfmadd213ps %[c], %[b], %[a]\n\taddps %[z], %[a]"',
-     r'"vfmadd213ps %[c], %[b], %[a]"', FUSED, None),
+    ('fused-zero-fix-lost', 'spu_float_simd.h',
+     [(r'"vfmadd213ps %[c], %[b], %[a]\n\taddps %[z], %[a]"', r'"vfmadd213ps %[c], %[b], %[a]"'),
+      (r'"vfnmadd213ps %[c], %[b], %[a]\n\taddps %[z], %[a]"', r'"vfnmadd213ps %[c], %[b], %[a]"', 'fnma')],
+     FUSED, None),
     ('binary-zero-fix-negative', 'spu_float_simd.h', '[b] "x"(b), [z] "x"(_mm_setzero_ps())',
      '[b] "x"(b), [z] "x"(_mm_set1_ps(-0.0f))', BINARY, None),
-    ('fused-zero-fix-negative', 'spu_float_simd.h', '[c] "x"(c), [z] "x"(_mm_setzero_ps())',
-     '[c] "x"(c), [z] "x"(_mm_set1_ps(-0.0f))', FUSED, None),
+    ('fused-zero-fix-negative', 'spu_float_simd.h',
+     [(r'"vfmadd213ps %[c], %[b], %[a]\n\taddps %[z], %[a]"' + OPERANDS + '_mm_setzero_ps())',
+       r'"vfmadd213ps %[c], %[b], %[a]\n\taddps %[z], %[a]"' + OPERANDS + '_mm_set1_ps(-0.0f))'),
+      (r'"vfnmadd213ps %[c], %[b], %[a]\n\taddps %[z], %[a]"' + OPERANDS + '_mm_setzero_ps())',
+       r'"vfnmadd213ps %[c], %[b], %[a]\n\taddps %[z], %[a]"' + OPERANDS + '_mm_set1_ps(-0.0f))', 'fnma')],
+     FUSED, None),
     ('ftz-test-lost', 'spu_float_simd.h', PROBE_ADD,
      '0x42800001u, 0xc2800001u, 0x00000000u, 0x00000000u', HELPERS, None),
     ('daz-test-lost', 'spu_float_simd.h',
@@ -71,12 +86,19 @@ MUTANTS = [
     ('fma-admission-lost', 'spu_float_simd.h', 'if (g_spu_sf_simd_scope != 2 || !spu_sf_probe()) return 0;',
      'if (!spu_sf_probe()) return 0;', FUSED, None),
     # The FMA3 instruction: replaced by two roundings, by another instruction, or with two operands exchanged.
-    ('fused-two-roundings', 'spu_float_simd.h', r'"vfmadd213ps %[c], %[b], %[a]\n\taddps %[z], %[a]"',
-     r'"mulps %[b], %[a]\n\taddps %[c], %[a]\n\taddps %[z], %[a]"', FUSED, None),
-    ('fused-is-add', 'spu_float_simd.h', r'"vfmadd213ps %[c], %[b], %[a]',
-     r'"addps %[c], %[a]', FUSED, None),
-    ('fma-operands-swapped', 'spu_float_simd.h', r'"vfmadd213ps %[c], %[b], %[a]',
-     r'"vfmadd213ps %[b], %[c], %[a]', FUSED, None),
+    # The fork at e0afc08e and the game tree after the carry of e0afc08e have two FMA3 functions, and fnms
+    # calls spu_sf_fast_fnma there. Each mutant changes both functions, so fnms changes in each form.
+    ('fused-two-roundings', 'spu_float_simd.h',
+     [(r'"vfmadd213ps %[c], %[b], %[a]\n\taddps %[z], %[a]"',
+       r'"mulps %[b], %[a]\n\taddps %[c], %[a]\n\taddps %[z], %[a]"'),
+      (r'"vfnmadd213ps %[c], %[b], %[a]\n\taddps %[z], %[a]"',
+       r'"vmulps %[b], %[a], %[a]\n\tvsubps %[a], %[c], %[a]\n\taddps %[z], %[a]"', 'fnma')], FUSED, None),
+    ('fused-is-add', 'spu_float_simd.h',
+     [(r'"vfmadd213ps %[c], %[b], %[a]', r'"addps %[c], %[a]'),
+      (r'"vfnmadd213ps %[c], %[b], %[a]', r'"addps %[c], %[a]', 'fnma')], FUSED, None),
+    ('fma-operands-swapped', 'spu_float_simd.h',
+     [(r'"vfmadd213ps %[c], %[b], %[a]', r'"vfmadd213ps %[b], %[c], %[a]'),
+      (r'"vfnmadd213ps %[c], %[b], %[a]', r'"vfnmadd213ps %[b], %[c], %[a]', 'fnma')], FUSED, None),
     # The result test sends every call to the earlier path whose host result has exponent field 254 or
     # 255. An input with exponent field 255 gives such a host result (infinity or NaN), so the test
     # also covers these inputs: the fast form has no separate input test.
@@ -160,11 +182,22 @@ def wrong_path(groups, helpers):
     return {op: sum(groups[key][c] for key in groups for c in ('value', 'hit', 'host') if key[1] == op) for op in helpers}
 
 
+def edits_of(entry):
+    """The edits of one mutant: (text before, text after, mark). The mark 'fnma' holds the edits of the
+    function spu_sf_fast_fnma. A header without that function has only spu_sf_fast_fma, and fnms
+    uses it: there the other edits cover fnms."""
+    if len(entry) == 5:
+        name, header, pairs, helpers, trees = entry
+        return name, header, [p if len(p) == 3 else (p[0], p[1], '') for p in pairs], helpers, trees
+    return entry[0], entry[1], [(entry[2], entry[3], '')], entry[4], entry[5]
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--fork', type=Path, help='Checkout of the fork to check next to the vendor tree')
     ap.add_argument('--vendor', type=Path, help='Another copy of the vendor tree, checked in place of vendor/ps3recomp')
     ap.add_argument('--compiler', help='clang-cl of the Visual Studio environment by default')
+    ap.add_argument('--mutant', help='Comma separated names: only these mutants, with no build of the forms')
     args = ap.parse_args()
     if os.name == 'nt' and not (os.environ.get('INCLUDE') and os.environ.get('LIB')):
         from project import build_environment
@@ -175,6 +208,9 @@ def main():
     out = ROOT / 'temp/checks' / ('spu-float-fast-' + str(time.time_ns()))
     out.mkdir(parents=True)
     records, failures, builds, mutants = [], [], [], []
+    only = set(args.mutant.split(',')) if args.mutant else None
+    if only and not only <= {entry[0] for entry in MUTANTS}:
+        ap.error('unknown mutant names: %s' % ' '.join(sorted(only - {entry[0] for entry in MUTANTS})))
     rows, expected, fast_rows = model_rows()
     payload = ''.join('%u %s\n' % (op, ' '.join('%08x' % lanes[lane][operand] for operand in range(3) for lane in range(4)))
                       for op, lanes in rows)
@@ -229,7 +265,7 @@ def main():
                       ([('fork', args.fork.resolve())] if args.fork else []):
         spu, inc = root / 'runtime/spu', root / 'include'
         float_obj = compile(kind + '-float', spu / 'spu_float_simd.c', [], False, '/O2', [spu, inc])
-        for variant, ssse3, opt, off in VARIANTS:
+        for variant, ssse3, opt, off in ([] if only else VARIANTS):
             name = '%s-%s' % (kind, variant)
             defines = ['SPU_SIMD=1'] * (kind == 'vendor') + ['SPU_FLOAT_FAST=0'] * off + ['SPU_FLOAT_FAST_TREE_FORK'] * (kind == 'fork')
             drv_obj = compile(name + '-driver', FIXTURE, defines, ssse3, opt, [root, inc, spu])
@@ -274,8 +310,11 @@ def main():
                 ' '.join('%s=%d/%d' % (op, g.get(('scope-held-random', op), {}).get('fast', -1),
                                        g.get(('scope-held-random', op), {}).get('calls', -1)) for op in HELPERS)), flush=True)
         # Mutants in the build with every form active. The float unit stays the same.
-        for index, (mutant, header, before, after, helpers, trees) in enumerate(MUTANTS):
+        for index, entry in enumerate(MUTANTS):
+            mutant, header, edits, helpers, trees = edits_of(entry)
             if trees and kind not in trees:
+                continue
+            if only and mutant not in only:
                 continue
             private = out / kind / ('%d-%s' % (index, mutant))
             (private / 'runtime/spu').mkdir(parents=True)
@@ -285,9 +324,13 @@ def main():
                     continue
                 text = path.read_text(encoding='utf8')
                 if h == header:
-                    if text.count(before) != 1:
-                        failures.append('%s: %s: %s holds the text %d times' % (kind, mutant, h, text.count(before)))
-                    text = text.replace(before, after)
+                    with_fnma = 'spu_sf_fast_fnma(__m128i a' in text
+                    live = [e for e in edits if e[2] != 'fnma' or with_fnma]
+                    for before, after, mark in live:
+                        if text.count(before) != 1:
+                            failures.append('%s: %s: %s holds the text %d times' % (kind, mutant, h, text.count(before)))
+                    for before, after, mark in live:
+                        text = text.replace(before, after)
                 (private / 'runtime/spu' / h).write_text(text, encoding='utf8')
             name = '%s-mutant-%s' % (kind, mutant)
             defines = ['SPU_SIMD=1'] * (kind == 'vendor') + ['SPU_FLOAT_FAST_TREE_FORK'] * (kind == 'fork')
@@ -295,7 +338,7 @@ def main():
             p = measure(name, link(name, [drv_obj, float_obj]), True)
             bad = wrong_path(p['groups'], helpers) if p else {op: 0 for op in helpers}
             rejected = bool(p) and p['code'] == 1 and p['result'] == 'FAIL' and all(bad.values())
-            mutants.append(dict(tree=kind, mutant=mutant, header=header, before=before, after=after, helpers=helpers,
+            mutants.append(dict(tree=kind, mutant=mutant, header=header, edits=edits, helpers=helpers,
                                 mismatches=bad, returncode=p['code'] if p else None, result=p['result'] if p else None, rejected=rejected))
             if not rejected:
                 failures.append('%s: mutant %s is not rejected: %s' % (kind, mutant, bad))
