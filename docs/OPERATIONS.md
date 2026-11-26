@@ -807,6 +807,12 @@ copies of the caller and aborts on
 then each 1024 runs) and the `fallbacks=` lines (first 16, then each 4096;
 `reason=` names the decline). Shadow and stage timings do not establish
 frame-time acceptance. See [the operation contract](NATIVE_GAME.md#particle-box-collision-batch-337).
+In race run `20261126T214201.306612Z` of 2026-11-26 (build `7a6af3d406deb5c2`,
+ports native) the entry completed 532,480 batches that held 60,941 particles
+in total, and the run ended with `fallbacks=135168`. The typed operation
+declines a batch with an unsupported number. [INFERENCE] The batches that
+hold particles are declined and run lifted, so the port has no gain in the
+game. This is a reading of the counters, not a traced fact.
 
 Build with `--native-particle-random` and select
 `--native-particle-random 0|shadow|1`. The default `0` overrides inherited
@@ -866,6 +872,9 @@ first native run and then each 1024 runs. An unsupported state prints
 `[native-visibility-batch] ORIGINAL fallback=N reason=<reason>` (the first 8,
 then each 4096) and runs the original. Shadow mode aborts on
 `NATIVE_VISIBILITY_BATCH_SHADOW_MISMATCH`.
+In the same race run the batch completed 145,408 native runs with
+`fallbacks=4684` (reason `flushing batch`), so 96.9 % of its calls ran the
+kernel.
 The same opt-in also clears the recognized job's workspace natively before
 its original constructors and input DMA. Set `MS_NATIVE_VISIBILITY_INITIALIZE=0`
 before launching to retain just that initialization loop for a comparison.
