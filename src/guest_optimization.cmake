@@ -9,6 +9,10 @@
 #     lifter means one.
 #   - /bigobj on MSVC. A single lifted file passes the 65,536-section limit of
 #     the default object format.
+#   - AVX2 and FMA. The fused VMX family of ppu_vmx.h calls fmaf. Without FMA
+#     in the unit, each call goes to the C runtime. With FMA, the compiler
+#     makes one vfmadd instruction. The global option turns contraction off,
+#     so an ordinary product and sum keeps its two roundings.
 #   - optimization. PORT_OPTIMIZE_NATIVE gives all native code checked O1 with
 #     no automatic inlining. PORT_OPTIMIZE_GUEST gives the lifted units O2 with
 #     automatic inlining instead. The memory helpers of ppu_fastmem.h carry an
@@ -28,18 +32,18 @@ function(motorstorm_guest_compile_options sources)
         if(PORT_OPTIMIZE_GUEST)
             # Later /clang:-O and /Ob arguments replace the O1 pair of the global options.
             set_source_files_properties(${sources} PROPERTIES
-                COMPILE_OPTIONS "/w;/bigobj;/clang:-O2;/Ob2")
+                COMPILE_OPTIONS "/w;/bigobj;/clang:-O2;/Ob2;/arch:AVX2")
         else()
             set_source_files_properties(${sources} PROPERTIES
-                COMPILE_OPTIONS "/w;/bigobj")
+                COMPILE_OPTIONS "/w;/bigobj;/arch:AVX2")
         endif()
     else()
         if(PORT_OPTIMIZE_GUEST)
             set_source_files_properties(${sources} PROPERTIES
-                COMPILE_OPTIONS "-w;-ffp-contract=off;-O2")
+                COMPILE_OPTIONS "-w;-ffp-contract=off;-O2;-mavx2;-mfma")
         else()
             set_source_files_properties(${sources} PROPERTIES
-                COMPILE_OPTIONS "-w;-ffp-contract=off")
+                COMPILE_OPTIONS "-w;-ffp-contract=off;-mavx2;-mfma")
         endif()
     endif()
 endfunction()

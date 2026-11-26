@@ -308,6 +308,27 @@ runs the oracle of the forms. It needs no game input.
 
 Measured result: none. No run yet.
 
+## PPU units with AVX2 and FMA
+
+The build compiles the lifted PPU units with AVX2 and FMA enabled:
+`/arch:AVX2` with clang-cl, `-mavx2 -mfma` with a GNU-style compiler
+(`src/guest_optimization.cmake`). AVX2 and FMA are host requirements from now
+on. `src/motorstorm/native_world.cmake` already compiles its native math
+sources with `/arch:AVX2`. The fused VMX family in
+`vendor/ps3recomp/runtime/ppu/ppu_vmx.h` calls `fmaf` once per lane. With FMA,
+the compiler makes one `vfmadd` instruction. Without FMA, each call goes to
+the C runtime. The global option `-ffp-contract=off` keeps an ordinary
+product and sum at two roundings, so only `fmaf` fuses.
+
+Measured result (exe `338a91753ec52a98`). The build also holds the regenerated
+PPU tree and the SPU float fast forms; the runs cannot separate the three
+changes. Thread profile, window 80 to 240 s, against exe `87f5f3c3ca97ca6e`
+(no AVX2): mean frame 105.3 against 124.9 ms, 1523 against 1283 frames, main
+thread 47.3 against 69.0 core ms per frame. In the diagnostic run of that
+earlier exe, `fmaf` was 22 percent of the run time of the main thread. Clean
+race runs (on-screen race time 25 to 105 s): medians 93.9, 94.7 and 89.6 ms
+against 91.3 to 94.0 ms. The race proper does not change.
+
 ## SPU float fast forms
 
 Inside a float scope, the helpers `fa`, `fs`, `fm`, `fma`, `fms` and `fnms`
@@ -329,4 +350,10 @@ instruction in inline assembly. A CPUID test admits it.
 `python scripts/quiet_run.py --timeout 900 -- python scripts/check_spu_float_fast.py`
 runs the oracle of the forms. It needs no game input.
 
-Measured result: none. No run yet.
+Measured result (exe `338a91753ec52a98`, with the regenerated PPU tree and the
+AVX2 units): one SPU lane uses 28.9 to 31.1 core ms per frame in the thread
+profile against 28.6 to 30.1 for exe `87f5f3c3ca97ca6e`. The clean race runs
+have medians of 89.6 to 94.7 ms against 91.3 to 94.0 ms. The race frame time
+and the lane CPU per frame show no measurable change. The full oracle of the
+fast forms passes on the game files (`temp/checks/spu-float-fast-1795654048182753800`:
+4 builds, 21 mutants rejected).
