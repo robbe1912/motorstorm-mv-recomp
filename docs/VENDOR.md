@@ -410,6 +410,26 @@ frames with a difference to a file. `RSX_DEFORM_DUMP_MIN=<k>` (0) limits
 the dump to frames with a largest difference of at least `k`. The run modes are in
 [operations](OPERATIONS.md).
 
+A read that finds the record of the surface in a change now waits for the
+end of the paint (game commit `f617fa9`, fork commit `ec41d295` on
+`codex/rsx-deform-sample-wait`). Before, the read returned 0 at once, and
+the native depth query read the GPU surface. One such read blocked the main
+thread for 80.8 ms (run D25: 26 of 111 race frames). The wait ends at the
+next even sequence. `RSX_DEFORM_SAMPLE_WAIT_S` (50 ms) bounds the wait. After
+the bound the read returns 0 as before. The wait calls `rsx_deform_yield()`
+(`SwitchToThread` on Windows). A `[DEFORM_SAMPLE] waits= timeouts=
+wait_us_max=` line prints on the first wait and on each 256th wait. Shadow
+mode keeps the old behavior. `scripts/check_deform_cpu_buffer.py` covers the
+wait (20 runtime, 7 query and 10 wiring mutants rejected).
+
+Measured result (2026-11-26): the gain is under measurement load. Run D25
+(before) had 453 reads of the GPU path in 81,274 samples. Run D26 (after,
+build `4089966d`) had 11 in 95,806, 257 waits, no timeout, longest wait
+1.1 ms. The clean runs show no gain in the median: 81.1, 81.1 and 81.9 ms
+against 76.3, 77.8 and 75.3 ms on `e789dafb` (race time 25 to 105 s; p95
+104 to 116 ms against 97 to 114 ms). The clean runs had 6 to 8 reads of the
+GPU path against 49 to 63 before. The medians of the day are 76 to 85 ms.
+
 The private copies start as the GPU bytes: a `[DEFORM_SHADOW] start` line
 marks the first batch end that finds the GPU surface, and each one after
 the backend created it again. That frame does not compare.
