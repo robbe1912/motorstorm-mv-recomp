@@ -21,7 +21,7 @@ def build_and_run(runtime, out, expected_failure=None):
     if (spu/'spu_float_simd.c').is_file():units.append('spu_float_simd')
     env={k:v for k,v in build_environment().items() if not k.startswith(('SPU_','SPURS_','YDKJ_','LBP_','GH3_'))}
     exe=out/('fixture.exe' if os.name=='nt' else 'fixture')
-    inputs=[fixture,ROOT/'scripts/fixtures/spurs_policy_counter_intercepts.c',*[spu/(u+'.c') for u in units],
+    inputs=[fixture,ROOT/'scripts/fixtures/spurs_policy_counter_intercepts.c',ROOT/'scripts/fixtures/ppu_fm_window_off.c',*[spu/(u+'.c') for u in units],
             *[runtime/'runtime'/p for p in ['platform/win32_compat.c','memory/guest_read_sync.c',
               'syscalls/spu_ea_alias.c','platform/thread_name.c','diag/loadtime_trace.c']]]
     includes=[runtime/'include',spu,runtime/'runtime/platform',runtime/'libs/spurs']

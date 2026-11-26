@@ -38,6 +38,7 @@ command = [args.compiler, str(fixture), str(ROOT/'scripts/fixtures/spurs_policy_
            str(root/'runtime/memory/guest_read_sync.c'),
            str(root/'runtime/platform/thread_name.c'),
            str(root/'runtime/syscalls/spu_ea_alias.c'),
+           str(ROOT/'scripts/fixtures/ppu_fm_window_off.c'),
            str(root/'runtime/diag/loadtime_trace.c'),
            str(root/'runtime/diag/spurs_scheduler_observer.c')]
 includes = [root/'include', root/'runtime/spu', root/'runtime/platform',root/'libs/spurs']

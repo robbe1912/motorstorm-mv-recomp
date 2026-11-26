@@ -73,7 +73,7 @@ def build(out, label, mutations=()):
     target.mkdir()
     header_text = lifted_header(target)
     shutil.copy(HANDOFF, target / HANDOFF.name)
-    sources = [FIXTURE, *[SPU / n for n in NAMES], *[SDK / p for p in EXTRA]]
+    sources = [FIXTURE, ROOT / 'scripts/fixtures/ppu_fm_window_off.c', *[SPU / n for n in NAMES], *[SDK / p for p in EXTRA]]
     header = (SPU / 'spu_native_owned.h').read_text(encoding='utf-8')
     if mutations:
         text = (SPU / 'spu_channels.c').read_text(encoding='utf-8')

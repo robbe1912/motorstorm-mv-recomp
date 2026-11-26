@@ -51,7 +51,7 @@ def build(source,label,historical=False,observed=False):
     identity=subprocess.run([compiler,'--version'],capture_output=True,text=True,timeout=10)
     assert identity.returncode==0,'compiler identification failed: '+identity.stderr
     clang='clang' in identity.stdout.lower()
-    sources=[fixture,*[spu/n for n in names],source/'runtime/platform/win32_compat.c',source/'runtime/memory/guest_read_sync.c',source/'runtime/diag/spu_execution_observer.c',source/'runtime/diag/loadtime_trace.c',source/'runtime/platform/thread_name.c',source/'runtime/syscalls/spu_ea_alias.c']
+    sources=[fixture,fixture.parent/'ppu_fm_window_off.c',*[spu/n for n in names],source/'runtime/platform/win32_compat.c',source/'runtime/memory/guest_read_sync.c',source/'runtime/diag/spu_execution_observer.c',source/'runtime/diag/loadtime_trace.c',source/'runtime/platform/thread_name.c',source/'runtime/syscalls/spu_ea_alias.c']
     if clang:sources.append(spu/'spu_dispatch_mt.c')
     includes=[target,source/'include',spu,source/'runtime/platform',sdk/'runtime/spu']
     binary=target/('test.exe' if os.name=='nt' else 'test')

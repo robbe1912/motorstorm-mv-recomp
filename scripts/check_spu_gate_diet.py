@@ -71,7 +71,7 @@ def build(source,label):
     (target/'spu_native_owned_call.h').write_text('#define OWNED_POLICY_CALL '+code+'\n#define OWNED_SUBJOB_TAIL '+tail+'\n')
     compiler=os.environ.get('MV_CLANG') or shutil.which('clang-cl')
     assert compiler,'clang-cl plus the Visual Studio developer environment is required'
-    sources=[fixture,*[spu/n for n in NAMES+['spu_dispatch_mt.c']],*[source/n for n in EXTRA]]
+    sources=[fixture,fixture.parent/'ppu_fm_window_off.c',*[spu/n for n in NAMES+['spu_dispatch_mt.c']],*[source/n for n in EXTRA]]
     includes=[target,source/'include',spu,source/'runtime/platform',sdk/'runtime/spu']
     binary=target/'test.exe'
     command=[compiler,'/nologo','/TC','/std:c17','/O1','/UNDEBUG','/MDd','/DOWNED_MAIN_NAME=gate_base_main',*['/I'+str(p) for p in includes],*map(str,sources),'/Fo'+str(target)+os.sep,'/Fe'+str(binary),'/link','Synchronization.lib']

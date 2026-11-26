@@ -14,7 +14,8 @@ def main():
     out = ROOT/'temp/checks'/datetime.datetime.now(datetime.timezone.utc).strftime('memory-%Y%m%dT%H%M%S.%fZ')
     out.mkdir(parents=True)
     runtime = ROOT/'vendor/ps3recomp/runtime/syscalls'
-    inputs = [ROOT/'src/memory_capacity_check.c', runtime/'sys_memory.c', runtime/'spu_ea_alias.c']
+    inputs = [ROOT/'src/memory_capacity_check.c', runtime/'sys_memory.c', runtime/'spu_ea_alias.c',
+              ROOT/'scripts/fixtures/ppu_fm_window_off.c']
     env = build_environment()
     exe = out/('capacity.exe' if os.name == 'nt' else 'capacity')
     if os.name == 'nt':
