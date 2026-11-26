@@ -3,6 +3,9 @@
 #include <cassert>
 
 SPU_THREAD_LOCAL uint32_t g_spu_interp_last_pc;
+extern "C" void game_original_visibility_batch(spu_context*) {}
+extern "C" int game_visibility_batch_code_matches(const spu_context*) { return 0; }
+int g_spu_ls_watch_n = -1;
 extern "C" int spu_native_leaf_register(const spu_native_leaf*) { return 0; }
 extern "C" int spu_native_leaf_register_unbudgeted(const spu_native_leaf*) { return 0; }
 extern "C" int motorstorm_us_visibility_nonflushing(const uint8_t*, unsigned) { return 0; }

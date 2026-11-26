@@ -231,7 +231,7 @@ def main():
         if args.native_particle_thresholds:
             identity['native_particle_binding']=json.loads((binary/'native-particle-input/identity.json').read_text())
             identity['native_particle_binding_generator_sha256']=hashlib.sha256((ROOT/'scripts/native_particle_binding.py').read_bytes()).hexdigest()
-        if menu_boot or havok_threads or args.native_world_transforms or args.native_job_wait or args.native_visibility or args.native_pcm_cubic or args.depth_observer or args.capture_jobs:
+        if menu_boot or havok_threads or args.native_world_transforms or args.native_job_wait or args.native_visibility or args.native_pcm_cubic or args.native_particle_random or args.native_particle_collisions or args.native_visibility_batch or args.depth_observer or args.capture_jobs:
             identity['native_world_binding']=json.loads((binary/'native-world-binding.json').read_text())
             identity['native_world_sources_sha256']={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in sorted((ROOT/'src/motorstorm').glob('*')) if p.is_file()}

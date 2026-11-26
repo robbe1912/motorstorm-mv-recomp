@@ -52,7 +52,9 @@ def build():
     exe = OUTPUT / ('replay.exe' if windows else 'replay')
     source = ROOT / 'src/motorstorm'
     engine = ROOT / 'scripts/fixtures/particle_random_replay.c'
-    sources = [engine, source / 'particle_random.c', source / 'particle_random_adapter.cpp']
+# The engine handles the generator itself. The adapter binds lifted function symbols that this
+# engine does not compile; scripts/check_particle_bound_entries.py covers it.
+    sources = [engine, source / 'particle_random.c']
     sources += [SPU / name for name in NAMES if name != 'spu_interp.c']
     sources += [SDK / name for name in EXTRA if name != 'runtime/syscalls/spu_ea_alias.c']
     sources.append(SPU / 'spu_dispatch_mt.c')
@@ -63,7 +65,6 @@ def build():
     groups = [
         ('engine', '/TC' if windows else '-x', 'c', ['/O1'], [engine] + sources[3:], '/std:c17' if windows else '-std=gnu17'),
         ('kernel', '/TC' if windows else '-x', 'c', ['/O2', '/fp:strict'], [sources[1]], '/std:c17' if windows else '-std=gnu17'),
-        ('adapter', '/TP' if windows else '-x', 'c++', ['/O2'], [sources[2]], '/std:c++17' if windows else '-std=c++17'),
     ]
     for name, flag, language, optimize, files, std in groups:
         if windows:

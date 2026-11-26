@@ -794,27 +794,36 @@ The restored native visibility operation uses explicit `--native-visibility 0|sh
 
 Build with `--native-particle-collisions` and select
 `--native-particle-collisions 0|shadow|1`. The default `0` overrides inherited
-`MS_NATIVE_PARTICLE_COLLISIONS`; nonzero modes require matching capability
-and executable identity. Shadow compares the complete local-store result
-against the original collision loop and retains original execution. Native
-uses the standalone typed particle-box operation and preserves the original
-transform preparation, DMA, epilogue, queue publication and marker commit.
-Unsupported images, inputs, ownership or observation/budget boundaries retain
-interpretation. Count actual completed batches and contacts; shadow and stage
-timings do not establish frame-time acceptance. See [the operation contract](NATIVE_GAME.md#particle-box-collision-batch-337).
+`MS_NATIVE_PARTICLE_COLLISIONS`; nonzero modes require the matching capability
+and executable identity. The build binds the lifted loop function `0xA87C`
+of SPU image 213. A wrapper of the adapter entry takes its symbol. The entry
+runs the standalone typed particle-box operation at the first entry of the
+loop and keeps the lifted preparation, epilogue, DMA, queue publication and
+marker commit. Mode 0, a loop re-entry and each unsupported state run the
+renamed lifted function. Shadow runs the lifted loop and the kernel on two
+copies of the caller and aborts on
+`NATIVE_PARTICLE_COLLISION_SHADOW_MISMATCH`. Count the
+`[native-particle-collision] mode=` line, the `completed=` lines (first run,
+then each 1024 runs) and the `fallbacks=` lines (first 16, then each 4096;
+`reason=` names the decline). Shadow and stage timings do not establish
+frame-time acceptance. See [the operation contract](NATIVE_GAME.md#particle-box-collision-batch-337).
 
 Build with `--native-particle-random` and select
 `--native-particle-random 0|shadow|1`. The default `0` overrides inherited
 `MS_NATIVE_PARTICLE_RANDOM`; nonzero modes require the matching capability and
-executable identity. The port replaces the random generator of SPU job image
-213 (local store `0x170D0` to `0x17258`). Shadow runs the original
-instructions and compares the whole local store with the native result, then
-keeps the original result. Native writes the registers r2 to r11, the seed at
-`0x174A0` and the generator state at `0x17DD0` to `0x17E70`. An unknown image,
-an entry that is not a call, or a pending event keeps interpretation. A
-mismatch or an invalid mode writes `NATIVE_PARTICLE_RANDOM_ERROR` and ends the
-run. Count the `[native-particle-random]` lines; they do not establish
-frame-time acceptance.
+executable identity. The build binds the lifted functions `0x170D0` (run) and
+`0x17248` (init) of the random generator of SPU job image 213 (local store
+`0x170D0` to `0x17258`). Wrappers of the adapter entries take their symbols.
+Native writes the registers r2 to r11, the seed at `0x174A0` and the generator
+state at `0x17DD0` to `0x17E70`, then returns to r0. Mode 0 and each
+unsupported state run the renamed lifted function. Shadow runs the lifted
+function and the kernel on two copies of the caller, compares the whole local
+store and all registers, and keeps the original result. A difference aborts
+on `NATIVE_PARTICLE_RANDOM_SHADOW_MISMATCH`; an invalid mode aborts on
+`NATIVE_PARTICLE_ERROR`. Count the `[native-particle-random] mode=` line, the
+`calls=` lines (first call, then each 4096 calls) and the `fallbacks=` lines
+(first decline, then each 4096 declines; `reason=` names the decline). These
+lines do not establish frame-time acceptance.
 
 Build with `--native-particle-thresholds` and select
 `--native-particle-thresholds 0|shadow|1` during runs. The default `0`
@@ -833,6 +842,12 @@ Use `--native-visibility-batch 0` for a reference run with the same executable.
 The batch runs after input DMA for a recognized image and caller. It leaves
 the original epilogue and completion in place. A batch that may reach a
 16 KiB output PUT uses the original interpreter path.
+The batch build binds the lifted function `0x88F8` of SPU image 210. Mode 1
+prints `[native-visibility-batch] completed=N compared=0 fallbacks=0` at the
+first native run and then each 1024 runs. An unsupported state prints
+`[native-visibility-batch] ORIGINAL fallback=N reason=<reason>` (the first 8,
+then each 4096) and runs the original. Shadow mode aborts on
+`NATIVE_VISIBILITY_BATCH_SHADOW_MISMATCH`.
 The same opt-in also clears the recognized job's workspace natively before
 its original constructors and input DMA. Set `MS_NATIVE_VISIBILITY_INITIALIZE=0`
 before launching to retain just that initialization loop for a comparison.

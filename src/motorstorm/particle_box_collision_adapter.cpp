@@ -1,16 +1,27 @@
+// Bound entry of the particle box collision batch of SPU image 213 (jobmod_556b30b5e654_e12e20).
+// The lifted function 0xA700 saves its frame, prepares the box registers and transfers to the
+// loop function 0xA87C with r85 = 0 (the record index). scripts/native_game_binding.py renames
+// the lifted loop function to game_original_particle_collision_loop and defines its symbol as
+// a wrapper of the entry here. The entry runs the whole batch at the first entry (r85 == 0)
+// and calls the lifted epilogue 0xABEC, which restores the frame and returns to r0.
+// A loop re-entry (r85 != 0), mode 0 and every unsupported state call the renamed original.
+#include "particle_bind.h"
 #include "particle_box_collision.h"
-#include "spu_interp.h"
 #include "spu_jobmod_identity.h"
-#include "spu_native_leaf.h"
-#include <atomic>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
+
+extern "C" {
+void game_original_particle_collision_loop(spu_context*);         // lifted 0xA87C
+void jobmod_556b30b5e654_e12e20_spu_func_0000ABEC(spu_context*);  // lifted epilogue
+int game_particle_collision_code_matches(const spu_context*);
+void motorstorm_particle_collision_batch(spu_context* ctx);
+void motorstorm_particle_collision_counts(MotorstormParticleBindCounts* out);
+}
 
 namespace {
-constexpr uint32_t entry = 0xa87c, epilogue = 0xabec, module_end = 0x174f0;
-enum class Mode { reference, shadow, native };
-Mode mode = Mode::reference;
+using namespace motorstorm_particle_bind;
+constexpr uint32_t epilogue = 0xabec, module_end = 0x174f0;
+constexpr const char* OPTION = "MS_NATIVE_PARTICLE_COLLISIONS";
+std::atomic<unsigned long long> calls{0}, compared{0}, fallbacks{0}, particles{0}, contacts{0};
 
 struct Range { uint32_t begin, size; };
 bool valid(Range range) {
@@ -28,34 +39,18 @@ MotorstormCollisionVector load_vector(const uint8_t* ls, uint32_t address) {
     for (unsigned i = 0; i < 4; ++i) result.component[i] = stage_be32(ls + address + i * 4);
     return result;
 }
-bool recognized_image(const uint8_t* ls) {
-    if (stage_be32(ls + 0x1330) != 0x4000 || stage_be32(ls + 0x4010) != 0x12e20)
-        return false;
-    // The original job updates three bookkeeping quadwords. Qualify every
-    // other module word on every batch; no cached identity survives LS reuse.
-    constexpr uint32_t ranges[][2] = {{0x4000, 0x174a0}, {0x174b0, 0x174d0}};
-    uint64_t fingerprint = UINT64_C(1469598103934665603);
-    for (const auto& range : ranges)
-        for (uint32_t address = range[0]; address < range[1]; address += 8) {
-            uint64_t word;
-            std::memcpy(&word, ls + address, sizeof(word));
-            fingerprint = (fingerprint ^ word) * UINT64_C(1099511628211);
-        }
-    return fingerprint == UINT64_C(0x7b8e3b18781120ef);
-}
 
-struct Pending {
-    const spu_context* owner = nullptr;
+struct Batch {
     MotorstormCollisionParticle particles[MOTORSTORM_COLLISION_PARTICLES];
     MotorstormCollisionBox box;
     MotorstormCollisionResult result;
     uint32_t header, shape, records, count, stack, event_header, events, used, capacity;
     bool remove_hits;
 };
-thread_local Pending pending;
-thread_local uint8_t shadow_ls[0x40000];
+thread_local Batch pending;
 
-bool load_inputs(const spu_context* ctx, Pending& out) {
+// Reads one batch. Returns null, or the reason why the lifted loop must run.
+const char* load_inputs(const spu_context* ctx, Batch& out) {
     const auto* ls = ctx->ls;
     const uint32_t header = spu_preferred_u32(&ctx->gpr[81]);
     const uint32_t shape = spu_preferred_u32(&ctx->gpr[82]);
@@ -68,19 +63,19 @@ bool load_inputs(const spu_context* ctx, Pending& out) {
         spu_preferred_u32(&ctx->gpr[80]) != (count - 1) * 128 ||
         stage_be32(ls + header + 8) != count ||
         stage_be32(ls + header + 12) < count ||
-        stage_be32(ls + stack + 416) != 0x12188) return false;
+        stage_be32(ls + stack + 416) != 0x12188) return "frame or count";
     const uint32_t records = stage_be32(ls + header + 4), event_header = header + 684;
     const uint32_t used = stage_be32(ls + event_header);
     const uint32_t capacity = stage_be32(ls + event_header + 4);
     const uint32_t events = stage_be32(ls + event_header + 8);
     if ((records & 15) || (events & 15) || used > capacity || capacity > 0x4000 ||
         !valid({records, count * 128}) || (capacity && !valid({events, capacity * 16})))
-        return false;
+        return "record list or event list";
     const Range ranges[] = {{header, 1784}, {shape, 128}, {stack, 432},
                             {records, count * 128}, {events, capacity * 16}};
     for (unsigned i = 0; i < 5; ++i)
         for (unsigned j = 0; j < i; ++j)
-            if (overlaps(ranges[i], ranges[j])) return false;
+            if (overlaps(ranges[i], ranges[j])) return "overlapping ranges";
 
     out.header = header; out.shape = shape; out.stack = stack; out.count = count;
     out.records = records; out.event_header = event_header; out.events = events;
@@ -97,10 +92,11 @@ bool load_inputs(const spu_context* ctx, Pending& out) {
         out.particles[i] = {load_vector(ls, record), load_vector(ls, record + 48),
                             stage_be32(ls + record + 100)};
     }
-    return motorstorm_particle_box_contacts(out.particles, count, &out.box, &out.result) != 0;
+    if (motorstorm_particle_box_contacts(out.particles, count, &out.box, &out.result)) return nullptr;
+    return "kernel declined";
 }
 
-void publish(uint8_t* ls, const Pending& batch) {
+void publish(uint8_t* ls, const Batch& batch) {
     uint32_t used = batch.used, remaining = batch.count;
     // The original visits records backwards. A full contact list suppresses
     // only the append, not optional removal or its temporary payload write.
@@ -121,68 +117,80 @@ void publish(uint8_t* ls, const Pending& batch) {
     }
 }
 
-[[noreturn]] void fail(const char* message) {
-    std::fprintf(stderr, "NATIVE_PARTICLE_COLLISION_ERROR %s\n", message);
+// One call of the lifted loop: the stores of the batch, then the lifted epilogue, which
+// restores r80 to r101, r1 and r0 from the frame and returns. The lifted loop ends with
+// r85 = count and r80 = -128 in each lane.
+void native_step(spu_context* ctx) {
+    publish(ctx->ls, pending);
+    ctx->gpr[85] = spu_splat_u32(pending.count);
+    ctx->gpr[80] = spu_splat_u32(0xffffff80u);
+    jobmod_556b30b5e654_e12e20_spu_func_0000ABEC(ctx);
+}
+
+// The kernel runs on one copy of the caller, the lifted loop on another copy. The local store,
+// the link register, the stack pointer and r80 to r127 must be equal. The lifted function does
+// not save r2 to r79: its caller writes each of them before it reads it. A difference stops
+// the process.
+bool compare(spu_context* ctx) {
+    Copies& pair = copies();
+    if (!snapshot(ctx, pair)) return false;
+    const uint32_t ret = ctx->gpr[0]._u32[0];
+    native_step(&pair.candidate);
+    if (!run_lifted(&pair.reference, game_original_particle_collision_loop, ret)) return false;
+    same_bytes("COLLISION", pair.reference.ls, pair.candidate.ls, sizeof ctx->ls_store, 0);
+    for (unsigned r = 0; r < 2; ++r)
+        for (unsigned lane = 0; lane < 4; ++lane)
+            same_word("COLLISION", r, lane, pair.reference.gpr[r]._u32[lane], pair.candidate.gpr[r]._u32[lane]);
+    for (unsigned r = 80; r < 128; ++r)
+        for (unsigned lane = 0; lane < 4; ++lane)
+            same_word("COLLISION", r, lane, pair.reference.gpr[r]._u32[lane], pair.candidate.gpr[r]._u32[lane]);
+    if (pair.reference.pc != pair.candidate.pc)
+        mismatch("COLLISION", "pc", 0, pair.reference.pc, pair.candidate.pc);
+    ++compared;
+    return true;
+}
+}  // namespace
+
+extern "C" void motorstorm_particle_collision_batch(spu_context* ctx) try {
+    const Config& config = motorstorm_particle_bind::config(OPTION);
+    if (config.mode == Mode::reference) { game_original_particle_collision_loop(ctx); return; }
+    // r85 is the record index. It is 0 only when the lifted prologue enters the loop.
+    const char* reason = spu_preferred_u32(&ctx->gpr[85]) ? "loop re-entry" :
+        admission(config, ctx, game_particle_collision_code_matches);
+    if (!reason) reason = load_inputs(ctx, pending);
+    if (!reason && config.mode == Mode::shadow && !compare(ctx)) reason = "shadow state changed";
+    if (reason) {
+        const auto count = ++fallbacks;
+        if (count <= 16 || count % 4096 == 0)
+            std::fprintf(stderr, "[native-particle-collision] fallbacks=%llu reason=%s\n",
+                         static_cast<unsigned long long>(count), reason);
+        game_original_particle_collision_loop(ctx);
+        return;
+    }
+    // Shadow comparisons use private copies. The live caller keeps the state of the original.
+    if (config.mode == Mode::shadow) game_original_particle_collision_loop(ctx);
+    else native_step(ctx);
+    const auto count = ++calls;
+    if (count == 1 || count % 1024 == 0)
+        std::fprintf(stderr, "[native-particle-collision] completed=%llu compared=%llu particles=%llu contacts=%llu\n",
+            static_cast<unsigned long long>(count),
+            static_cast<unsigned long long>(config.mode == Mode::shadow ? count : compared.load()),
+            static_cast<unsigned long long>(particles.fetch_add(pending.count) + pending.count),
+            static_cast<unsigned long long>(contacts.fetch_add(pending.result.contacts) + pending.result.contacts));
+} catch (...) {
+    std::fputs("NATIVE_PARTICLE_COLLISION_ERROR exception in the native entry\n", stderr);
     std::abort();
 }
-void execute(spu_context* ctx, const spu_native_leaf_plan* plan) {
-    if (plan->cookie != &pending || pending.owner != ctx) fail("plan ownership");
-    if (mode == Mode::shadow) {
-        std::memcpy(shadow_ls, ctx->ls, sizeof(shadow_ls));
-        publish(shadow_ls, pending);
-        spu_interp_run_until(ctx, entry, epilogue);
-        if (ctx->pc != epilogue || std::memcmp(shadow_ls, ctx->ls, sizeof(shadow_ls)))
-            fail("original LS comparison");
-    } else {
-        publish(ctx->ls, pending);
-        // The original epilogue restores the caller's saved registers/link.
-        // No volatile result from this void operator is live at its caller.
-        ctx->pc = epilogue;
-        if (ctx->policy_mode)
-            ctx->wi_prev_pc = pending.remove_hits && pending.result.hit[0] ? 0xabe8 : 0xa878;
-    }
-    pending.owner = nullptr;
-    static std::atomic<uint64_t> completed{0}, particles{0}, contacts{0};
-    const auto batches = completed.fetch_add(1, std::memory_order_relaxed) + 1;
-    const auto tested = particles.fetch_add(pending.count, std::memory_order_relaxed) + pending.count;
-    const auto hits = contacts.fetch_add(pending.result.contacts, std::memory_order_relaxed) + pending.result.contacts;
-    if (batches == 1 || batches % 1024 == 0)
-        std::fprintf(stderr, "[native-particle-collision] completed=%llu compared=%llu particles=%llu contacts=%llu\n",
-            static_cast<unsigned long long>(batches),
-            static_cast<unsigned long long>(mode == Mode::shadow ? batches : 0),
-            static_cast<unsigned long long>(tested), static_cast<unsigned long long>(hits));
+extern "C" void motorstorm_particle_collision_counts(MotorstormParticleBindCounts* out) {
+    out->native_calls = calls.load();
+    out->compared = compared.load();
+    out->fallbacks = fallbacks.load();
 }
-
-int prepare(const spu_context* ctx, uint64_t, spu_native_leaf_plan* plan) {
-    pending.owner = nullptr;
-    if (mode == Mode::reference || !ctx->policy_mode || ctx->ls != ctx->ls_store ||
-        ctx->pc != entry || ctx->status != SPU_STATUS_RUNNING || ctx->list_stall_mask ||
-        g_spu_interp_last_pc != 0xa868 || !ctx->int_enable || (ctx->event_mask & ~2u) ||
-        (__atomic_load_n(&ctx->event_status, __ATOMIC_ACQUIRE) & ctx->event_mask) ||
-        ctx->irq_saved || __atomic_load_n(&ctx->resv_valid, __ATOMIC_ACQUIRE) ||
-        !recognized_image(ctx->ls) || !load_inputs(ctx, pending)) return 0;
-    for (const auto& span : ctx->resident_code) if (span.size) {
-        const uint64_t end = uint64_t(span.lsa) + span.size;
-        if ((span.lsa > entry && span.lsa < epilogue) || (end > entry && end < epilogue))
-            return 0;
+namespace {
+struct Startup {
+    Startup() {
+        const Config& config = motorstorm_particle_bind::config(OPTION);
+        std::fprintf(stderr, "[native-particle-collision] mode=%s\n", config.text ? config.text : "0");
     }
-    if ((ctx->wi_span_lo > entry && ctx->wi_span_lo < epilogue) ||
-        (ctx->wi_span_hi > entry && ctx->wi_span_hi < epilogue)) return 0;
-    pending.owner = ctx;
-    *plan = {0, epilogue, 0, execute, &pending};
-    return 1;
-}
-
-struct Register {
-    Register() {
-        const char* value = std::getenv("MS_NATIVE_PARTICLE_COLLISIONS");
-        if (!value || !std::strcmp(value, "0")) return;
-        if (!std::strcmp(value, "shadow")) mode = Mode::shadow;
-        else if (!std::strcmp(value, "1")) mode = Mode::native;
-        else fail("invalid mode");
-        const spu_native_leaf leaf{entry, epilogue, prepare};
-        if (spu_native_leaf_register_unbudgeted(&leaf)) fail("registration");
-        std::fprintf(stderr, "[native-particle-collision] mode=%s\n", value);
-    }
-} register_collision;
-}
+} startup;
+}  // namespace

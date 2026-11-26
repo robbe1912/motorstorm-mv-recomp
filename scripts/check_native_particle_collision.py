@@ -29,9 +29,15 @@ def main():
         fixture = root / 'scripts/fixtures' / (name + ('.cpp' if cpp else '.c'))
         executable = output / (name + ('.exe' if windows else ''))
         if windows:
-            options = ['/nologo', '/std:c++17' if cpp else '/std:c17', '/O2', '/UNDEBUG', '/Fe' + str(executable), str(fixture), '/link', *objects]
+            # The bound adapter uses try and catch for the shadow comparison, as the game build does (/EHsc).
+            # The adapter fixture replaces the environment and switches the mode while it runs.
+            adapter = ['-EHsc', '-DMOTORSTORM_PARTICLE_FIXTURE'] if cpp else []
+            options = ['/nologo', '/std:c++17' if cpp else '/std:c17', '/O2', '/UNDEBUG', *adapter,
+                       '/Fe' + str(executable), str(fixture), '/link', *objects]
         else:
-            options = ['-std=c++17' if cpp else '-std=gnu17', '-O2', '-UNDEBUG', '-o', str(executable), str(fixture), *objects, '-lm']
+            adapter = ['-DMOTORSTORM_PARTICLE_FIXTURE'] if cpp else []
+            options = ['-std=c++17' if cpp else '-std=gnu17', '-O2', '/UNDEBUG', *adapter, '-o', str(executable),
+                       str(fixture), *objects, '-lm']
         with (output / (name + '.log')).open('w', encoding='utf-8') as log:
             subprocess.run([compiler, *includes, *options], cwd=output, stdout=log, stderr=subprocess.STDOUT, check=True)
         subprocess.run([str(executable)], cwd=output, check=True)

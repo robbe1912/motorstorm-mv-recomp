@@ -623,24 +623,33 @@ restored. The arithmetic retains the original estimates, fused order, slab
 predicates and payload formula rather than substituting ideal ray-hit math.
 
 [The adapter](../src/motorstorm/particle_box_collision_adapter.cpp) recognizes
-the original debug-US module on each invocation, excluding only three mutable
-bookkeeping quadwords from its fingerprint. It validates the first iteration,
-owned LS, original saved caller, independent input/output/stack extents,
-counts/capacity, interruption and resident/walk-in boundaries. The native leaf
-runs the complete nonempty record loop, then retains the original epilogue.
-Output visits records backwards, appends only within capacity, and preserves
-optional swap-with-last removal and the temporary payload even when full.
-The caller consumes no volatile register result; the original saved-register
-restoration remains intact. Original DMA and real queue completion are retained.
+the original debug-US module through the build-time code and data identity
+that `scripts/native_game_binding.py` binds at build time. The binding renames
+the lifted loop function `0xA87C` to `game_original_particle_collision_loop`
+and defines its symbol as a wrapper of the adapter entry. The entry acts at
+the first entry of the loop (r85 is 0). It validates the first iteration,
+owned LS, original saved caller, independent input/output/stack extents
+and counts/capacity. The native kernel runs the complete nonempty record
+loop, then the lifted epilogue returns to the caller. Output visits records
+backwards, appends only within capacity, and preserves optional
+swap-with-last removal and the temporary payload even when full. The caller
+consumes no volatile register result; the original saved-register
+restoration remains intact. Original DMA and real queue completion are
+retained. Mode 0, a loop re-entry, an active interrupt frame, a pending DMA
+or event, active instrumentation, an unsupported batch or a different code
+and data identity calls the renamed lifted function.
 
 Build `--native-particle-collisions`, then run with
 `--native-particle-collisions 0|shadow|1`. Defaults remain reference; inherited
 environment choices are overridden and selected executable identity is checked.
-Shadow compares all LS bytes against original execution and keeps original
-register execution. The unbudgeted seam declines step budgets, stop PCs and
-incompatible watches. The authored standalone/adapter fixtures run with
-`python scripts/check_native_particle_collision.py`; original instruction and
-captured-state replay remains private. The [measurement record](research/NATIVE_JOB_TIMELINE.md#standalone-particle-box-collision-batch)
+Shadow runs the lifted original and the kernel on two copies of the caller,
+compares the whole local store, r0, r1, r80 to r127 and the stop PC, and
+keeps the original result. A difference aborts the process. The authored
+standalone/adapter fixtures run with
+`python scripts/check_native_particle_collision.py`;
+`python scripts/check_particle_bound_entries.py` runs the real adapter entry
+against the lifted unit of the generated tree on constructed batches over
+the dumped jobs of `temp/jobdump/particles213`. The dumps are private. The [measurement record](research/NATIVE_JOB_TIMELINE.md#standalone-particle-box-collision-batch)
 separates stage evidence from the still-open 33 ms gameplay goal.
 
 `python scripts/check_particle_batches.py`.
@@ -653,18 +662,26 @@ a linear step on four lanes, a table of 32 numbers and an index.
 [The kernel](../src/motorstorm/particle_random.c) computes one call of the
 generator in native C. The registers r2 to r11, the seed at `0x174A0` and the
 state at `0x17DD0` to `0x17E70` equal the values that the original
-instructions leave. [The adapter](../src/motorstorm/particle_random_adapter.cpp)
-registers one native leaf over the extent and acts at two entry addresses:
-`0x170D0` (run) and `0x17248` (init). `MS_NATIVE_PARTICLE_RANDOM` selects the
-mode: unset or `0` keeps the lifted code, `shadow` runs the original
-instructions and compares the whole local store with the native result, `1`
-uses the native result. The adapter keeps interpretation when the entry is not
-a call of the extent, when a resident code span crosses the extent, when a
-lock line or an event is pending, or when the FNV-1a hash of the extent bytes
-is not the hash of image 213. `python scripts/check_particle_random.py`
-replays 8 dumped jobs of a race: 3,252 native calls equal the lifted code and
-7 mutants are rejected. The dumps are private, so the check reads them from
-`temp/jobdump/particles213`. Measured gain in the game: open.
+instructions leave. The binding (`scripts/native_game_binding.py`) renames
+the lifted functions `0x170D0` (run) and `0x17248` (init) to
+`game_original_particle_random_run` and `game_original_particle_random_init`
+and defines their symbols as wrappers of the two entries of
+[the adapter](../src/motorstorm/particle_random_adapter.cpp).
+`MS_NATIVE_PARTICLE_RANDOM` selects the mode: unset or `0` keeps the lifted
+code, `shadow` runs the lifted original and the kernel on two copies of the
+caller and compares the whole local store and all registers, `1` uses the
+native result. Mode 0, a local store that the job does not own, an active
+interrupt frame, a pending DMA or event, active instrumentation or a
+different code identity calls the renamed lifted function. A difference
+writes `NATIVE_PARTICLE_RANDOM_SHADOW_MISMATCH` and aborts the process. An
+invalid mode writes `NATIVE_PARTICLE_ERROR` and aborts the process.
+`python scripts/check_particle_random.py` replays 8 dumped jobs of a race:
+3,252 native calls equal the lifted code and 7 mutants are rejected.
+`python scripts/check_particle_bound_entries.py` runs the two real adapter
+entries against the lifted unit of the generated tree on 6,498 recorded calls
+of 5 dumped jobs. The dumps are private, so the checks read them from
+`temp/jobdump/particles213`. Measured gain in the game: open until a game
+runs with the binding.
 
 ## PPU fast memory step 3: alias window and gate
 

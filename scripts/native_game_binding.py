@@ -65,6 +65,13 @@ VISIBILITY = Contract(PRODUCTION.elf_sha256,
     context='spu_context', directory='spu/jobmod_056ac0eea1a6_e12270',
     matcher='game_visibility_code_matches',
     windows=((0xf7b320, 0x83a0, 596), (0xf893f0, 0x16470, 16)))
+# Second contract of the same unit: the lifted visibility batch entry 0x88F8.
+VISIBILITY_BATCH = Contract(PRODUCTION.elf_sha256,
+    'e7f7e87fabf5fbe1b5ee8c48648e4ed4f180d74b39e95007fa7c6dd025b144f1',
+    'jobmod_056ac0eea1a6_e12270_spu_func_000088F8', 'game_original_visibility_batch',
+    'motorstorm_visibility_batch', context='spu_context',
+    directory='spu/jobmod_056ac0eea1a6_e12270', matcher='game_visibility_batch_code_matches',
+    windows=((0xf76f80, 0x4000, 0x12580), (0xf89510, 0x16590, 0xb0)))
 PCM_CUBIC = Contract(PRODUCTION.elf_sha256,
     'b05fee5d4213b0ff372550313a07ad170788714135bbe979fbecfa86f4999d4f',
     'spu_0000_at_00EDE500_spu_func_00009D5C',
@@ -72,6 +79,28 @@ PCM_CUBIC = Contract(PRODUCTION.elf_sha256,
     context='spu_context', directory='spu/spu_0000_at_00EDE500',
     matcher='game_pcm_cubic_code_matches',
     windows=((0xee535c, 0x9d5c, 1140), (0xeeafc0, 0xf9c0, 368)))
+# Particle ports of SPU image 213 (jobmod_556b30b5e654_e12e20).
+PARTICLE_RANDOM = Contract(PRODUCTION.elf_sha256,
+    '84dc7ff8a5a43c9eafed59de63a9e0a61a96fab485ec6a054b7159d0811e99aa',
+    'jobmod_556b30b5e654_e12e20_spu_func_000170D0',
+    'game_original_particle_random_run', 'motorstorm_particle_random_run',
+    context='spu_context', directory='spu/jobmod_556b30b5e654_e12e20',
+    matcher='game_particle_random_code_matches',
+    windows=((0xf6f0d0, 0x170d0, 0x18c),))
+PARTICLE_RANDOM_INIT = Contract(PRODUCTION.elf_sha256,
+    '03e488010c467f00db6fcb7a1915d9fc2ce3c6899a8e70aaed7f41a1e8cd9edf',
+    'jobmod_556b30b5e654_e12e20_spu_func_00017248',
+    'game_original_particle_random_init', 'motorstorm_particle_random_init',
+    context='spu_context', directory='spu/jobmod_556b30b5e654_e12e20',
+    matcher='game_particle_random_init_code_matches',
+    windows=((0xf6f248, 0x17248, 0x14),))
+PARTICLE_COLLISION = Contract(PRODUCTION.elf_sha256,
+    '43aa4cfcc5b35189c616de02afa7e761cb329e415057b5c156c5fa2a8a4abe7f',
+    'jobmod_556b30b5e654_e12e20_spu_func_0000A87C',
+    'game_original_particle_collision_loop', 'motorstorm_particle_collision_batch',
+    context='spu_context', directory='spu/jobmod_556b30b5e654_e12e20',
+    matcher='game_particle_collision_code_matches',
+    windows=((0xf62700, 0xa700, 0x4ec), (0xf6f360, 0x17360, 0x50),))
 
 
 def digest(path):
@@ -172,9 +201,17 @@ def read_windows(elf, contract):
     return result
 
 
-def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=None, known_contracts=None):
+def source_root(roots, relative):
+    """The generated tree that holds one relative path."""
+    return next(root for root in roots if (root/relative).is_file())
+
+
+def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=None, known_contracts=None,
+            spu_generated=None):
     generated, output, elf, manifest = map(lambda p: Path(p).resolve(), (generated, output, elf, manifest))
-    if output.is_relative_to(generated) or generated.is_relative_to(output) or manifest.is_relative_to(generated):
+    roots = (generated,) if spu_generated is None else (generated, Path(spu_generated).resolve())
+    if any(output.is_relative_to(root) or root.is_relative_to(output) or manifest.is_relative_to(root)
+           for root in roots):
         raise ValueError('Binding outputs must be separate from original inputs')
     selected = tuple(contracts) if contracts is not None else (contract,)
     if not selected or len({c.symbol for c in selected}) != len(selected):
@@ -183,7 +220,8 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
     if any(elf_sha != c.elf_sha256 for c in selected):
         raise ValueError('Unsupported original ELF identity for native game binding')
     known = tuple(known_contracts) if known_contracts is not None else (
-        (PRODUCTION, JOB_WAIT, VISIBILITY, PCM_CUBIC, DEPTH_OBSERVER, QUEUE_RESET, QUEUE_RESET_MULTI, QUEUE_INIT, QUEUE_ADD_JOB, MENU_VIDEO, MENU_LANGUAGE, HAVOK_THREADS) if elf_sha == PRODUCTION.elf_sha256 else selected)
+        (PRODUCTION, JOB_WAIT, VISIBILITY, VISIBILITY_BATCH, PCM_CUBIC, PARTICLE_RANDOM, PARTICLE_RANDOM_INIT, PARTICLE_COLLISION,
+         DEPTH_OBSERVER, QUEUE_RESET, QUEUE_RESET_MULTI, QUEUE_INIT, QUEUE_ADD_JOB, MENU_VIDEO, MENU_LANGUAGE, HAVOK_THREADS) if elf_sha == PRODUCTION.elf_sha256 else selected)
     # Older observer copies used the same verified body without byte tracing.
     # Admit only that exact legacy recipe when enabling/disabling this feature.
     known = tuple(dict.fromkeys((*known, *selected,
@@ -192,19 +230,23 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
     if any(path.is_absolute() or '..' in path.parts for path in directories):
         raise ValueError('Binding directories must stay inside generated inputs')
     files = {}
-    for path in sorted(generated.rglob('*')):
-        if IGNORED_CACHES.intersection(path.relative_to(generated).parts):
-            continue
-        if path.is_symlink() or getattr(path.lstat(), 'st_file_attributes', 0) & 0x400:
-            raise ValueError('Generated input contains a reparse point')
-        if path.is_file():
-            files[path.relative_to(generated)] = digest(path)
+    for root in roots:
+        for path in sorted(root.rglob('*')):
+            if IGNORED_CACHES.intersection(path.relative_to(root).parts):
+                continue
+            if path.is_symlink() or getattr(path.lstat(), 'st_file_attributes', 0) & 0x400:
+                raise ValueError('Generated input contains a reparse point')
+            if path.is_file():
+                relative = path.relative_to(root)
+                if relative in files:
+                    raise ValueError(f'Duplicate generated input: {relative}')
+                files[relative] = digest(path)
     if not files or not (generated/'ppu/ppu_recomp.h').is_file():
         raise ValueError('Expected the selected generated tree with ppu/ppu_recomp.h')
     definitions = {}
     for relative in files:
         if relative.parent in directories and relative.suffix in {'.c', '.cpp'}:
-            source = (generated/relative).read_bytes()
+            source = (source_root(roots, relative)/relative).read_bytes()
             for entry in known:
                 if relative.parent == Path(entry.directory) and re.search(rb'\bvoid\s+' + entry.symbol.encode() + rb'\s*\(\s*' + re.escape(entry.context.encode()) + rb'\s*\*\s*ctx\s*\)\s*\{', source):
                     definitions.setdefault(entry, []).append((relative, source))
@@ -227,7 +269,7 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
     for relative, symbols in grouped.items():
         if len(symbols) > 8:
             raise ValueError('Too many bindings in one translation unit')
-        source = (generated/relative).read_bytes()
+        source = (source_root(roots, relative)/relative).read_bytes()
         # Legacy and current recipes for the same symbol are alternatives.
         # Each combination applies at most one verified recipe per function.
         choices = [(None, *recipes) for recipes in symbols.values()]
@@ -245,7 +287,7 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
                     if entry is None:
                         continue
                     binding = dict(symbol=entry.symbol,
-                        original_tu=(generated/relative).as_posix(),
+                        original_tu=(source_root(roots, relative)/relative).as_posix(),
                         copied_tu=(output/relative).as_posix(),
                         reference_body_sha256=entry.body_sha256,
                         copied_tu_sha256=sha, context=entry.context)
@@ -255,7 +297,9 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
     order = {entry.symbol: index for index, entry in enumerate(selected)}
     bindings.sort(key=lambda binding: order[binding['symbol']])
     if not output.exists():
-        shutil.copytree(generated, output, ignore=shutil.ignore_patterns(*IGNORED_CACHES))
+        for root in roots:
+            shutil.copytree(root, output, ignore=shutil.ignore_patterns(*IGNORED_CACHES),
+                            dirs_exist_ok=root is not roots[0])
     for path in output.rglob('*'):
         if path.is_symlink() or getattr(path.lstat(), 'st_file_attributes', 0) & 0x400:
             raise ValueError('Prepared input copy contains a reparse point')
@@ -273,10 +317,10 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
         destination = output/entry
         expected = changes.get(entry)
         if expected is None:
-            expected = (generated/entry).read_bytes()
+            expected = (source_root(roots, entry)/entry).read_bytes()
         if destination.read_bytes() != expected:
             destination.write_bytes(expected)
-    if any(digest(generated/entry) != sha for entry, sha in files.items()):
+    if any(digest(source_root(roots, entry)/entry) != sha for entry, sha in files.items()):
         raise ValueError('Original inputs changed during preparation')
     result = dict(bindings[0], elf_sha256=elf_sha, bindings=bindings,
                   input_files={str(p): sha for p, sha in files.items()})
@@ -294,14 +338,21 @@ def main():
     parser.add_argument('--without-world-transforms', action='store_true')
     parser.add_argument('--job-wait', action='store_true')
     parser.add_argument('--visibility', action='store_true')
+    parser.add_argument('--visibility-batch', action='store_true')
     parser.add_argument('--pcm-cubic', action='store_true')
     parser.add_argument('--depth-observer', action='store_true')
     parser.add_argument('--menu-boot', action='store_true')
     parser.add_argument('--havok-threads', action='store_true')
     parser.add_argument('--queue-call-observation', action='store_true',
                         help='Observe verified queue reset/init/publication calls')
+    parser.add_argument('--particle-random', action='store_true',
+                        help='Bind the verified particle random generator of SPU image 213')
+    parser.add_argument('--particle-collisions', action='store_true',
+                        help='Bind the verified particle-box collision loop of SPU image 213')
+    parser.add_argument('--spu-generated', type=Path,
+                        help='Second generated tree that holds the lifted SPU images')
     args = parser.parse_args()
-    selected = ([] if args.without_world_transforms else [PRODUCTION]) + ([JOB_WAIT] if args.job_wait else []) + ([VISIBILITY] if args.visibility else []) + ([PCM_CUBIC] if args.pcm_cubic else [])
+    selected = ([] if args.without_world_transforms else [PRODUCTION]) + ([JOB_WAIT] if args.job_wait else []) + ([VISIBILITY] if args.visibility else []) + ([PCM_CUBIC] if args.pcm_cubic else []) + ([VISIBILITY_BATCH] if args.visibility_batch else [])
     if args.menu_boot:
         selected.extend((MENU_VIDEO, MENU_LANGUAGE))
     if args.havok_threads:
@@ -310,7 +361,12 @@ def main():
         selected.append(DEPTH_OBSERVER)
     if args.queue_call_observation:
         selected.extend((QUEUE_RESET, QUEUE_RESET_MULTI, QUEUE_INIT, QUEUE_ADD_JOB))
-    result = prepare(args.generated, args.output, args.elf, args.manifest, contracts=selected)
+    if args.particle_random:
+        selected.extend((PARTICLE_RANDOM, PARTICLE_RANDOM_INIT))
+    if args.particle_collisions:
+        selected.append(PARTICLE_COLLISION)
+    result = prepare(args.generated, args.output, args.elf, args.manifest, contracts=selected,
+                     spu_generated=args.spu_generated)
     print('Verified native game bindings:', ', '.join(b['symbol'] for b in result['bindings']))
 
 
