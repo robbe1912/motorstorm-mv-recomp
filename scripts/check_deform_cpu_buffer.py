@@ -27,6 +27,7 @@ CAPTURE = " * A. Capture: the inputs of the paint draws."
 RECORD = "/* RSX_DEFORM_DUMP: one painted texel"
 RECORD_GET = "/* Renderer thread. The record of the target of dr."
 SAMPLE = "int rsx_deform_sample(uint32_t address, const uint32_t offsets[4], unsigned char out[4])"
+SAMPLE_WAIT = "/* ---- the wait of a read for the end of a paint"
 WHEEL_STATICS = "static _Atomic u64 s_deform_wheel_frame, s_deform_wheel_frames;"
 WHEEL = "void rsx_deform_wheel_log(uint32_t address, uint32_t offset, const char* level,"
 TIME = "static double deform_time_ms(void)"
@@ -43,6 +44,7 @@ PROTOTYPES = (
     r"int\s+rsx_deform_sample\s*\(\s*uint32_t\s+\w+\s*,\s*const\s+uint32_t\s+\w+\s*\[\s*4\s*\]\s*,\s*unsigned\s+char\s+\w+\s*\[\s*4\s*\]\s*\)\s*;",
     r"void\s+rsx_deform_wheel_log\s*\(\s*uint32_t\s+\w+\s*,\s*uint32_t\s+\w+\s*,\s*const\s+char\s*\*\s*\w+\s*,\s*"
     r"const\s+unsigned\s+char\s+\w+\s*\[\s*4\s*\]\s*,\s*const\s+unsigned\s+char\s+\w+\s*\[\s*4\s*\]\s*\)\s*;",
+    r"void\s+rsx_deform_yield\s*\(\s*void\s*\)\s*;",
 )
 
 
@@ -135,7 +137,11 @@ typedef uint64_t u64;
 uint8_t* vm_base;
 static struct { u64 frame_count; } s_d3d;
 static double s_now = 10.0005;   /* seconds of the performance clock */
-static double perf_now(void) { return s_now; }
+static double s_step;            /* the step of the clock at each read (0: the clock stands) */
+static void (*s_clock_tick)(void);   /* runs at each read of the clock */
+static unsigned s_yields;        /* calls of the yield hook of the backend */
+static double perf_now(void) { s_now += s_step; if (s_clock_tick) s_clock_tick(); return s_now; }
+void rsx_deform_yield(void) { s_yields++; }
 static char log_text[8192];
 static int test_fprintf(FILE* file, const char* format, ...);
 #define fprintf test_fprintf
@@ -183,6 +189,10 @@ static void configure(const char* targets, const char* buffer, const char* shado
     memset(s_deform_surface, 0, sizeof s_deform_surface);
     log_text[0] = 0;
     s_d3d.frame_count = 7;
+    s_now = 10.0005;
+    s_step = 0;
+    s_clock_tick = NULL;
+    s_yields = 0;
 }
 
 /* A published record of the listed target: 64 x 32 texels, then row 0 of
@@ -199,6 +209,17 @@ static RsxDeformSurface* bind(void)
     s->mip_width = PITCH / 2;
     atomic_store(&s->sequence, 2);
     return s;
+}
+
+/* The end of a change of the record: after s_ticks_left reads of the clock.
+ * The renderer paints or rebinds the record in that time. */
+static RsxDeformSurface* s_changing;
+static int s_ticks_left;
+static void finish_change(void)
+{
+    if (--s_ticks_left > 0) return;
+    atomic_store(&s_changing->sequence, 4);
+    s_clock_tick = NULL;
 }
 
 int main(void)
@@ -245,14 +266,34 @@ int main(void)
     CHECK(rsx_deform_sample(BASE, bottom, out) == 4);
     CHECK(out[2] == memory[MIP] && out[3] == memory[MIP + 1]);
     CHECK(rsx_deform_sample(BASE + 1, offsets, out) == 0);
+    /* The renderer changes the record now. The read waits for the end of
+     * the change and takes the bytes. A change past the bound gives 0 and
+     * writes nothing: the game reads the GPU surface then. */
     atomic_store(&s->sequence, 3);
     CHECK(rsx_deform_serve_range(BASE, 4) == 0 && rsx_deform_owned(0x00A80500) == 1);
+    s_changing = s;
+    s_ticks_left = 40;
+    memory[BASE + PITCH + 1] = 0xA7;    /* the paint wrote one byte */
+    s_clock_tick = finish_change;
+    s_step = 0.001;
+    out[0] = 9;
+    CHECK(rsx_deform_sample(BASE, offsets, out) == 4);
+    CHECK(out[0] == memory[BASE] && out[1] == memory[BASE + 1]);
+    CHECK(out[2] == memory[BASE + PITCH] && out[3] == 0xA7);
+    CHECK(s_yields > 0);
+    CHECK(strstr(log_text, "[DEFORM_SAMPLE] waits=1 timeouts=0 wait_us_max="));
+    atomic_store(&s->sequence, 3);
+    s_clock_tick = NULL;
+    s_step = 0.020;                     /* the bound of 50 ms comes after three reads */
     out[0] = 9;
     CHECK(rsx_deform_sample(BASE, offsets, out) == 0 && out[0] == 9);
+    log_text[0] = 0;
+    s_step = 0;
     atomic_store(&s->sequence, 4);
     rsx_deform_wheel_log(BASE, 0, "point", out, other);
     CHECK(log_text[0] == 0);
-    printf("PASS mode on: level 0 and row 0 of level 1 served, a changing record not served, no wheel line\n");
+    printf("PASS mode on: level 0 and row 0 of level 1 served, a changing record ends the wait, "
+           "the bound gives 0, no wheel line\n");
 
     /* The shadow mode: the game reads the GPU bytes, the sample reads the
      * private copy, and the wheel line stops after RSX_DEFORM_LOG frames. */
@@ -470,6 +511,18 @@ RUNTIME_MUTANTS = [
     ("time-in-seconds", "    return perf_now() * 1000.0;", "    return perf_now();"),
     ("wheel-before-compare", "if (!s || !atomic_load_explicit(&s->compared, memory_order_relaxed)) return;",
      "if (!s) return;"),
+    ("sample-does-not-wait",
+     "            if (mode != 1) continue;\n            sequence = deform_sequence_even(s);\n            if (!sequence) return 0;",
+     "            if (mode != 1) continue;"),
+    ("sample-finds-no-changing-record", "    if (!s && mode == 1) s = deform_surface_changing(address);",
+     "    if (!s && mode == 1) s = NULL;"),
+    ("wait-bound-returns-the-changing-record",
+     "    while ((sequence = atomic_load_explicit(&s->sequence, memory_order_acquire)) & 1) {",
+     "    while (((sequence = atomic_load_explicit(&s->sequence, memory_order_acquire)) & 1)\n"
+     "           && perf_now() - start < RSX_DEFORM_SAMPLE_WAIT_S) {"),
+    ("wait-bound-at-once", "        if (perf_now() - start >= RSX_DEFORM_SAMPLE_WAIT_S) {",
+     "        if (perf_now() - start >= 0.0) {"),
+    ("wait-without-yield", "        rsx_deform_yield();\n", ""),
 ]
 QUERY_MUTANTS = [
     ("cpu-path-ignored", CPU_BRANCH, "    if (false) {"),
@@ -500,20 +553,23 @@ WIRING_MUTANTS = [
      {"header": lambda text: re.sub(r"int\s+rsx_deform_sample\s*\([^;]*;\s*", "", text, flags=re.S)}),
     ("query-without-header", {"query": lambda text: text.replace('#include "rsx_deform_surface.h"\n', "")}),
     ("cpu-reads-not-counted", {"query": lambda text: text.replace("report(true, snapshot, from_cpu);", "report(true, snapshot);")}),
+    ("header-without-yield-prototype",
+     {"header": lambda text: re.sub(r"void\s+rsx_deform_yield\s*\(\s*void\s*\)\s*;", "", text)}),
 ]
 
 
 def runtime_text(deform):
     """The production text of the runtime fixture: the limits, the pixel operations with the switches, the record
-    lookup, and the two public read functions."""
-    for marker in (LIMITS, PIXEL, CAPTURE, RECORD, RECORD_GET, SAMPLE, WHEEL_STATICS, TIME, WHEEL):
+    lookup, the wait of a read and the two public read functions."""
+    for marker in (LIMITS, PIXEL, CAPTURE, RECORD, RECORD_GET, SAMPLE_WAIT, SAMPLE, WHEEL_STATICS, TIME, WHEEL):
         assert deform.count(marker) == 1, marker
     statics = deform[deform.index(WHEEL_STATICS):deform.index("\n", deform.index(WHEEL_STATICS))]
     return "\n\n".join([
         deform[deform.index(LIMITS):deform.index(PIXEL)],
         deform[deform.index(PIXEL):deform.rindex("/*", 0, deform.index(CAPTURE))],
         deform[deform.index(RECORD):deform.index(RECORD_GET)],
-        statics, function(deform, TIME), function(deform, SAMPLE), function(deform, WHEEL)])
+        statics, function(deform, TIME), deform[deform.index(SAMPLE_WAIT):deform.index(SAMPLE)],
+        function(deform, SAMPLE), function(deform, WHEEL)])
 
 
 def main():
