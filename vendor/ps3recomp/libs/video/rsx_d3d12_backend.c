@@ -3019,6 +3019,11 @@ static VPFP_snap s_fp_snap[VP_FPSNAP_MAX];   /* 8 MB */
 static u32 s_fp_snap_head;                   /* ring cursor */
 static u32 s_fp_snap_cur[4096];              /* (off>>12)&4095 -> idx+1 */
 
+/* Inline constants of each snapshot slot, collected by the first draw of the slot. */
+#define RSX_FP_CONST_CACHE_MAX_CONSTS VP_FPCB_MAX_CONSTS
+#include "rsx_fp_const_cache.h"
+static rsx_fp_const_cache s_fp_const_cache[VP_FPSNAP_MAX];   /* 1.1 MB */
+
 static u32 vp_fp_snap_take(u32 off)
 {
     extern uint8_t* vm_base;
@@ -3043,6 +3048,7 @@ static u32 vp_fp_snap_take(u32 off)
     s->off = off; s->size = size; s->hash = h;
     memcpy(s->bytes, copy, size);
     if (previous > size) memset(s->bytes + size, 0, previous - size);
+    rsx_fp_const_cache_reset(&s_fp_const_cache[idx]);   /* the slot holds a new program */
     s_fp_snap_cur[(off >> 12) & 4095] = idx + 1;
     return idx + 1;
 }
@@ -3086,6 +3092,8 @@ static const VPFP_snap* vp_fp_snap_entry(u32 snap, u32 off)
     return NULL;
 }
 
+/* Bytes of snapshot `snap` (idx+1) at resolved offset `off`; NULL when it does
+ * not verify. Used by rsx_d3d12_native_depth.inc. */
 static const u8* vp_fp_snap_bytes(u32 snap, u32 off)
 {
     const VPFP_snap* s = vp_fp_snap_entry(snap, off);
@@ -4570,6 +4578,7 @@ static void vp_record_fp_b1(u32 slot, D3D12DrawRecord* dr)
         + ((u64)s_d3d.vp_parity * MAX_DRAWS + slot) * VP_FPCB_STRIDE);
     u32 foff = cellGcmResolveLocated((dr->fp_addr & 0x3u) == 1, dr->fp_addr & ~0x3u);
     static rsx_fp_constant_block blk;  /* 32 KB scratch; record path is single-threaded */
+    rsx_fp_const_result fpk = { 0u, NULL };
     u32 n = 0;
     if (vm_base && foff != 0xFFFFFFFFu) {
         /* Collect from the record's ucode snapshot when it verifies: those
@@ -4577,11 +4586,15 @@ static void vp_record_fp_b1(u32 slot, D3D12DrawRecord* dr)
          * always matches the compiled fp_constants[N]. A live re-read of a
          * recycled ucode address collected the NEXT program's bytes (or
          * nothing) -- MotorStorm's bloom blur served 0 of its 20 weights and
-         * multiplied every tap by zero. */
-        const u8* uc = vp_fp_snap_bytes(dr->fp_snap, foff);
-        if (!uc) uc = vm_base + foff;
-        int got = rsx_fp_collect_constants(uc, VP_FP_UCODE_MAX, &blk);
-        if (got > 0) n = (u32)got;      /* <=0: malformed; the PSO build refuses it too */
+         * multiplied every tap by zero. A snapshot is collected once: its
+         * bytes do not change, so each later draw takes the result of the
+         * slot's first draw. */
+        const VPFP_snap* snap = vp_fp_snap_entry(dr->fp_snap, foff);
+        rsx_fp_const_cache_resolve(snap ? &s_fp_const_cache[dr->fp_snap - 1] : NULL,
+                                   snap ? snap->bytes : vm_base + foff,
+                                   VP_FP_UCODE_MAX, VP_FPCB_MAX_CONSTS, &blk,
+                                   rsx_fp_collect_constants, &fpk);
+        n = fpk.count;                 /* 0: malformed; the PSO build refuses it too */
     }
     if (n > VP_FPCB_MAX_CONSTS) {
         /* Storing past the slot would alias the next draw's constants. The
@@ -4597,7 +4610,7 @@ static void vp_record_fp_b1(u32 slot, D3D12DrawRecord* dr)
         n = 0;
     } else {
         dr->fp_const_n = n;
-        if (n) memcpy(ks, blk.values, (size_t)n * 16u);
+        if (n) memcpy(ks, fpk.values, (size_t)n * 16u);
     }
     /* fp_alpha.x: the alpha-test reference. It decodes per surface colour
      * format (fp16/32 targets carry real float bits), and can animate per
@@ -8531,7 +8544,9 @@ static u32 upload_strip_vp_indexed(const rsx_state* state, u32 first, u32 count,
             }
             cached_state[set] = (u8)((bits & 3u) | ((way ^ 1u) << 2));
             const double started = s_vertex_profile_enabled ? perf_now() : 0.0;
-            memcpy(&out[o*16], cached_vertices[set][way], sizeof cached_vertices[set][way]);
+            /* Sixteen float4 as plain assignments: one 16-byte load and one 16-byte store
+             * each. The CRT call of the old copy is gone from this inner loop. */
+            for (u32 i = 0; i < 16; i++) out[o*16 + i] = cached_vertices[set][way][i];
             if (s_vertex_profile_enabled) {
                 s_vertex_profile.copy_bytes += sizeof cached_vertices[set][way];
                 s_vertex_profile.copy_seconds += perf_now() - started;
