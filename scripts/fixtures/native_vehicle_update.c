@@ -84,9 +84,9 @@ static int check(const char* path) {
             ++reg_changed;
             if (reg_pairs[i] != 65535) ++reg_pairs[i];
         }
-    printf("%s %s blocks=%llu pair: addresses executed %u, local store bytes changed %u (object %u), "
+    printf("%s %s pair: addresses executed %u, local store bytes changed %u (object %u), "
            "register words changed %u\n",
-           ok ? "OK" : (done ? "DIFF" : "BAIL"), name, (unsigned long long)state.blocks, executed, changed,
+           ok ? "OK" : (done ? "DIFF" : "BAIL"), name, executed, changed,
            object_changed, reg_changed);
     if (!ok) {
         printf("   kernel against return: local store bytes %u (first 0x%05X), register words %u\n",

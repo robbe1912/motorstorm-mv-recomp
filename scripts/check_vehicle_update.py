@@ -38,14 +38,14 @@ MUTANTS = [
     ('return_address_store_dropped', ['011FE0'], r'vu_write\(s, s->gpr\[1\]\._u32\[0\] \+ 0x10, s->gpr\[0\]\);', ';',
      'dropped store'),
     ('loop_bound_plus_one', ['011FE0'], r'spu_cgti\((s->gpr\[\d+\]), 0\)', r'spu_cgti(\1, 1)', 'changed loop bound'),
-    ('load_byte_order_swapped', 'file', r'\(\(uint32_t\)p\[4 \* i\] << 24\)', r'((uint32_t)p[4 * i + 3] << 24)',
-     'changed byte order of a load'),
+    ('load_address_plus_16', 'file', r'(static inline u128 vu_read\(MotorstormVehicleState\* s, uint32_t lsa\) \{)',
+     r'\1 lsa += 16u;', 'changed load address'),
     ('branch_flipped', ['011FE0'], r'(if \(s->gpr\[\d+\]\._u32\[0\]) == 0\)', r'\1 != 0)', 'changed branch'),
     ('fma_to_fm', ['01CA30'], r'spu_fma\((s->gpr\[\d+\]), (s->gpr\[\d+\]), s->gpr\[\d+\]\)', r'spu_fm(\1, \2)',
      'changed float operation'),
     ('fm_to_fa', ['01CA30'], r'spu_fm\(', r'spu_fa(', 'changed float operation'),
 ]
-SEGMENT = r'static vu_block (?:vu_b_%s|vu_c_%s_[0-9A-F]+)\(MotorstormVehicleState\* s\) \{\n(.*?)\n\}\n'
+SEGMENT = r'static vu_status vu_b_%s\(MotorstormVehicleState\* s\) \{\n(.*?)\n\}\n'
 
 
 def build(output: Path, name: str, kernel: Path):
@@ -100,7 +100,7 @@ def sites(text: str, functions, pattern: str, repl: str):
             yield text[:m.start()] + re.sub(pattern, repl, m.group(0)) + text[m.end():], 'file'
         return
     for function in functions or HOT:
-        for segment in re.finditer(SEGMENT % (function, function), text, re.S):
+        for segment in re.finditer(SEGMENT % function, text, re.S):
             for m in re.finditer(pattern, segment.group(1)):
                 new = segment.group(1)[:m.start()] + re.sub(pattern, repl, m.group(0)) + segment.group(1)[m.end():]
                 yield text[:segment.start(1)] + new + text[segment.end(1):], function

@@ -16,21 +16,21 @@ enum {
 
 typedef struct {
     u128 gpr[128];       /* SPU registers; word 0 is the preferred slot */
-    uint8_t* ls;         /* local store, MOTORSTORM_VEHICLE_LS_SIZE bytes, in place */
-    uint32_t pc;         /* entry address of the block that ran last */
-    uint32_t bail_pc;    /* first block that the kernel does not hold; 0 when there is none */
-    uint64_t blocks;     /* blocks that ran */
+    uint8_t* ls;         /* local store, MOTORSTORM_VEHICLE_LS_SIZE bytes, changed in place */
+    uint32_t pc;         /* word 0 of the register of the return that ran last */
+    uint32_t bail_pc;    /* address that the kernel could not take; 0 when the extent returned */
+    uint8_t* saved;      /* copy of each 4 KB local store page before its first kernel store; NULL: no copy */
+    uint64_t dirty;      /* bit n is set when local store page n differs from its copy */
+    const spu_context* ctx; /* NULL, or the context: the kernel tests its interrupt state at jump targets */
 } MotorstormVehicleState;
 
 /* Runs the extent from MOTORSTORM_VEHICLE_ENTRY to its return address MOTORSTORM_VEHICLE_RETURN.
-   Returns 1 when the extent returned there: the registers and the local store hold the result.
-   Returns 0 when control reached a block that is not ported: the local store can hold partial
-   stores of the extent, so the caller restores the state of the entry and runs the original path. */
+   Returns 1 when the extent returned there: gpr, ls and pc hold the state of the return.
+   Returns 0 when the kernel stopped (a function that is not ported, an address that it does not
+   hold, a waiting interrupt at a jump target, or a return to another address): bail_pc is then
+   the address. When `saved` is set, the caller puts back the pages of `dirty` to get the local
+   store of the entry, then runs the original path. */
 int motorstorm_vehicle_update(MotorstormVehicleState* state);
-
-/* Same run from the address of a ported segment. Returns 0 when the address is not a ported
-   segment or when the kernel stops at a block that it does not hold. */
-int motorstorm_vehicle_update_at(MotorstormVehicleState* state, uint32_t address);
 
 #ifdef __cplusplus
 }
