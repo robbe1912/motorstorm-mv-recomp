@@ -63,7 +63,7 @@ function(motorstorm_bind_world_transforms)
     endif()
     execute_process(COMMAND "${Python3_EXECUTABLE}" "${MOTORSTORM_NATIVE_ROOT}/scripts/native_game_binding.py"
         --generated "${input_root}" --output "${CMAKE_BINARY_DIR}/native-world-input"
-        --spu-generated "${SPU_DIR}/.." ^
+        --spu-generated "${SPU_DIR}/.."
         --elf "${PORT_TARGET_ELF}" --manifest "${manifest}" ${binding_options}
         RESULT_VARIABLE status OUTPUT_VARIABLE report ERROR_VARIABLE errors)
     if(NOT status EQUAL 0)

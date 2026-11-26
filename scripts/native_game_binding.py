@@ -303,6 +303,12 @@ def prepare(generated, output, elf, manifest, contract=PRODUCTION, *, contracts=
     for path in output.rglob('*'):
         if path.is_symlink() or getattr(path.lstat(), 'st_file_attributes', 0) & 0x400:
             raise ValueError('Prepared input copy contains a reparse point')
+    # A copy made before a second root was read holds no file of that root.
+    # Copy each missing file from its root; the loop below then checks its identity.
+    for entry in files:
+        if not (output/entry).exists():
+            (output/entry).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_root(roots, entry)/entry, output/entry)
     for entry, sha in files.items():
         destination = output/entry
         expected = hashlib.sha256(changes[entry]).hexdigest() if entry in changes else sha
