@@ -26,6 +26,36 @@ tree with #355-#358, one EXE, 8 races per arm, window t=100-130 s): compact
 present 25.2-25.8 ms vs 27.6-31.0 ms. 0 skipped draws. No 30 FPS, graphics
 parity or interpreter-removal acceptance is claimed.
 
+## Slot-only vertex fetch, decode tables and VP lookup memo
+
+Local to this vendor copy. Three exact cuts in the D3D12 vertex path; the
+uploaded bytes and the chosen vertex programs are unchanged.
+
+- With `RSX_VP_COMPACT=1`, `rsx_fetch_vertex_slots` (`rsx_vertex_fetch.c`)
+  decodes only the attributes the layout carries, straight into packed
+  order, instead of filling all 16 slots (a 256-byte constant copy per
+  vertex) and repacking. Arrays no layout slot reads are not resolved; the
+  carried ones resolve per element in the full fetch's order. The indexed
+  strip cache holds packed vertices. `VTX_POS` now forces the full layout.
+- UB and CMP components read tables of the same IEEE single-precision
+  divisions (`rsx_vertex_decode_tables.h`) instead of dividing per component.
+- `vp_get_vs` reuses its result for a repeated (state, `vp_ucode_epoch`,
+  start slot). Every `NV4097_SET_TRANSFORM_PROGRAM` word gives the state a
+  new process-wide epoch, and a remembered cache slot is used only while it
+  still holds that program's hash.
+
+Game-free coverage: `check_vertex_prepared.py --mutants` (slot fetch against
+the full and scalar fetch, resolve order, every UB byte and CMP field,
+every table entry) and `check_rsx_vp_get_memo.py` (the production
+`vp_get_vs` and microcode write under random writes, start changes, state
+copies, resets and evictions).
+
+Measured result (27 Nov, i7-12700K + RTX 4070 SUPER, local tree with #355-#359
+and compact on in both arms, 8 races per arm, window t=100-130 s): renderer
+(`frame_clock`) CPU per present 22.08-23.24 ms vs 24.11-25.35 ms (-2.1 ms),
+but fps unchanged: 880.2 vs 878.6 presents per 30 s, +0.05 fps +/- 0.28 SE.
+The renderer was not the limit at that point.
+
 ## Native policy-module services (#327)
 
 Own-fork branch `codex/pm-native-services` carries the reusable runtime and

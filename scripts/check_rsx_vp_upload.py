@@ -89,6 +89,8 @@ def main():
         bodies = '\n'.join(function(text, 'static u32 '+name+'(') for name in NAMES)
         if 'vp_put_vertex' in bodies:
             bodies = function(text, 'static void vp_put_vertex(') + '\n' + bodies
+        if 'read_vp_vertex_packed' in bodies:
+            bodies = function(text, 'static void read_vp_vertex_packed(') + '\n' + bodies
         build_run('all-uploads', template.replace('@UPLOAD_FUNCTIONS@', bodies))
         buffer = (fixtures / 'rsx_upload_buffer.c').read_text(encoding='utf-8')
         build_run('buffer', buffer)

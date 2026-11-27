@@ -50,7 +50,7 @@ def run(exe,folder,args=(),expected=None,nofreq=False,diagnostic=False):
     cmd=[str(exe),*args];r=subprocess.run(cmd,capture_output=True,text=True,env=env,timeout=90)
     records.append(dict(command=cmd,nofreq=nofreq,diagnostic=diagnostic,returncode=r.returncode,stdout=r.stdout,stderr=r.stderr));(out/'runs.json').write_text(json.dumps(records,indent=2),encoding='utf-8')
     (folder/('last-nofreq.log'if nofreq else'last-run.log')).write_text(r.stdout+r.stderr,encoding='utf-8')
-    if expected:assert r.returncode!=0 and 'FAIL '+expected in r.stderr,(r.returncode,r.stdout,r.stderr)
+    if expected:assert r.returncode!=0 and any('FAIL '+e in r.stderr for e in (expected if isinstance(expected,tuple) else (expected,))),(r.returncode,r.stdout,r.stderr)
     else:
         assert r.returncode==0,(r.returncode,r.stdout,r.stderr)
         if diagnostic:assert '[VTXTYPE] UNHANDLED type=0' in r.stderr and '[VTXTYPE] UNHANDLED type=8'in r.stderr,r.stderr
@@ -64,7 +64,7 @@ print('PASS actual prepared/scalar live vertex/default/mapping parity and real c
 if a.mutants:
     text=source.read_text(encoding='utf-8')
     loop='    if (!vm_base) return;          /* every slot keeps its constant register */\n    for (u32 i = 0; i < batch->count; ++i) {\n        const rsx_vertex_fetch_slot* s = &batch->slots[i];'
-    resolve='        const u8* p = vm_base + cellGcmResolveLocated(s->location, s->offset + ei * s->stride);'
+    resolve='    const u8* p = vm_base + cellGcmResolveLocated(s->location, s->offset + ei * s->stride);'
     signature='void rsx_fetch_vertex_prepared(const rsx_vertex_fetch_batch* batch, u32 vi,\n                               rsx_vertex_value out[16])\n{'
     # Reuses a translation within the same 4 KiB page: exact bytes under the
     # fixture's mapping, so only the per-element resolve control can reject it.
@@ -72,19 +72,26 @@ if a.mutants:
                 '        if (page_ok[s->slot] && (page_off[s->slot] >> 12) == (off_ >> 12) && page_off[s->slot] <= off_)\n'
                 '            p = vm_base + page_ea[s->slot] + (off_ - page_off[s->slot]);\n'
                 '        else { page_off[s->slot] = off_; page_ea[s->slot] = cellGcmResolveLocated(s->location, off_); page_ok[s->slot] = 1; p = vm_base + page_ea[s->slot]; }')
+    # An inexact decode fails whichever parity check first meets a differing value.
+    DECODE_PARITY=('exhaustive normalized decode parity','exact scalar format/default/index parity','next draw refreshed declarations/constants')
     mutants=[('narrow-type','s->type = a->type;','s->type = (u8)a->type;','next draw refreshed declarations/constants'),('historical-all-slots',loop,'    for (u32 i = 0; i < 16; ++i)\n        rsx_fetch_attrib(batch->state, (int)i, vi, out[i].v);\n    return;\n'+loop,'constant-only slots fetched individually'),
         ('cached-translation',resolve,page_cache,'per-element address resolution changed'),
         ('lost-defaults','memcpy(out, batch->constants, sizeof(batch->constants));','memset(out, 0, sizeof(batch->constants));','initial defaults and arrays'),
-        ('cached-live-data',signature,signature+'\n    static rsx_vertex_value saved[16]; static int valid;\n    if(valid) { memcpy(out,saved,sizeof saved);return; }', 'live vertex edits lost')]
+        ('cached-live-data',signature,signature+'\n    static rsx_vertex_value saved[16]; static int valid;\n    if(valid) { memcpy(out,saved,sizeof saved);return; }', 'live vertex edits lost'),
+        ('slot-fetch-skips-first','        if (k >= 0) fetch_slot(batch, s, vi, out[k].v);','        if (k > 0) fetch_slot(batch, s, vi, out[k].v);','slot fetch parity'),
+        ('slot-fetch-all-arrays','        if (k >= 0) fetch_slot(batch, s, vi, out[k].v);','        if (k >= 0) fetch_slot(batch, s, vi, out[k].v); else { float t_[4]; fetch_slot(batch, s, vi, t_); }','per-element address resolution changed'),
+        ('inexact-table','o[k] = rsx_vtx_ub_unorm.f[p[k]];','o[k] = p[k] * (1.0f / 255.0f);',DECODE_PARITY),
+        ('inexact-cmp','o[2] = rsx_vtx_cmp10.f[(w >> 22) & 0x3FFu];','o[2] = (float)((s32)(w >> 22) - (((w >> 22) & 0x200u) ? 0x400 : 0)) * (1.0f / 511.0f);',DECODE_PARITY)]
     for name,before,after,why in mutants:
+        why_text=why if isinstance(why,str) else why[0]
         assert text.count(before)==1,(name,before)
         changed=text.replace(before,after)
         if name=='cached-live-data':
-            anchor='        default: /* 7: UB256 */ for (u32 k = 0; k < n; k++) o[k] = (float)p[k]; break;\n        }\n    }'
+            anchor='        fetch_slot(batch, s, vi, out[s->slot].v);\n    }'
             assert changed.count(anchor)==1;changed=changed.replace(anchor,anchor+'\n    memcpy(saved,out,sizeof saved);valid=1;')
         exe,folder=build(name,changed)
         for mode in [False,True]:run(exe,folder,expected=why,nofreq=mode)
-        print('PASS compiled '+name+' rejects intended '+why)
+        print('PASS compiled '+name+' rejects intended '+why_text)
 if a.mutants:
     changed = source.read_text(encoding='utf-8').replace('static _Thread_local int nofreq = -1;', 'static int nofreq = -1;', 1)
     assert changed != source.read_text(encoding='utf-8')

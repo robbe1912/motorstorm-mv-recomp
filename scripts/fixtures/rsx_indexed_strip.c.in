@@ -36,6 +36,9 @@ static void reference_vertex(const rsx_state* s,u32 i,VPSlot* out)
 { for(int a=0;a<16;++a)rsx_fetch_attrib(s,a,i,out[a].v); }
 static void rsx_vtx_pos_dbg(const rsx_state* s,const float* v,u32 n)
 { (void)s;(void)v;(void)n;++fetches; }
+/* Compact layouts fetch through the slot fetch, which has no position hook:
+ * count those vertices here (a function-like macro does not expand itself). */
+#define rsx_fetch_vertex_slots(...) (++fetches,rsx_fetch_vertex_slots(__VA_ARGS__))
 @FETCH_VERTEX_FUNCTION@
 @INDEXED_STRIP_FUNCTION@
 #define CHECK(x) do{if(!(x)){fprintf(stderr,"FAIL line%d: %s\n",__LINE__,#x);return 1;}}while(0)

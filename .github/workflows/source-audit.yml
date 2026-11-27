@@ -120,6 +120,8 @@ jobs:
         run: python scripts/check_rsx_sampler_tables.py
       - name: Per-draw sampler-table hash and render-target index
         run: python scripts/check_rsx_render_lookups.py
+      - name: Per-draw vertex-program lookup memo
+        run: python scripts/check_rsx_vp_get_memo.py
       - name: Native depth textures, packed depth reads and B8 remap
         run: python scripts/check_rsx_native_depth.py
       - name: Depth alias clear ownership
@@ -304,6 +306,8 @@ jobs:
         run: python scripts/check_rsx_sampler_tables.py
       - name: Per-draw sampler-table hash and render-target index
         run: python scripts/check_rsx_render_lookups.py
+      - name: Per-draw vertex-program lookup memo
+        run: python scripts/check_rsx_vp_get_memo.py
       - name: Native depth textures, packed depth reads and B8 remap
         run: python scripts/check_rsx_native_depth.py
       - name: Depth alias clear ownership

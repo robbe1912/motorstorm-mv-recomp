@@ -2247,7 +2247,7 @@ static int vp_compact_on(void)
     if (on < 0) {
         static const char* const full_only[] = {
             "VP_BYPASS", "VP_TESTTRI", "RSX_DBG_VTX", "RSX_DBG_SCALE",
-            "RSX_DBG_TRACK", "VTX_DUMP", "IDX_DBG" };
+            "RSX_DBG_TRACK", "VTX_DUMP", "IDX_DBG", "VTX_POS" };
         const char* e = getenv("RSX_VP_COMPACT");
         on = e && e[0] == '1' && !e[1];
         for (size_t i = 0; i < sizeof full_only / sizeof full_only[0]; i++)
@@ -2274,6 +2274,31 @@ static int vp_get_vs(const rsx_state* st)
       if (!off) vstart = st->transform_program_start * 16u; }
     if (vstart >= st->vp_ucode_bytes) vstart = 0;
     const u8* vuc = st->vp_ucode + vstart;
+    const char* pick = rsx_env_once("FP_PICK");
+    /* The program found depends only on the microcode store and the start
+     * slot, and every store write gives the state a new vp_ucode_epoch. So a
+     * draw that repeats a recent (state, epoch, start) reuses that lookup and
+     * skips the extent walk, the hash and the cache search. The slot is used
+     * only while it still holds that hash (eviction refills slots in place).
+     * FP_PICK keeps the full path, since it inspects every draw. */
+    enum { VP_GET_MEMO = 8 };
+    static struct { const rsx_state* st; u64 epoch; u32 vstart, hash; int slot; } memo[VP_GET_MEMO];
+    const int use_memo = !pick && st->vp_ucode_epoch != 0;
+    const u32 memo_i = (vstart / 16u) & (VP_GET_MEMO - 1);
+    if (use_memo) {
+        const int m = memo[memo_i].slot;
+        if (memo[memo_i].st == st && memo[memo_i].epoch == st->vp_ucode_epoch &&
+            memo[memo_i].vstart == vstart && m >= 0 && m < s_d3d.vp_vs_n &&
+            s_d3d.vp_vs[m].hash == memo[memo_i].hash) {
+            s_d3d.vp_vs[m].refs++;
+            s_d3d.vp_vs[m].last_frame = s_d3d.frame_count;
+            return m;
+        }
+    }
+#define VP_GET_REMEMBER(slot_) do { if (use_memo) { \
+        memo[memo_i].st = st; memo[memo_i].epoch = st->vp_ucode_epoch; \
+        memo[memo_i].vstart = vstart; memo[memo_i].hash = hash; \
+        memo[memo_i].slot = (slot_); } } while (0)
     /* Identity = the SELECTED program's executable slice only: from the
      * start slot through the first D3.end, widened to every reachable
      * branch/call target. The store holds every resident program behind
@@ -2290,7 +2315,6 @@ static int vp_get_vs(const rsx_state* st)
      * different VPs. Capture before cache lookup so a cache hit works too. */
     static char pick_hlsl[262144];
     static int pick_done = 0;
-    const char* pick = rsx_env_once("FP_PICK");
     if (!pick_done && pick && st->shader_program == (u32)strtoul(pick, NULL, 16)) {
         rsx_vp_set_branch_base(vstart / 16u);
         int count = rsx_vp_decompile(vuc, vlen, pick_hlsl, sizeof pick_hlsl);
@@ -2310,6 +2334,7 @@ static int vp_get_vs(const rsx_state* st)
         if (s_d3d.vp_vs[i].hash == hash) {
             s_d3d.vp_vs[i].refs++;
             s_d3d.vp_vs[i].last_frame = s_d3d.frame_count;
+            VP_GET_REMEMBER(i);
             return i;
         }
 
@@ -2424,6 +2449,8 @@ static int vp_get_vs(const rsx_state* st)
     s_d3d.vp_vs[slot].refs = 1;
     s_d3d.vp_vs[slot].last_frame = s_d3d.frame_count;
     { static int _n=0; if (_n++<6) printf("[VP] per-draw VS cached (hash=0x%08X, %d instrs, slot %d)\n", hash, ni, slot); }
+    VP_GET_REMEMBER(slot);
+#undef VP_GET_REMEMBER
     /* Build the base VP pipeline here if it does not exist yet. render_frame's
      * trigger reads s_d3d.current_rsx_state, which by frame end no longer has
      * the microcode -- so for a title that only ever compiles per-draw VS the
@@ -7806,6 +7833,21 @@ static void read_vp_vertex(const rsx_state* state,
     rsx_vtx_pos_dbg(state, out16[0].v, n);
 }
 
+/* Fetch guest vertex vi as the current layout stores it: only its carried
+ * slots, in slot order (s_vp_layout.stride bytes at dst). A compact layout
+ * reads the carried attributes alone, without filling all sixteen slots. */
+static void read_vp_vertex_packed(const rsx_state* state,
+                                  const rsx_vertex_fetch_batch* batch,
+                                  u32 vi, VPSlot* dst)
+{
+    if (s_vp_layout.count == 16) {
+        read_vp_vertex(state, batch, vi, dst);
+        return;
+    }
+    rsx_fetch_vertex_slots(batch, vi, s_vp_layout.slot, s_vp_layout.index_of,
+                           s_vp_layout.count, dst);
+}
+
 /* Fetch guest vertex vi and store it as vertex `index` of an upload starting
  * at out, carrying only the current layout's slots (s_vp_layout). */
 static void vp_put_vertex(const rsx_state* state, const rsx_vertex_fetch_batch* batch,
@@ -7816,9 +7858,9 @@ static void vp_put_vertex(const rsx_state* state, const rsx_vertex_fetch_batch* 
         read_vp_vertex(state, batch, vi, dst);
         return;
     }
-    VPSlot full[16];
-    read_vp_vertex(state, batch, vi, full);
-    rsx_vp_layout_pack(&s_vp_layout, dst, full);
+    VPSlot packed[16];
+    read_vp_vertex_packed(state, batch, vi, packed);
+    rsx_vp_layout_copy(&s_vp_layout, dst, packed);
 }
 
 /* VTX_POS=<N>: print the first fetched position of the first N draws. A guest
@@ -8372,7 +8414,8 @@ static u32 upload_strip_vp_indexed(const rsx_state* state, u32 first, u32 count,
      * and nothing survives a later draw or guest-memory update. 64 entries,
      * two-way set-associative on the index with LRU per set: both shared strip
      * vertices and the fan center are retained across common strip/fan patterns.
-     * Two ways also retain reuse between neighbouring strip rows. */
+     * Two ways also retain reuse between neighbouring strip rows. Entries hold
+     * the vertex as the layout stores it (s_vp_layout.stride bytes). */
     const int use_cache = count > 3 || count + cursor.held > 3;
     enum { VP_STRIP_SETS = 32 };
     VPSlot cached_vertices[VP_STRIP_SETS][2][16];
@@ -8401,12 +8444,12 @@ static u32 upload_strip_vp_indexed(const rsx_state* state, u32 first, u32 count,
             else if ((bits & 2u) && cached_indices[set][1] == triangle[v]) way = 1;
             else {
                 way = !(bits & 1u) ? 0u : !(bits & 2u) ? 1u : (bits >> 2) & 1u;
-                read_vp_vertex(state, &fetch_batch, triangle[v], cached_vertices[set][way]);
+                read_vp_vertex_packed(state, &fetch_batch, triangle[v], cached_vertices[set][way]);
                 cached_indices[set][way] = triangle[v];
                 bits |= 1u << way;
             }
             cached_state[set] = (u8)((bits & 3u) | ((way ^ 1u) << 2));
-            rsx_vp_layout_pack(&s_vp_layout, rsx_vp_layout_at(&s_vp_layout, out, o),
+            rsx_vp_layout_copy(&s_vp_layout, rsx_vp_layout_at(&s_vp_layout, out, o),
                                cached_vertices[set][way]);
             ++o;
         }
