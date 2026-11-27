@@ -458,6 +458,8 @@ jobs:
         run: python scripts/check_native_job_wait.py
       - name: SPURS marker wake on a job commit, fallback and launcher
         run: python scripts/check_spurs_marker_wake.py
+      - name: SPURS lane count override, one-lane instances and launcher
+        run: python scripts/check_spurs_lane_count.py
       - name: Guarded native leaf interpreter dispatch
         run: python scripts/check_native_leaf_dispatch.py
       - name: Texture snapshot regression

@@ -245,6 +245,22 @@ class ExecutionProfileTests(unittest.TestCase):
     def test_spurs_marker_wake_enabled(self):
         self.check_spurs_marker_wake('1')
 
+    def check_spurs_lanes(self, lanes, expected):
+        with patch.dict(os.environ, {'SPURS_LANES': '6'}):
+            record, env = self.launch('--spurs-lanes', lanes)
+        self.assertEqual(env.get('SPURS_LANES'), expected)
+        self.assertEqual(record['environment'].get('SPURS_LANES'), expected)
+
+    def test_spurs_lanes_default_clears_inherited_switch(self):
+        self.check_spurs_lanes('0', None)
+
+    def test_spurs_lanes_six(self):
+        self.check_spurs_lanes('6', '6')
+
+    def test_spurs_lanes_rejects_seven(self):
+        with self.assertRaises(SystemExit):
+            self.launch('--spurs-lanes', '7')
+
     def test_pm_native_services_require_owned_jobs(self):
         self.rejected('Native policy services require --native-owned-jobs', '--pm-native-services')
     def check_surface_batch_selection(self, flush, overlap):

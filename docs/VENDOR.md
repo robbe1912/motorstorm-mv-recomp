@@ -1,5 +1,27 @@
 # Vendor provenance and upstream
 
+## SPURS lane count override (#327)
+
+Fork branch `codex/spurs-lane-count` on `combined` `79e7bb4c`: `d3067667`
+(code), `e8dcbfda` (check), open as robbe1912/ps3recomp#13. Here: the code and
+the check carried from `9c978b40` and `91ed55ec`, plus one change: a SPURS
+instance that requests one lane keeps it, because a race creates a one-lane
+instance beside the five-lane job instance and the override raised both.
+Default off.
+
+`SPURS_LANES=N` with `N` in 1..6 replaces the lane count that the game
+requests for an instance that requests more than one lane.
+`spurs_initialize_common` applies it after its validity check and writes the
+effective count to the instance. The log line of the initialization shows
+`nSpus=<effective> requested=<game>`.
+
+Checks: `python scripts/check_spurs_lane_count.py` rejects 6 header, 8 source
+and 5 launcher mutants (the source mutants include a one-lane instance that
+takes the override), and compiles `cellSpurs.c` syntax-only.
+
+Measured result: see `--spurs-lanes` in [OPERATIONS.md](OPERATIONS.md):
++1.56 fps +/- 0.40 SE at the start of a race, 8 races per arm.
+
 ## Compact VP vertex layout (#339)
 
 Local to this vendor copy; there is no `combined` counterpart. The D3D12 VP

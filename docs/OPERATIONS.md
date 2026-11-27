@@ -499,6 +499,28 @@ vehicle wait has 12 cooperations
 Measured result (one machine, i7-12700K + RTX 4070 SUPER, exe `c45ff520ed9c4e4d`, idle-vehicle race, window 100 to 130 s, 6 interleaved races per arm): 859.2 presents per 30 s with the switch on against 815.5 off (+5.4 percent; every race with the switch above every race without). The vehicle wait drops from 8.49 to 7.48 ms per presented frame and the PVS wait from 5.13 to 4.79 ms; main thread CPU is unchanged. Runs and setup: [#327](https://github.com/robbe1912/motorstorm-mv-recomp/issues/327). Game-free coverage:
 [check_spurs_marker_wake.py](../scripts/check_spurs_marker_wake.py).
 
+`--spurs-lanes N` (default `0`) sets `SPURS_LANES=N` with `N` from 1 to 6. It
+replaces the lane count that the game requests for each SPURS instance that
+requests more than one lane: the job instance of a race requests 5. A race also
+creates a one-lane instance; it keeps its single lane. Each lane is one host
+worker thread. The instance and `cellSpursGetInfo` report the effective count,
+and the initialization log line shows both counts: `nSpus=6 requested=5`.
+Without the option the launcher clears an inherited value, because it does not
+clear the `SPURS_` prefix. The launch record names the key. More lanes shorten
+a marker wait only when jobs are ready and no lane is free: in a race, the
+first vehicle job of a wait often finds every lane in a particle run
+([#327](https://github.com/robbe1912/motorstorm-mv-recomp/issues/327)).
+Measured result (one machine, i7-12700K + RTX 4070 SUPER, one EXE, idle-vehicle
+race, window 120 to 150 s, 8 alternating races per arm after one warm-up race;
+the tree also carried #360 and #361, with `RSX_VP_COMPACT=1`, the task pool and
+the marker wake on in both arms): six lanes 1004.4 presents per 30 s (969-1035)
+against five lanes 957.5 (923-997), +1.56 fps +/- 0.40 SE, one-sided
+permutation p = 0.0008. The vehicle wait drops from 5.95 to 4.96 s per 30 s and
+the PVS wait from 5.00 to 4.27 s (no overlap in either); main thread CPU per
+present rises from 15.2 to 16.0 ms. An earlier late-race run at about 10 fps
+(median frame about 95 ms) showed no clear gain. Game-free coverage:
+[check_spurs_lane_count.py](../scripts/check_spurs_lane_count.py).
+
 
 Use identical cache targets, validation and profiling settings for comparisons.
 Retention validates every uploaded face with full XXH3; the reference retains

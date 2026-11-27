@@ -16,6 +16,7 @@
 #include "spu_workload.h"   /* SPU image -> lifted-entry dispatch (runtime/spu) */
 #include "../../runtime/platform/thread_name.h"
 #include "spurs_taskset.h"  /* REAL BE CellSpursTaskset layout builders (fork Option-B) */
+#include "spurs_lane_count.h"   /* SPURS_LANES: optional lane count override */
 #include "../../runtime/ppu/ppu_memory.h"   /* vm_base (guest mem) */
 #include "../../runtime/ppu/ppu_context.h"
 #include "../../runtime/ppu/ppu_context.h"  /* g_active_ctx -> guest lr (SendSignal caller) */
@@ -603,6 +604,10 @@ static s32 spurs_initialize_common(u32 spurs_ea, u32 nspus, const char* prefix)
     __atomic_store_n(&si->ea, spurs_ea, __ATOMIC_RELEASE);
     ReleaseSRWLockExclusive(&si->lock);
     ReleaseSRWLockExclusive(&s_inst_directory_lock);
+    const uint32_t requested_lanes = nspus;
+    /* A one-lane instance keeps its count: the game sized that workload for
+     * one SPU (a race creates one beside the five-lane job instance). */
+    if (requested_lanes > 1u) nspus = spurs_lane_count(nspus, getenv("SPURS_LANES"));
     si->nspus = (nspus > 0 && nspus <= CELL_SPURS_MAX_SPU) ? nspus : 1;
     memset(si->prefix, 0, sizeof(si->prefix));
     if (prefix) memcpy(si->prefix, prefix, 15);
@@ -627,8 +632,8 @@ static s32 spurs_initialize_common(u32 spurs_ea, u32 nspus, const char* prefix)
     spurs_trace_lifecycle(PS3_SPURS_INSTANCE_RESULT,&trace,start_rc);
 #endif
     if (start_rc) return start_rc;
-    printf("[cellSpurs] Initialize \"%s\" ea=0x%08X nSpus=%u (real BE instance + kernel poll)\n",
-           si->prefix, spurs_ea, si->nspus);
+    printf("[cellSpurs] Initialize \"%s\" ea=0x%08X nSpus=%u requested=%u (real BE instance + kernel poll)\n",
+           si->prefix, spurs_ea, si->nspus, requested_lanes);
     return CELL_OK;
 }
 
