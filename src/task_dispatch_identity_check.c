@@ -8,6 +8,9 @@
 #ifndef _WIN32
 #include <pthread.h>
 #endif
+#ifdef POOL_API
+#include "spu_task_pool.h"   /* the job type embeds a pool item */
+#endif
 
 /* ACTUAL_JOB_TYPE */
 
@@ -74,6 +77,31 @@ static int fixture_detach(pthread_t t) { (void)t; return 0; }
 #define pthread_create fixture_create
 #define pthread_detach fixture_detach
 #endif
+static int pool_on;   /* PS3RECOMP_SPU_TASK_POOL=1: hand the job to the pool */
+#ifdef POOL_API
+/* Pool stand-ins: a hand-off captures the job as a spawn does. */
+static spu_task_pool s_spu_task_pool;
+static int spu_task_pool_enabled(void) { return pool_on; }
+static void spu_task_pool_report(void) {}
+static void spu_async_pool_run(void *p) { (void)p; abort(); }
+static int fixture_pool_submit(spu_task_pool *pool, spu_task_pool_item *it,
+        void (*run)(void *), void *arg) {
+    if (pool != &s_spu_task_pool || run != spu_async_pool_run ||
+        it != &((spu_async_job *)arg)->pool_item) abort();
+    if (refuse_spawn) return 0;
+    capture_job(arg);
+    return 1;
+}
+#define spu_task_pool_submit fixture_pool_submit
+#ifdef _WIN32
+static int fixture_pool_submit_ex(spu_task_pool *pool, spu_task_pool_item *it,
+        void (*run)(void *), void *arg, HANDLE *new_thread) {
+    *new_thread = NULL;
+    return fixture_pool_submit(pool, it, run, arg);
+}
+#define spu_task_pool_submit_ex fixture_pool_submit_ex
+#endif
+#endif
 
 /* ACTUAL_DISPATCH_APIS */
 
@@ -92,9 +120,10 @@ static int owned_dispatch(const uint8_t *image, uint32_t ts, uint32_t id) {
     return generic(image);
 #endif
 }
-int main(void) {
+static int cases(void) {
     const uint8_t image[] = {42}, missing[] = {43};
     int failures = 0;
+    refuse_spawn = 0;
     for (unsigned i = 0; i < 256; i++) {
         unsigned before = spawns;
         if (!owned_dispatch(image, 0x10000, i % 128) || spawns != before + 1 ||
@@ -122,6 +151,15 @@ int main(void) {
 #endif
     refuse_spawn = 1;
     if (owned_dispatch(image, 0x10000, 3) || spawns != before) { failures++; }
+    return failures;
+}
+int main(void) {
+    int failures = cases();
+#ifdef POOL_API
+    /* The same cases with the async task pool switched on. */
+    pool_on = 1;
+    failures += cases();
+#endif
     printf("task identity fixture failures=%d spawns=%u\n", failures, spawns);
     return failures ? 1 : 0;
 }

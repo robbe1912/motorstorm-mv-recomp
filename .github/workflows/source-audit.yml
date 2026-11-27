@@ -140,6 +140,8 @@ jobs:
         run: python scripts/check_cpu_surface_profile.py
       - name: CPU surface prompt service regression
         run: python scripts/check_cpu_surface_prompt.py
+      - name: Async SPU task thread pool regression
+        run: python scripts/check_spu_task_pool.py
       - name: CPU surface prefetch regression
         run: python scripts/check_cpu_surface_prefetch.py
       - name: CPU surface eager submission regression
@@ -384,6 +386,8 @@ jobs:
         run: python scripts/check_cpu_surface_profile.py
       - name: CPU surface prompt service regression
         run: python scripts/check_cpu_surface_prompt.py
+      - name: Async SPU task thread pool regression
+        run: python scripts/check_spu_task_pool.py
       - name: CPU surface prefetch regression
         run: python scripts/check_cpu_surface_prefetch.py
       - name: CPU surface eager submission regression

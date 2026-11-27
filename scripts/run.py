@@ -41,6 +41,7 @@ def main():
     ap.add_argument('--surface-prefetch',choices=('0','1'),default='0',help='Copy the race feedback surfaces (deformation 01A80500, 1280x720 00A80500, exposure 02A30480) ahead of coherent CPU reads (default 0: copy on read)')
     ap.add_argument('--eager-surface-submit',choices=('0','1'),default='0',help='Submit the batch as soon as the game stops drawing into the race exposure target (02A30480), ahead of its coherent CPU read (default 0: submit at the read or frame end)')
     ap.add_argument('--submit-draws',type=int,default=0,help='Submit the batch at the first draw boundary holding this many draws (0 = off, the default; otherwise 16 up to the build draw-record capacity)')
+    ap.add_argument('--spu-task-pool',choices=('0','1'),default='0',help='Run async SPU tasks on reused host threads instead of a new thread per task (default 0)')
     ap.add_argument('--spurs-marker-wake',choices=('0','1'),default='0',help='End a marker wait of the game when a job list commits, in place of its 100 us timer step (default 0)')
     ap.add_argument('--cpu-surface-prompt',choices=('default','0','1'),default='default',help='Prompt disjoint CPU surface reads; default preserves backend policy, 0 uses batch-end service')
     ap.add_argument('--cpu-surface-flush',choices=('default','0','1'),default='default',help='Submit recorded writes needed by queued CPU reads at the next draw boundary or idle pump')
@@ -120,6 +121,8 @@ def main():
     if args.pm_native_services:env['SPU_PM_NATIVE_SVC']='1'
     env.pop('SPURS_MARKER_WAKE',None)
     if args.spurs_marker_wake=='1':env['SPURS_MARKER_WAKE']='1'
+    env.pop('PS3RECOMP_SPU_TASK_POOL',None)
+    if args.spu_task_pool=='1':env['PS3RECOMP_SPU_TASK_POOL']='1'
     env['PS3_KEYS_FILE']=str(c.get('keys',ROOT/'game/private_keys')/'keys.json')
     if args.trace_task_lifecycle:
         env['SPU_TASK_LIFECYCLE_TRACE']=str(args.trace_task_lifecycle)
@@ -174,6 +177,7 @@ def main():
     record={'pid':p.pid,'create_time':proc.create_time(),'exe':str(exe),'exe_sha256':hashlib.sha256(exe.read_bytes()).hexdigest(),'elf_sha256':hashlib.sha256(c['elf'].read_bytes()).hexdigest(),'output':str(out),'muted':True,'capture_menu':bool(args.capture_menu or args.menu_replay),'menu_replay':str(args.menu_replay.resolve()) if args.menu_replay else None,'capture_textures':args.capture_textures,'trace_video':args.trace_video,'capture_havok':args.capture_havok or args.capture_havok_only,'capture_bike':args.capture_bike,'loadtime_trace':args.loadtime_trace,'capture_profile':'broad' if args.capture_havok else 'havok-only' if args.capture_havok_only else 'none','environment':{k:v for k,v in env.items() if k in ('PS3_VFS_ROOT','PS3_HDD0_ROOT','PS3_SAVEDATA_ROOT','AUDIO_MUTE','PAD_FILE','CAP_HAVOK_DIR','CAP_BIKE_DIR','CAP_BIKE_ARM_FILE','LOADTIME_TRACE','LOADTIME_TRACE_FILE','SPU_PM_INTERP','SPU_NATIVE_OWNED_JOBS','SPU_JOBMOD_HEADER_FNV','SPU_JOBMOD_DISPATCH_LOG') or k.startswith(('SPU_PM_','TEX_','RSX_')) or k in ('VDEC_TRACE','FS_READ_ALL','SEMTID','SEM_WAITDBG','PS3_FSLOG') or k=='SPU_WP'}}
     record['environment']['MS_BOOT_MENU'] = env['MS_BOOT_MENU']
     if 'SPURS_MARKER_WAKE' in env:record['environment']['SPURS_MARKER_WAKE']=env['SPURS_MARKER_WAKE']
+    if 'PS3RECOMP_SPU_TASK_POOL' in env:record['environment']['PS3RECOMP_SPU_TASK_POOL']=env['PS3RECOMP_SPU_TASK_POOL']
     record['resource_limits']=resource_policy
     record['resource_breach']=None
     record['launcher_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()

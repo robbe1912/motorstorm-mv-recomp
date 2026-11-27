@@ -20,6 +20,7 @@
 #include <errno.h>
 #include "../platform/win32_compat.h"   /* LONG, InterlockedExchange, Sleep */
 #endif
+#include "spu_task_pool.h"              /* PS3RECOMP_SPU_TASK_POOL */
 
 /* Set by the MFC DMA engine (spu_dma.h) when the cri task (image 22) issues a
  * real video-payload GET (>256B from a non-context EA) = it actually decoded,
@@ -379,6 +380,7 @@ typedef struct {
     uint32_t            taskid;
     spu_task_owner      owner;
     uint32_t            phantom_tid; /* lv2-table identity for the task-arg lane (0 = none) */
+    spu_task_pool_item  pool_item;   /* PS3RECOMP_SPU_TASK_POOL hand-off */
 } spu_async_job;
 
 /* ---- Persistent per-taskset local store (LBP_PERSIST_LS) ------------------
@@ -1227,8 +1229,85 @@ static DWORD WINAPI spu_async_thread(LPVOID p) {
       spu_coh_forget_range((uintptr_t)lo, (uintptr_t)hi); }
     return 0;
 }
+
+/* PS3RECOMP_SPU_TASK_POOL=1 (opt-in): run async SPU tasks on reused host
+ * threads instead of one new detached thread per task. Every task still
+ * starts at once on a thread of its own (see spu_task_pool.h), so a task that
+ * waits for another can never be queued behind it. Pool threads keep the
+ * 256 MB stack reservation and exit after 2 s idle. Off: a new thread per
+ * task, as before. */
+static spu_task_pool s_spu_task_pool = SPU_TASK_POOL_INIT(2000u, (size_t)256u << 20);
+static unsigned long long s_spu_task_pool_tasks;   /* for the periodic report */
+static int spu_task_pool_enabled(void)
+{
+    static int on = -1;
+    int v = __atomic_load_n(&on, __ATOMIC_RELAXED);
+    if (v < 0) {
+        const char* e = getenv("PS3RECOMP_SPU_TASK_POOL");
+        v = e && e[0] == '1' && !e[1];
+        if (__atomic_exchange_n(&on, v, __ATOMIC_RELAXED) < 0 && v)
+            fprintf(stderr, "[spu_workload] async SPU task thread pool on\n");
+    }
+    return v;
+}
+static void spu_task_pool_report(void)
+{
+    const unsigned long long n = __atomic_add_fetch(&s_spu_task_pool_tasks, 1, __ATOMIC_RELAXED);
+    if (n == 1 || n % 2000 == 0) {
+        spu_task_pool_lock(&s_spu_task_pool);
+        fprintf(stderr, "[spu_workload] task pool: tasks=%llu reused=%llu created=%llu retired=%llu threads=%u\n",
+                n, s_spu_task_pool.reused, s_spu_task_pool.created,
+                s_spu_task_pool.retired, s_spu_task_pool.threads);
+        spu_task_pool_unlock(&s_spu_task_pool);
+    }
+}
+/* A pool thread does per task what spu_async_thread does per thread: the
+ * stack guarantee once, and after every task the stack leaves the lock-line
+ * reserver set, since the next task reuses that stack. */
+static void spu_async_pool_run(void* p)
+{
+    static __declspec(thread) int t_guarantee;
+    if (!t_guarantee) { ULONG g = 256 * 1024; SetThreadStackGuarantee(&g); t_guarantee = 1; }
+    spu_async_run((spu_async_job*)p);
+    { ULONG_PTR lo, hi; GetCurrentThreadStackLimits(&lo, &hi);
+      extern void spu_coh_forget_range(uintptr_t, uintptr_t);
+      spu_coh_forget_range((uintptr_t)lo, (uintptr_t)hi); }
+}
 #else
 static void* spu_async_thread(void* p) { spu_async_run((spu_async_job*)p); return NULL; }
+
+/* PS3RECOMP_SPU_TASK_POOL=1 (opt-in): run async SPU tasks on reused host
+ * threads instead of one new detached thread per task. Every task still
+ * starts at once on a thread of its own (see spu_task_pool.h), so a task that
+ * waits for another can never be queued behind it. Pool threads keep the
+ * 256 MB stack reservation and exit after 2 s idle. Off: a new thread per
+ * task, as before. */
+static spu_task_pool s_spu_task_pool = SPU_TASK_POOL_INIT(2000u, (size_t)256u << 20);
+static unsigned long long s_spu_task_pool_tasks;   /* for the periodic report */
+static int spu_task_pool_enabled(void)
+{
+    static int on = -1;
+    int v = __atomic_load_n(&on, __ATOMIC_RELAXED);
+    if (v < 0) {
+        const char* e = getenv("PS3RECOMP_SPU_TASK_POOL");
+        v = e && e[0] == '1' && !e[1];
+        if (__atomic_exchange_n(&on, v, __ATOMIC_RELAXED) < 0 && v)
+            fprintf(stderr, "[spu_workload] async SPU task thread pool on\n");
+    }
+    return v;
+}
+static void spu_task_pool_report(void)
+{
+    const unsigned long long n = __atomic_add_fetch(&s_spu_task_pool_tasks, 1, __ATOMIC_RELAXED);
+    if (n == 1 || n % 2000 == 0) {
+        spu_task_pool_lock(&s_spu_task_pool);
+        fprintf(stderr, "[spu_workload] task pool: tasks=%llu reused=%llu created=%llu retired=%llu threads=%u\n",
+                n, s_spu_task_pool.reused, s_spu_task_pool.created,
+                s_spu_task_pool.retired, s_spu_task_pool.threads);
+        spu_task_pool_unlock(&s_spu_task_pool);
+    }
+}
+static void spu_async_pool_run(void* p) { spu_async_run((spu_async_job*)p); }
 #endif
 
 int spu_workload_dispatch_job(const uint8_t* image, uint32_t image_size,
@@ -1767,6 +1846,17 @@ int spu_workload_dispatch_owned(const uint8_t* image, uint32_t image_size,
      * chains are deep host call chains with fat lifted frames -- a 1MB stack
      * blew the guard page (STATUS_GUARD_PAGE_VIOLATION 0x80000001, silent
      * process death) the moment the real decode path first executed. */
+    if (spu_task_pool_enabled()) {
+        /* j may be freed by its task as soon as it is handed off. */
+        HANDLE nt = NULL;
+        if (!spu_task_pool_submit_ex(&s_spu_task_pool, &j->pool_item, spu_async_pool_run, j, &nt)) {
+            free(j);
+            return 0;
+        }
+        if (nt) { ps3_thread_setname((uintptr_t)nt, "spu_async"); CloseHandle(nt); }
+        spu_task_pool_report();
+        return 1;
+    }
     HANDLE th = CreateThread(NULL, 256u << 20, spu_async_thread, j,
                              STACK_SIZE_PARAM_IS_A_RESERVATION, NULL);
     if (!th) { free(j); return 0; }
@@ -1777,6 +1867,14 @@ int spu_workload_dispatch_owned(const uint8_t* image, uint32_t image_size,
      * mmap'd and committed on touch, so this reserves address space rather
      * than memory. The default is 512 KB on Darwin, half the 1 MB that blew
      * the guard page above. */
+    if (spu_task_pool_enabled()) {
+        if (!spu_task_pool_submit(&s_spu_task_pool, &j->pool_item, spu_async_pool_run, j)) {
+            free(j);
+            return 0;
+        }
+        spu_task_pool_report();
+        return 1;
+    }
     pthread_t th;
     pthread_attr_t attr;
     pthread_attr_init(&attr);

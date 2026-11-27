@@ -2280,6 +2280,22 @@ checks the runtime hook, wait behavior, and launcher. The author
 reported timings for the original path in [#327](https://github.com/robbe1912/motorstorm-mv-recomp/issues/327).
 Those timings do not measure the reviewed version.
 
+## Async SPU task thread pool
+
+`runtime/spu/spu_task_pool.h` carries the POSIX pool from
+sp00nznet/ps3recomp#733 (`6f88eec1`, MIT) and adds a Windows half with an
+SRW lock, a condition variable and `CreateThread` (stack reserved, not
+committed). `spu_workload.c` uses it on both platforms when
+`PS3RECOMP_SPU_TASK_POOL=1`; otherwise each async task keeps its own new
+thread. The no-queue rule is #733's: a task is handed to the pool only when
+more pool threads are idle than tasks are queued, so a task that waits for
+another can never be queued behind it. Pool threads carry thread-local state
+from one task into the next, which is why the pool is opt-in.
+
+`python scripts/check_spu_task_pool.py` audits the wiring and the launcher,
+then compiles and runs #733's reuse, no-queue, stress and retirement cases on
+the host platform, with header mutants that must fail.
+
 ## Held SPU float controls (#338)
 
 Fork branch: `review/spu-float-held`,

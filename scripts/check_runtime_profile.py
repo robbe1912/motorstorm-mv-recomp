@@ -245,6 +245,19 @@ class ExecutionProfileTests(unittest.TestCase):
     def test_spurs_marker_wake_enabled(self):
         self.check_spurs_marker_wake('1')
 
+    def check_spu_task_pool(self, mode):
+        with patch.dict(os.environ, {'PS3RECOMP_SPU_TASK_POOL': '1'}):
+            record, env = self.launch('--spu-task-pool', mode)
+        expected = '1' if mode == '1' else None
+        self.assertEqual(env.get('PS3RECOMP_SPU_TASK_POOL'), expected)
+        self.assertEqual(record['environment'].get('PS3RECOMP_SPU_TASK_POOL'), expected)
+
+    def test_spu_task_pool_default_clears_inherited_switch(self):
+        self.check_spu_task_pool('0')
+
+    def test_spu_task_pool_enabled(self):
+        self.check_spu_task_pool('1')
+
     def test_pm_native_services_require_owned_jobs(self):
         self.rejected('Native policy services require --native-owned-jobs', '--pm-native-services')
     def check_surface_batch_selection(self, flush, overlap):

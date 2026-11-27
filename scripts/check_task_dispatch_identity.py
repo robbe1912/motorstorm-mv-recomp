@@ -62,6 +62,8 @@ def main():
     if lifecycle: definitions.append('LIFECYCLE_API')
     if 'task_arg' in async_body.split('{', 1)[0]:
         definitions.append('ASYNC_HAS_ARGUMENT')
+    if 'pool_item' in source[begin:end]:
+        definitions.append('POOL_API')   # PS3RECOMP_SPU_TASK_POOL: cases run with the pool off and on
     includes = [repo/'runtime/spu', repo/'runtime/platform', repo/'tests']
     if os.name == 'nt':
         exe = out/'fixture.exe'

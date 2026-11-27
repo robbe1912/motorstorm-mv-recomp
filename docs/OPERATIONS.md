@@ -499,6 +499,20 @@ vehicle wait has 12 cooperations
 Measured result (one machine, i7-12700K + RTX 4070 SUPER, exe `c45ff520ed9c4e4d`, idle-vehicle race, window 100 to 130 s, 6 interleaved races per arm): 859.2 presents per 30 s with the switch on against 815.5 off (+5.4 percent; every race with the switch above every race without). The vehicle wait drops from 8.49 to 7.48 ms per presented frame and the PVS wait from 5.13 to 4.79 ms; main thread CPU is unchanged. Runs and setup: [#327](https://github.com/robbe1912/motorstorm-mv-recomp/issues/327). Game-free coverage:
 [check_spurs_marker_wake.py](../scripts/check_spurs_marker_wake.py).
 
+`--spu-task-pool 0|1` (default `0`) selects `PS3RECOMP_SPU_TASK_POOL=1`.
+Without it, every async SPU task dispatch creates a new host thread with a
+256 MB stack reservation; in a race the Havok SPU image alone starts about
+four tasks per frame, and each new thread commits its stack pages again.
+With it, a task goes to an idle pool thread when more pool threads are idle
+than tasks are queued for them, and gets a new pool thread otherwise, so a
+task never waits behind another. Pool threads keep the 256 MB reservation
+and exit after 2 s idle. On Windows a pool thread sets the stack guarantee
+once and, after every task, drops its stack from the lock-line reserver set,
+as a task thread does when it exits. Without the option the launcher clears
+an inherited value, and the launch record names the key.
+Measured result (one machine, i7-12700K + RTX 4070 SUPER, exe `6f74b6df855236d2`, built from a local tree that also carries #360 with compact vertex upload on; idle-vehicle race, window 120 to 150 s, the same exe with the switch on and off, three rounds of 8 alternating races per arm): 956.6 presents per 30 s with the pool against 939.6 without (+0.57 fps, standard error 0.24, one-sided permutation p = 0.012); each round favoured the pool (+0.49, +0.47 and +0.74 fps). In the check race 10,000 tasks ran on 13 created threads. Game-free coverage:
+[check_spu_task_pool.py](../scripts/check_spu_task_pool.py).
+
 
 Use identical cache targets, validation and profiling settings for comparisons.
 Retention validates every uploaded face with full XXH3; the reference retains
