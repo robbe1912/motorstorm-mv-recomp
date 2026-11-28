@@ -428,6 +428,18 @@ destinations. Textures that use those pages still need a hash.
 [check_rsx_texture_watch.py](../scripts/check_rsx_texture_watch.py); see
 `docs/VENDOR.md` for the runtime source and measured result.
 
+`--vertex-cache 0|1|verify` (default `0`) sets `PS3RECOMP_VM_WRITE_WATCH=1`
+and `RSX_VC_CACHE=1`: an indexed triangle, strip or fan upload whose index
+span and vertex spans have not been written since it was converted is drawn
+from the stored conversion instead of converting it again. Stored output
+lives in two upload-heap arenas of `RSX_VC_CACHE_MB` MiB each (default 256).
+`verify` also sets `RSX_VC_CACHE_VERIFY=1`: 1 in 512 hits is converted again
+and compared, and a difference is counted as `BAD=` in the stats line.
+`RSX_VC_CACHE_STATS=1` prints `[VCACHE]` counts every 600 presents. The
+launcher clears inherited `RSX_VC_*` selections and records them. Game-free
+coverage: [check_rsx_vertex_cache.py](../scripts/check_rsx_vertex_cache.py);
+see `docs/VENDOR.md` for the runtime source and measured result.
+
 `--surface-prefetch 0|1` (default `0`) sets `RSX_CPU_SURFACE_PREFETCH` to
 MotorStorm's three race feedback surfaces: the 2048x2048 deformation surface
 (`01A80500`), a 1280x720 surface the game probes at varying points

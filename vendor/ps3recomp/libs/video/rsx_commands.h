@@ -383,6 +383,9 @@ typedef struct rsx_state {
                                * truncation dropped the end bit + HPOS write) */
     u32 vp_ucode_write;       /* byte write cursor (from SET_TRANSFORM_PROGRAM_LOAD) */
     u32 vp_ucode_bytes;       /* highest byte written + 1 */
+    u64 vp_ucode_epoch;       /* new process-wide value at every vp_ucode write;
+                               * 0 until the first one. Equal epochs mean equal
+                               * vp_ucode/vp_ucode_bytes. */
     int vp_dirty;             /* program changed since last translate */
 
     /* Dirty flags for incremental state updates */

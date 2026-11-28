@@ -47,6 +47,7 @@ def main():
     ap.add_argument('--drain-overlap',choices=('default','0','1'),default='default',help='Overlap recording with a submitted capacity batch; default preserves backend policy')
     ap.add_argument('--texture-retention',choices=('0','1'),default='0',help='Explicit reference or bounded persistent DX12 texture cache')
     ap.add_argument('--texture-watch',choices=('0','1','verify'),default='0',help='With --texture-retention 1: skip re-hashing held textures whose guest pages are unwritten since the last hash (guest write watch); verify also hashes every skip and reports misses, with strict OS-write checks (default 0: hash every held texture)')
+    ap.add_argument('--vertex-cache',choices=('0','1','verify'),default='0',help='Reuse converted indexed vertex uploads whose index and vertex guest pages are unwritten since conversion (guest write watch); verify also converts 1 in 512 hits again and reports differences (default 0: convert every draw)')
     ap.add_argument('--texture-cache-mib',type=int,default=512,help='Default+upload allocation target, 0..4096 MiB; live batch pins may exceed it')
     ap.add_argument('--texture-mips',choices=('0','1'),default='0',help='Upload the guest mip chain below level 0 for 2D/cube textures (default 0: level 0 only)')
     ap.add_argument('--profile-renderer',action='store_true',help='CPU renderer phases and GPU timestamps, without broad asset/Havok probes; adds timing overhead')
@@ -150,6 +151,8 @@ def main():
     if args.submit_draws:env['RSX_SUBMIT_DRAWS']=str(args.submit_draws)
     if args.texture_watch!='0':env.update(PS3RECOMP_VM_WRITE_WATCH='1',RSX_TEX_WATCH='1')
     if args.texture_watch=='verify':env.update(RSX_TEX_WATCH_VERIFY='1',PS3RECOMP_VM_WRITE_WATCH_STRICT='1')
+    if args.vertex_cache!='0':env.update(PS3RECOMP_VM_WRITE_WATCH='1',RSX_VC_CACHE='1')
+    if args.vertex_cache=='verify':env['RSX_VC_CACHE_VERIFY']='1'
     if args.cpu_surface_flush != 'default':env['RSX_CPU_SURFACE_FLUSH']=args.cpu_surface_flush
     if args.drain_overlap != 'default':env['RSX_DRAIN_OVERLAP']=args.drain_overlap
     env.update(RSX_TEXTURE_RETENTION=args.texture_retention,RSX_TEXTURE_CACHE_MIB=str(args.texture_cache_mib),RSX_TEX_MIPS=args.texture_mips)
@@ -186,7 +189,7 @@ def main():
     record['profile_textures']=args.profile_textures
     record['d3d12_debug']=args.d3d12_debug
     record['replay_observe_seconds']=args.replay_observe_seconds
-    record['environment'].update({k:v for k,v in env.items() if k in ('PERF','D3D12_DBG','RSX_TEXTURE_RETENTION','RSX_TEXTURE_CACHE_MIB','RSX_TEX_MIPS','RSX_CPU_SURFACE_PROFILE') or k.startswith(('MS_NATIVE_','PS3RECOMP_VM_WRITE_WATCH'))})
+    record['environment'].update({k:v for k,v in env.items() if k in ('PERF','D3D12_DBG','RSX_TEXTURE_RETENTION','RSX_TEXTURE_CACHE_MIB','RSX_TEX_MIPS','RSX_CPU_SURFACE_PROFILE') or k.startswith(('MS_NATIVE_','PS3RECOMP_VM_WRITE_WATCH','RSX_VC_'))})
     record['environment'].update({k:env[k] for k in ('SPU_TASK_LIFECYCLE_TRACE','SPU_TASK_LIFECYCLE_IMAGE') if k in env})
     (out/'launch.json').write_text(json.dumps(record,indent=2)); print('Owned native PID',p.pid,'output',out,flush=True)
     window_ready=False

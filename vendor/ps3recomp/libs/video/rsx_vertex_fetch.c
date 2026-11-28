@@ -2,6 +2,7 @@
  * ps3recomp - RSX guest vertex fetch (see rsx_vertex_fetch.h)
  */
 #include "rsx_vertex_fetch.h"
+#include "rsx_vertex_decode_tables.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -65,6 +66,49 @@ void rsx_vertex_fetch_prepare(rsx_vertex_fetch_batch* batch, const rsx_state* st
     }
 }
 
+/* Decode one prepared array element of vertex vi into o, which already holds
+ * the slot's constant register. Unrecognised types take the scalar fetch.
+ * Forced inline: it runs once per attribute per vertex in both fetch loops. */
+#if defined(_MSC_VER)
+#define RSX_VTX_INLINE __forceinline
+#else
+#define RSX_VTX_INLINE inline __attribute__((always_inline))
+#endif
+static RSX_VTX_INLINE void fetch_slot(const rsx_vertex_fetch_batch* batch,
+                              const rsx_vertex_fetch_slot* s, u32 vi, float* o)
+{
+    if (!prepared_type(s->type)) {
+        rsx_fetch_attrib(batch->state, (int)s->slot, vi, o);
+        return;
+    }
+    u32 ei = vi;
+    if (s->frequency > 1 && !batch->nofreq)
+        ei = s->modulo ? (vi % s->frequency) : (vi / s->frequency);
+    const u8* p = vm_base + cellGcmResolveLocated(s->location, s->offset + ei * s->stride);
+    u32 n = s->n;
+    switch (s->type) {
+    case 2: for (u32 k = 0; k < n; k++) o[k] = rd_bef(p + k * 4); break;
+    case 3: for (u32 k = 0; k < n; k++) o[k] = rd_half_be(p + k * 2); break;
+    case 4: for (u32 k = 0; k < n; k++) o[k] = rsx_vtx_ub_unorm.f[p[k]]; break;
+    case 1:
+        for (u32 k = 0; k < n; k++) {
+            s16 v = (s16)((p[k*2] << 8) | p[k*2+1]);
+            o[k] = (float)v / 32767.0f;
+        }
+        break;
+    case 5: for (u32 k = 0; k < n; k++) o[k] = (float)(s16)((p[k*2] << 8) | p[k*2+1]); break;
+    case 6: {
+        u32 w = ((u32)p[0] << 24) | ((u32)p[1] << 16) | ((u32)p[2] << 8) | (u32)p[3];
+        o[0] = rsx_vtx_cmp11.f[w & 0x7FFu];
+        o[1] = rsx_vtx_cmp11.f[(w >> 11) & 0x7FFu];
+        o[2] = rsx_vtx_cmp10.f[(w >> 22) & 0x3FFu];
+        o[3] = 1.0f;
+        break;
+    }
+    default: /* 7: UB256 */ for (u32 k = 0; k < n; k++) o[k] = (float)p[k]; break;
+    }
+}
+
 void rsx_fetch_vertex_prepared(const rsx_vertex_fetch_batch* batch, u32 vi,
                                rsx_vertex_value out[16])
 {
@@ -77,38 +121,25 @@ void rsx_fetch_vertex_prepared(const rsx_vertex_fetch_batch* batch, u32 vi,
     if (!vm_base) return;          /* every slot keeps its constant register */
     for (u32 i = 0; i < batch->count; ++i) {
         const rsx_vertex_fetch_slot* s = &batch->slots[i];
-        float* o = out[s->slot].v;
-        if (!prepared_type(s->type)) {
-            rsx_fetch_attrib(batch->state, (int)s->slot, vi, o);
-            continue;
-        }
-        u32 ei = vi;
-        if (s->frequency > 1 && !batch->nofreq)
-            ei = s->modulo ? (vi % s->frequency) : (vi / s->frequency);
-        const u8* p = vm_base + cellGcmResolveLocated(s->location, s->offset + ei * s->stride);
-        u32 n = s->n;
-        switch (s->type) {
-        case 2: for (u32 k = 0; k < n; k++) o[k] = rd_bef(p + k * 4); break;
-        case 3: for (u32 k = 0; k < n; k++) o[k] = rd_half_be(p + k * 2); break;
-        case 4: for (u32 k = 0; k < n; k++) o[k] = p[k] / 255.0f; break;
-        case 1:
-            for (u32 k = 0; k < n; k++) {
-                s16 v = (s16)((p[k*2] << 8) | p[k*2+1]);
-                o[k] = (float)v / 32767.0f;
-            }
-            break;
-        case 5: for (u32 k = 0; k < n; k++) o[k] = (float)(s16)((p[k*2] << 8) | p[k*2+1]); break;
-        case 6: {
-            u32 w = ((u32)p[0] << 24) | ((u32)p[1] << 16) | ((u32)p[2] << 8) | (u32)p[3];
-            s32 x = (s32)(w & 0x7FFu), y = (s32)((w >> 11) & 0x7FFu), z = (s32)((w >> 22) & 0x3FFu);
-            if (x & 0x400) x -= 0x800;
-            if (y & 0x400) y -= 0x800;
-            if (z & 0x200) z -= 0x400;
-            o[0] = (float)x / 1023.0f; o[1] = (float)y / 1023.0f; o[2] = (float)z / 511.0f; o[3] = 1.0f;
-            break;
-        }
-        default: /* 7: UB256 */ for (u32 k = 0; k < n; k++) o[k] = (float)p[k]; break;
-        }
+        fetch_slot(batch, s, vi, out[s->slot].v);
+    }
+}
+
+void rsx_fetch_vertex_slots(const rsx_vertex_fetch_batch* batch, u32 vi,
+                            const u8* slot, const s8* index_of, u32 n,
+                            rsx_vertex_value* out)
+{
+    if (batch->count > 8) {
+        for (u32 k = 0; k < n; ++k)
+            rsx_fetch_attrib(batch->state, (int)slot[k], vi, out[k].v);
+        return;
+    }
+    for (u32 k = 0; k < n; ++k) out[k] = batch->constants[slot[k]];
+    if (!vm_base) return;
+    for (u32 i = 0; i < batch->count; ++i) {
+        const rsx_vertex_fetch_slot* s = &batch->slots[i];
+        const int k = index_of[s->slot];
+        if (k >= 0) fetch_slot(batch, s, vi, out[k].v);
     }
 }
 

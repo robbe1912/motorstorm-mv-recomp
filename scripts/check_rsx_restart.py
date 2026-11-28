@@ -76,9 +76,13 @@ def main():
     if 'rsx_vp_layout_' in body or 'vp_put_vertex' in body:
         put_start = text.index('static void vp_put_vertex(')
         put = text[put_start:text.index('\n}\n', put_start) + 3]
+        if 'read_vp_vertex_packed' in body + put:
+            packed_start = text.index('static void read_vp_vertex_packed(')
+            put = text[packed_start:text.index('\n}\n', packed_start) + 3] + put
         layout = ('#include "' + source.with_name('rsx_vp_layout.h').as_posix() + '"\n'
                   'static rsx_vp_layout s_vp_layout = RSX_VP_LAYOUT_FULL;\n' + put)
-    c.write_text(prefix + layout + include + body + CHECK, encoding='utf-8')
+    vc_io = "static struct { VPSlot* dst; u64 room; rsx_index_strip cursor; const rsx_state* owner; u32 epoch; int fan; } s_vc_io;   /* the uploaders' vertex-cache state (rsx_d3d12_backend.c) */\n" if 's_vc_io' in body else ''
+    c.write_text(prefix + layout + include + vc_io + body + CHECK, encoding='utf-8')
     env = os.environ.copy()
     if os.name == 'nt' and not env.get('CC'):
         from project import build_environment

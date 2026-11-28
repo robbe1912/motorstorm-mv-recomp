@@ -34,6 +34,16 @@ typedef struct { const rsx_state* state; } rsx_vertex_fetch_batch;
 static void rsx_vertex_fetch_prepare(rsx_vertex_fetch_batch* b, const rsx_state* s) { b->state = s; }
 static void read_vp_vertex(const rsx_state* s, const rsx_vertex_fetch_batch* b, u32 k, VPSlot* out)
 { if (b->state != s) abort(); if (k >= 64) abort(); memcpy(out, vertices[k], VP_VERT_STRIDE); }
+/* Compact layouts fetch only the carried slots; same authored vertices. */
+static void rsx_fetch_vertex_slots(const rsx_vertex_fetch_batch* b, u32 k, const u8* slot,
+                                   const s8* index_of, u32 n, VPSlot* out)
+{
+    if (!b->state || k >= 64 || n > 16) abort();
+    for (u32 j = 0; j < n; ++j) {
+        if (slot[j] > 15 || index_of[slot[j]] != (s8)j) abort();
+        out[j] = vertices[k][slot[j]];
+    }
+}
 static int allocate(void* c, uint64_t bytes, rsx_upload_buffer* b)
 {
     (void)c; b->memory = malloc((size_t)bytes); b->resource = b->memory;
@@ -49,6 +59,7 @@ static void vp_upload_reserve(u64 count)
     if (!rsx_vp_layout_reserve(&b, s_d3d.vp_vb_offset, count * s_vp_layout.stride, &ops)) abort();
     s_d3d.vp_vb_mapped = b.memory; s_d3d.vp_capacity = b.capacity;
 }
+static struct { VPSlot* dst; u64 room; rsx_index_strip cursor; const rsx_state* owner; u32 epoch; int fan; } s_vc_io;   /* the uploaders' vertex-cache state (rsx_d3d12_backend.c) */
 @UPLOAD_FUNCTIONS@
 #define CHECK(x) do { if (!(x)) { fprintf(stderr,"FAIL line %d: %s\n",__LINE__,#x); return 1; } } while (0)
 int main(int argc, char** argv)

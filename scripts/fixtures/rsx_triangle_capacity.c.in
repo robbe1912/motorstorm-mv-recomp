@@ -49,6 +49,11 @@ static u32 upload_vertices_from_rsx(u32 f,u32 n){(void)f;return n;}
 static u32 vp_fp_snap_for(u32 address){return address;}
 static u64 rsx_depth_stencil_key(const rsx_state*s){(void)s;return 0;}
 
+/* The vertex cache (RSX_VC_CACHE) stays off here: these must never run. */
+static int vc_enabled(void){return 0;}
+static u32 vc_upload(const rsx_state*s,u32 f,u32 n,int kind,int bypass,u32*rec,u32*buf){(void)s;(void)f;(void)n;(void)kind;(void)bypass;(void)rec;(void)buf;abort();}
+static int vc_reemit_run(u32 f,u32 n){(void)f;(void)n;abort();}
+static void vc_note_record(u32 f){(void)f;abort();}
 @HELPER@
 @LAYOUT@
 @CALLBACKS@

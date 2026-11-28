@@ -106,6 +106,17 @@ void rsx_vertex_fetch_prepare(rsx_vertex_fetch_batch* batch, const rsx_state* st
 void rsx_fetch_vertex_prepared(const rsx_vertex_fetch_batch* batch, u32 vi,
                                rsx_vertex_value out[16]);
 
+/* The same values as rsx_fetch_vertex_prepared, for only the attributes a
+ * vertex program reads: out[k] receives attribute slot[k] (k < n), bit for bit
+ * what out[slot[k]] of the full fetch holds. index_of[a] is the k that carries
+ * attribute a, or -1 if none does; `slot` and `index_of` describe the same
+ * set. Arrays nobody reads are neither resolved nor decoded; the carried ones
+ * resolve per element in the same order as the full fetch. Saves copying all
+ * sixteen constant registers per vertex when a program reads a few. */
+void rsx_fetch_vertex_slots(const rsx_vertex_fetch_batch* batch, u32 vi,
+                            const u8* slot, const s8* index_of, u32 n,
+                            rsx_vertex_value* out);
+
 #ifdef __cplusplus
 }
 #endif

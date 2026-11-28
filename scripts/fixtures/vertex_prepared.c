@@ -1,4 +1,5 @@
 #include "rsx_vertex_fetch.h"
+#include "rsx_vertex_decode_tables.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,6 +40,49 @@ static void setup(unsigned active,unsigned type) {
 static void original(u32 vi,rsx_vertex_value out[16]) {
     for(int i=0;i<16;i++)rsx_fetch_attrib(&state,i,vi,out[i].v);
 }
+/* The slot fetch returns out[slot[k]] of the full fetch for each carried k,
+ * and resolves only the carried arrays, in the scalar fetch's order. */
+static void slot_parity(rsx_vertex_fetch_batch* b,u32 vi,const rsx_vertex_value full[16]) {
+    static const u32 masks[]={0x0001u,0x8000u,0x0109u,0xCF8Fu,0x7FFEu,0xFFFFu,0x0000u,0x00F0u};
+    for(unsigned m=0;m<sizeof masks/sizeof masks[0];m++){
+        u8 slot[16];s8 index_of[16];u32 n=0;rsx_vertex_value c[16],r[16];unsigned rr;u64 rt;
+        for(u32 a=0;a<16;a++){index_of[a]=-1;if(masks[m]>>a&1u){index_of[a]=(s8)n;slot[n++]=(u8)a;}}
+        resolves=0;resolve_trace=0;
+        for(u32 k=0;k<n;k++)rsx_fetch_attrib(&state,(int)slot[k],vi,r[k].v);
+        rr=resolves;rt=resolve_trace;
+        memset(c,0xA5,sizeof c);resolves=0;resolve_trace=0;
+        rsx_fetch_vertex_slots(b,vi,slot,index_of,n,c);
+        for(u32 k=0;k<n;k++)CHECK(memcmp(&c[k],&full[slot[k]],sizeof c[k])==0&&memcmp(&c[k],&r[k],sizeof c[k])==0,"slot fetch parity");
+        for(u32 k=n;k<16;k++){u8 g[sizeof c[k]];memset(g,0xA5,sizeof g);CHECK(memcmp(&c[k],g,sizeof g)==0,"slot fetch wrote past its slots");}
+        CHECK(resolves==rr&&resolve_trace==rt,"per-element address resolution changed");
+    }
+}
+/* Every table entry equals the division the scalar fetch performs. */
+static void table_parity(void) {
+    for(int r=0;r<256;r++){float d=(float)r/255.0f;CHECK(memcmp(&rsx_vtx_ub_unorm.f[r],&d,4)==0,"UB table entry");}
+    for(int r=0;r<2048;r++){int s=r&0x400?r-0x800:r;float d=(float)s/1023.0f;CHECK(memcmp(&rsx_vtx_cmp11.f[r],&d,4)==0,"CMP 11-bit table entry");}
+    for(int r=0;r<1024;r++){int s=r&0x200?r-0x400:r;float d=(float)s/511.0f;CHECK(memcmp(&rsx_vtx_cmp10.f[r],&d,4)==0,"CMP 10-bit table entry");}
+}
+/* Every UB byte and every CMP field value through the actual prepared
+ * fetch, against the scalar fetch's division. */
+static void exhaustive_decode(void) {
+    static const u32 types[]={4,6};
+    for(unsigned ti=0;ti<2;ti++){
+        rsx_vertex_fetch_batch b;rsx_vertex_value a[16],c[16];
+        setup(1,types[ti]);state.vertex_attribs[0].stride=4;rsx_vertex_fetch_prepare(&b,&state);
+        const rsx_vertex_attrib* at=&state.vertex_attribs[0];
+        for(u32 vi=0;vi<2048;vi++){
+            u32 w=types[ti]==4?((vi*4u)&255u)<<24|((vi*4u+1)&255u)<<16|((vi*4u+2)&255u)<<8|((vi*4u+3)&255u)
+                              :(vi&0x7FFu)|((vi*7u)&0x7FFu)<<11|(vi&0x3FFu)<<22;
+            u8* q=memory+cellGcmResolveLocated(at->offset&0x80000000u?0:1,(at->offset&0x7FFFFFFFu)+vi*4u);
+            q[0]=(u8)(w>>24);q[1]=(u8)(w>>16);q[2]=(u8)(w>>8);q[3]=(u8)w;
+        }
+        for(u32 vi=0;vi<2048;vi++){
+            original(vi,a);rsx_fetch_vertex_prepared(&b,vi,c);
+            CHECK(memcmp(a,c,sizeof a)==0,"exhaustive normalized decode parity");
+        }
+    }
+}
 static void parity(rsx_vertex_fetch_batch* b,u32 vi,const char* why) {
     rsx_vertex_value a[16],c[16]; unsigned ra,rc;u64 ta,tc;
     resolves=0;resolve_trace=0; original(vi,a); ra=resolves;ta=resolve_trace;
@@ -52,6 +96,7 @@ static void parity(rsx_vertex_fetch_batch* b,u32 vi,const char* why) {
     else if(vm_base)for(u32 i=0;i<b->count;i++){u32 t=state.vertex_attribs[b->active[i]].type;scalar+=!(t>=1&&t<=7);}
     CHECK(test_fetch_calls==scalar,"constant-only slots fetched individually");
 #endif
+    slot_parity(b,vi,c);
 }
 static double now(void) {
 #ifdef _WIN32
@@ -112,5 +157,6 @@ int main(int argc,char**argv) {
         state.vertex_data4f[15][2]=-0.0f;state.vertex_attribs[15].enabled=1;
         rsx_vertex_fetch_prepare(&b,&state);parity(&b,3,"next draw refreshed declarations/constants");
     }
+    table_parity();exhaustive_decode();
     printf("PASS actual prepared/scalar vertex fetch: %u cases; live bytes/mapping/frequencies/defaults\n",cases);return 0;
 }

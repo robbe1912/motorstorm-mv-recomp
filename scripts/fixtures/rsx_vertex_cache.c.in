@@ -1,0 +1,263 @@
+/* Production vertex cache (vc_upload, vc_frame) with the real attribute
+ * prepare and authored guest memory, write watch, uploaders and arenas. */
+#include "rsx_commands.h"
+#include "rsx_vertex_fetch.h"
+#include "rsx_index_strip.h"
+#include "rsx_vp_layout.h"
+#define XXH_INLINE_ALL
+#include "third_party/xxhash/xxhash.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#define VP_VERT_STRIDE 256u
+typedef rsx_vertex_value VPSlot;
+typedef struct ID3D12Resource ID3D12Resource;
+typedef u64 D3D12_GPU_VIRTUAL_ADDRESS;
+typedef union { long long QuadPart; } LARGE_INTEGER;
+static int QueryPerformanceCounter(LARGE_INTEGER* t) { t->QuadPart = 0; return 1; }
+static int QueryPerformanceFrequency(LARGE_INTEGER* f) { f->QuadPart = 1; return 1; }
+static u8 ring[1u << 20];
+static struct { void* vp_vb_mapped; u32 vp_vb_offset, vp_parity, vp_capacity, draw_count; } s_d3d = { ring, 0, 0, (1u << 20) / VP_VERT_STRIDE, 0 };
+static rsx_vp_layout s_vp_layout = RSX_VP_LAYOUT_FULL;
+static struct { VPSlot* dst; u64 room; rsx_index_strip cursor; const rsx_state* owner; u32 epoch; int fan; } s_vc_io;
+
+/* Guest memory, 4 KiB pages, and a write watch with the vm_watch contract:
+ * an epoch from vm_watch stays clean until a page of the range is written. */
+static u8 guest[16u << 20];
+uint8_t* vm_base = guest;
+static u64 s_clock = 1, s_written[(16u << 20) >> 12];
+static int s_refuse;
+static unsigned s_watches;
+uint64_t vm_watch(uint32_t ea, uint32_t len) { (void)ea; (void)len; if (s_refuse) return 0; ++s_watches; return ++s_clock; }
+int vm_clean_since(uint32_t ea, uint32_t len, uint64_t epoch)
+{
+    if (!epoch) return 0;
+    for (u32 p = ea >> 12; p <= (ea + len - 1) >> 12; ++p) if (s_written[p] > epoch) return 0;
+    return 1;
+}
+static void guest_write(u32 ea, const void* bytes, u32 n)
+{
+    memcpy(guest + ea, bytes, n); ++s_clock;
+    for (u32 p = ea >> 12; p <= (ea + n - 1) >> 12; ++p) s_written[p] = s_clock;
+}
+u32 cellGcmResolveLocated(int location, u32 offset) { if (offset >= 0x800000) abort(); return offset + (location ? 0x800000 : 0); }
+
+/* Authored uploaders with the production contract: write the triangle list
+ * to s_vc_io.dst when set (else the ring, advancing it), and continue the
+ * strip cursor across the calls of one BEGIN. A vertex is the 16 guest bytes
+ * at each carried attribute's element. */
+static unsigned s_uploads;
+static rsx_state state;
+static u32 index_at(const rsx_state* s, u32 k)
+{
+    const u8* p = guest + cellGcmResolveLocated((s->index_array_dma & 0xF) == 0, s->index_array_offset);
+    return ((s->index_array_dma >> 4) & 15u) == 1 ? ((u32)p[2*k] << 8 | p[2*k+1])
+        : ((u32)p[4*k] << 24 | (u32)p[4*k+1] << 16 | (u32)p[4*k+2] << 8 | p[4*k+3]);
+}
+static void emit(const rsx_state* s, u32 index, u8* out)
+{
+    for (u32 k = 0; k < s_vp_layout.count; ++k) {
+        const rsx_vertex_attrib* a = &s->vertex_attribs[s_vp_layout.slot[k]];
+        memcpy(out + 16 * k, guest + cellGcmResolveLocated((a->offset & 0x80000000u) ? 0 : 1,
+               (a->offset & 0x7FFFFFFFu) + index * a->stride), 16);
+    }
+}
+static u8* out_base(void) { return s_vc_io.dst ? (u8*)s_vc_io.dst : ring + s_d3d.vp_vb_offset; }
+static u32 upload_tris_vp_indexed(const rsx_state* s, u32 first, u32 count)
+{
+    ++s_uploads; u8* out = out_base();
+    for (u32 k = 0; k < count; ++k) emit(s, index_at(s, first + k), out + (u64)k * s_vp_layout.stride);
+    if (!s_vc_io.dst) s_d3d.vp_vb_offset += count * s_vp_layout.stride;
+    return count;
+}
+static u32 upload_strip_vp_indexed(const rsx_state* s, u32 first, u32 count, int fan)
+{
+    ++s_uploads; u8* out = out_base(); u32 o = 0;
+    if (s_vc_io.owner != s || s_vc_io.epoch != s->begin_epoch || s_vc_io.fan != fan) {
+        memset(&s_vc_io.cursor, 0, sizeof s_vc_io.cursor);
+        s_vc_io.owner = s; s_vc_io.epoch = s->begin_epoch; s_vc_io.fan = fan;
+    }
+    for (u32 k = 0; k < count; ++k) {
+        u32 t[3];
+        if (!rsx_index_strip_push(&s_vc_io.cursor, index_at(s, first + k), fan, s->restart_index_enable,
+                s->restart_index, ((s->index_array_dma >> 4) & 15u) != 1, t)) continue;
+        for (int v = 0; v < 3; ++v) emit(s, t[v], out + (u64)(o++) * s_vp_layout.stride);
+    }
+    if (!s_vc_io.dst) s_d3d.vp_vb_offset += o * s_vp_layout.stride;
+    return o;
+}
+static unsigned s_waits; static u32 s_other_top_at_wait;
+static u32 vc_test_other(void);
+static void wait_for_gpu_required(void) { ++s_waits; s_other_top_at_wait = vc_test_other(); }
+
+@VC_DECLS@
+@VC_FRAME@
+@VC_RING@
+@VC_UPLOAD@
+static u32 vc_test_other(void) { return s_vca[s_vca_active ^ 1].top; }
+
+#define CHECK(x) do { if (!(x)) { fprintf(stderr, "FAIL line %d: %s\n", __LINE__, #x); return 1; } } while (0)
+static u8 expect[4096];
+static u32 reference(int kind, const u32* idx, u32 n)
+{
+    rsx_index_strip c = {0}; u32 o = 0;
+    for (u32 k = 0; k < n; ++k) {
+        if (!kind) { emit(&state, idx[k], expect + (u64)(o++) * s_vp_layout.stride); continue; }
+        u32 t[3];
+        if (!rsx_index_strip_push(&c, idx[k], kind == 2, 0, 0, 0, t)) continue;
+        for (int v = 0; v < 3; ++v) emit(&state, t[v], expect + (u64)(o++) * s_vp_layout.stride);
+    }
+    return o;
+}
+static const u8* at(u32 rec, u32 buf) { return buf ? s_vca[buf - 1].mem + rec : ring + rec; }
+static u32 call(int kind, u32 first, u32 count, u32* rec, u32* buf)
+{ *rec = s_d3d.vp_vb_offset; *buf = 0; return vc_upload(&state, first, count, kind, 0, rec, buf); }
+static void put_index(u32 k, u32 v) { u8 b[2] = { (u8)(v >> 8), (u8)v }; guest_write(0x840000 + 2 * k, b, 2); }
+static void set_indices(u32 k, const u32* v, u32 n) { for (u32 i = 0; i < n; ++i) put_index(k + i, v[i]); }
+
+int main(void)
+{
+    /* Two arrays: attribute 0 in main memory, attribute 1 in local memory. */
+    state.vertex_attribs[0].enabled = 1; state.vertex_attribs[0].type = 2; state.vertex_attribs[0].size = 4;
+    state.vertex_attribs[0].stride = 16; state.vertex_attribs[0].offset = 0x80010000u;
+    state.vertex_attribs[1].enabled = 1; state.vertex_attribs[1].type = 4; state.vertex_attribs[1].size = 3;
+    state.vertex_attribs[1].stride = 8; state.vertex_attribs[1].offset = 0x00020000u;
+    for (u32 v = 0; v < 512; ++v) for (u32 b = 0; b < 16; ++b) {
+        guest[0x10000 + v * 16 + b] = (u8)(v * 7 + b);
+        guest[0x820000 + v * 8 + b] = (u8)(v * 13 + b * 3);
+    }
+    state.index_array_dma = 0x10;   /* u16 indices in local memory */
+    state.index_array_offset = 0x40000;
+    state.begin_epoch = 1;
+    rsx_vp_layout_init(&s_vp_layout, 0x3);
+    s_vc = (vc_ent*)calloc(VC_N, sizeof *s_vc);
+    s_vca_bytes = 64u << 10;
+    for (int i = 0; i < 2; ++i) { s_vca[i].mem = (u8*)malloc(s_vca_bytes); s_vca[i].gen = 1; }
+    s_vc_on = 1;
+    CHECK(s_vc && s_vca[0].mem && s_vca[1].mem && s_vp_layout.stride == 32);
+    u32 rec, buf, rec0, buf0, n, e;
+    static u8 saved[4096];
+
+    /* A first call fills the active arena; the same call again is served
+     * from it without converting. */
+    const u32 tri[6] = { 0, 1, 2, 2, 1, 3 };
+    set_indices(0, tri, 6);
+    n = call(0, 0, 6, &rec0, &buf0);
+    e = reference(0, tri, 6);
+    CHECK(n == 6 && e == 6 && buf0 == 1 && s_uploads == 1 && !memcmp(at(rec0, buf0), expect, n * 32));
+    n = call(0, 0, 6, &rec, &buf);
+    CHECK(n == 6 && s_uploads == 1 && rec == rec0 && buf == buf0 && s_vcs.hit == 1);
+
+    /* A write to an element the indices reach refills into new space and
+     * leaves the old output untouched for in-flight GPU reads. */
+    memcpy(saved, at(rec0, buf0), 6 * 32);
+    { u8 b = 0xEE; guest_write(0x10000 + 3 * 16 + 5, &b, 1); }
+    n = call(0, 0, 6, &rec, &buf);
+    e = reference(0, tri, 6);
+    CHECK(n == 6 && s_uploads == 2 && rec != rec0 && !memcmp(at(rec, buf), expect, n * 32));
+    CHECK(!memcmp(at(rec0, buf0), saved, 6 * 32));
+    /* So does a write to the second array (local memory). */
+    { u8 b = 0x55; guest_write(0x820000 + 2 * 8 + 1, &b, 1); }
+    n = call(0, 0, 6, &rec, &buf);
+    e = reference(0, tri, 6);
+    CHECK(s_uploads == 3 && !memcmp(at(rec, buf), expect, n * 32));
+
+    /* A write on a page no index reaches keeps the entry. */
+    { u8 b = 0x11; guest_write(0x10000 + 300 * 16, &b, 1); }
+    n = call(0, 0, 6, &rec, &buf);
+    CHECK(s_uploads == 3);
+
+    /* An index write refills with the new triangle. */
+    const u32 tri2[6] = { 0, 1, 2, 2, 1, 4 };
+    put_index(5, 4);
+    n = call(0, 0, 6, &rec, &buf);
+    e = reference(0, tri2, 6);
+    CHECK(s_uploads == 4 && !memcmp(at(rec, buf), expect, n * 32));
+
+    /* A changed current attribute value is part of the key. */
+    const unsigned fills = (unsigned)s_vcs.fill;
+    state.vertex_data4f[5][0] = 2.0f;
+    n = call(0, 0, 6, &rec, &buf);
+    CHECK(s_uploads == 5 && s_vcs.fill == fills + 1);
+
+    /* Strip continuation: held vertices from an earlier call of the BEGIN are
+     * part of the next call's output, its key and its watched spans. */
+    /* 400 and 401 sit on another page of attribute 0 than 20 and 21. */
+    const u32 strip[4] = { 20, 21, 400, 401 };
+    set_indices(100, strip, 4);
+    unsigned up = s_uploads;
+    state.begin_epoch = 2;
+    CHECK(call(1, 100, 2, &rec, &buf) == 0);
+    n = call(1, 102, 1, &rec, &buf);
+    e = reference(1, strip, 3);
+    CHECK(n == 3 && e == 3 && !memcmp(at(rec, buf), expect, n * 32) && s_uploads == up + 2);
+    state.begin_epoch = 3;   /* the next frame: both calls served, then one more converted */
+    CHECK(call(1, 100, 2, &rec, &buf) == 0);
+    n = call(1, 102, 1, &rec, &buf);
+    CHECK(n == 3 && s_uploads == up + 2 && !memcmp(at(rec, buf), expect, n * 32));
+    n = call(1, 103, 1, &rec, &buf);
+    e = reference(1, strip, 4);
+    CHECK(n == 3 && s_uploads == up + 3 && !memcmp(at(rec, buf), expect + 3 * 32, n * 32));
+    /* Vertex 20 is reached by the third call only through the held cursor. */
+    { u8 b = 0x77; guest_write(0x10000 + 20 * 16 + 2, &b, 1); }
+    state.begin_epoch = 4;
+    CHECK(call(1, 100, 2, &rec, &buf) == 0);
+    n = call(1, 102, 1, &rec, &buf);
+    e = reference(1, strip, 3);
+    CHECK(n == 3 && !memcmp(at(rec, buf), expect, n * 32));
+
+    /* Arena switch: never with records pending; drains the GPU before the
+     * other arena is reset; entries there stop matching, ours keep serving. */
+    n = call(0, 0, 6, &rec0, &buf0); up = s_uploads;
+    s_vca[s_vca_active].top = s_vca_bytes;
+    s_vc_frame += VC_SWITCH_GAP; s_d3d.draw_count = 1; vc_frame();
+    CHECK(s_waits == 0 && s_vca_active == 0);
+    s_vc_frame += VC_SWITCH_GAP; s_d3d.draw_count = 0; s_vca[1].top = 100; vc_frame();
+    CHECK(s_waits == 1 && s_other_top_at_wait == 100 && s_vca_active == 1 && s_vca[1].top == 0 && s_vca[1].gen == 2);
+    n = call(0, 0, 6, &rec, &buf);
+    CHECK(s_uploads == up && rec == rec0 && buf == buf0);
+    s_vc_frame += VC_SWITCH_GAP; s_vca[1].top = s_vca_bytes; vc_frame();
+    CHECK(s_waits == 2 && s_vca_active == 0 && s_vca[0].gen == 2);
+    n = call(0, 0, 6, &rec, &buf);
+    e = reference(0, tri2, 6);
+    CHECK(s_uploads == up + 1 && buf == 1 && !memcmp(at(rec, buf), expect, n * 32));
+    /* A full arena right after a switch waits out the gap without a drain. */
+    s_vca[0].top = s_vca_bytes; vc_frame();
+    CHECK(s_waits == 2 && s_vca_active == 0);
+    s_vc_frame += VC_SWITCH_GAP; vc_frame();
+    CHECK(s_waits == 3 && s_vca_active == 1);
+    s_vca_active = 0; s_vca[0].top = 0;
+
+    /* No room: converted into the ring instead, never past the arena. */
+    const unsigned full = (unsigned)s_vcs.full;
+    s_vca[0].top = s_vca_bytes - 64;
+    state.vertex_data4f[6][0] = 3.0f;
+    n = call(0, 0, 6, &rec, &buf);
+    CHECK(s_vcs.full == full + 1 && buf == 0 && !memcmp(at(rec, buf), expect, n * 32));
+    s_vca[0].top = 0;
+
+    /* A refused watch never serves a hit. */
+    s_refuse = 1; up = s_uploads;
+    state.vertex_data4f[7][0] = 4.0f;
+    n = call(0, 0, 6, &rec, &buf);
+    n = call(0, 0, 6, &rec, &buf);
+    CHECK(s_uploads == up + 2 && s_vcs.unwatched >= 2);
+    s_refuse = 0;
+
+    /* Verify mode: 1 hit in VC_VERIFY_EVERY converts again into scratch memory (not
+     * the ring) and compares; a stored copy that differs counts as BAD. */
+    s_vc_verify = 1;
+    state.vertex_data4f[7][0] = 5.0f;
+    n = call(0, 0, 6, &rec0, &buf0);
+    CHECK(n == 6 && buf0 != 0);
+    up = s_uploads; const u32 ring_at = s_d3d.vp_vb_offset; const unsigned long long bad0 = s_vcs.bad;
+    s_vcs.verified = 0;
+    for (int i = 0; i < VC_VERIFY_EVERY; ++i) CHECK(call(0, 0, 6, &rec, &buf) == 6 && rec == rec0 && buf == buf0);
+    CHECK(s_uploads == up + 1 && s_d3d.vp_vb_offset == ring_at && s_vcs.bad == bad0);
+    s_vca[buf0 - 1].mem[rec0] ^= 1;
+    for (int i = 0; i < VC_VERIFY_EVERY; ++i) CHECK(call(0, 0, 6, &rec, &buf) == 6);
+    CHECK(s_uploads == up + 2 && s_d3d.vp_vb_offset == ring_at && s_vcs.bad == bad0 + 1);
+    s_vc_verify = 0;
+    puts("PASS production vertex cache: fill, hit, element/array/index writes, untouched pages, key constants, strip cursor and held spans, arena switch, room, refused watch, verify");
+    return 0;
+}

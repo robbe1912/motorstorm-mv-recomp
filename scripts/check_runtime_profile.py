@@ -219,6 +219,25 @@ class ExecutionProfileTests(unittest.TestCase):
     def test_texture_watch_requires_retention(self):
         self.rejected('Texture watch needs --texture-retention 1', '--texture-watch', '1')
 
+    VC_KEYS = ('PS3RECOMP_VM_WRITE_WATCH', 'RSX_VC_CACHE', 'RSX_VC_CACHE_VERIFY', 'RSX_VC_CACHE_MB')
+
+    def check_vertex_cache(self, options, expected):
+        with patch.dict(os.environ, {k: 'inherited' for k in self.VC_KEYS}):
+            record, env = self.launch(*options)
+        for key in self.VC_KEYS:
+            self.assertEqual(env.get(key), expected.get(key), key)
+            self.assertEqual(record['environment'].get(key), expected.get(key), key)
+
+    def test_vertex_cache_default_clears_inherited_selection(self):
+        self.check_vertex_cache((), {})
+
+    def test_vertex_cache_sets_watch(self):
+        self.check_vertex_cache(('--vertex-cache', '1'), {'PS3RECOMP_VM_WRITE_WATCH': '1', 'RSX_VC_CACHE': '1'})
+
+    def test_vertex_cache_verify(self):
+        self.check_vertex_cache(('--vertex-cache', 'verify'),
+                                {'PS3RECOMP_VM_WRITE_WATCH': '1', 'RSX_VC_CACHE': '1', 'RSX_VC_CACHE_VERIFY': '1'})
+
     def test_pm_native_services_default_clears_inherited_selection(self):
         with patch.dict(os.environ, {'SPU_PM_NATIVE_SVC': '1', 'SPU_PM_SVC_VERIFY': '1'}):
             record, env = self.launch('--native-owned-jobs')

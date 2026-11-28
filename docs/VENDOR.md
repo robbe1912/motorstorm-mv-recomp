@@ -26,6 +26,36 @@ tree with #355-#358, one EXE, 8 races per arm, window t=100-130 s): compact
 present 25.2-25.8 ms vs 27.6-31.0 ms. 0 skipped draws. No 30 FPS, graphics
 parity or interpreter-removal acceptance is claimed.
 
+## Slot-only vertex fetch, decode tables and VP lookup memo
+
+Local to this vendor copy. Three exact cuts in the D3D12 vertex path; the
+uploaded bytes and the chosen vertex programs are unchanged.
+
+- With `RSX_VP_COMPACT=1`, `rsx_fetch_vertex_slots` (`rsx_vertex_fetch.c`)
+  decodes only the attributes the layout carries, straight into packed
+  order, instead of filling all 16 slots (a 256-byte constant copy per
+  vertex) and repacking. Arrays no layout slot reads are not resolved; the
+  carried ones resolve per element in the full fetch's order. The indexed
+  strip cache holds packed vertices. `VTX_POS` now forces the full layout.
+- UB and CMP components read tables of the same IEEE single-precision
+  divisions (`rsx_vertex_decode_tables.h`) instead of dividing per component.
+- `vp_get_vs` reuses its result for a repeated (state, `vp_ucode_epoch`,
+  start slot). Every `NV4097_SET_TRANSFORM_PROGRAM` word gives the state a
+  new process-wide epoch, and a remembered cache slot is used only while it
+  still holds that program's hash.
+
+Game-free coverage: `check_vertex_prepared.py --mutants` (slot fetch against
+the full and scalar fetch, resolve order, every UB byte and CMP field,
+every table entry) and `check_rsx_vp_get_memo.py` (the production
+`vp_get_vs` and microcode write under random writes, start changes, state
+copies, resets and evictions).
+
+Measured result (27 Nov, i7-12700K + RTX 4070 SUPER, local tree with #355-#359
+and compact on in both arms, 8 races per arm, window t=100-130 s): renderer
+(`frame_clock`) CPU per present 22.08-23.24 ms vs 24.11-25.35 ms (-2.1 ms),
+but fps unchanged: 880.2 vs 878.6 presents per 30 s, +0.05 fps +/- 0.28 SE.
+The renderer was not the limit at that point.
+
 ## Native policy-module services (#327)
 
 Own-fork branch `codex/pm-native-services` carries the reusable runtime and
@@ -70,6 +100,36 @@ the write and protection paths, plus reuse, re-arming and hash fallback.
 It uses no game data. The author reported race results on the original
 implementation in [#332](https://github.com/robbe1912/motorstorm-mv-recomp/issues/332#issuecomment-7183145446).
 Those results do not measure the reviewed version.
+
+## Indexed vertex upload cache
+
+`RSX_VC_CACHE=1` (with `PS3RECOMP_VM_WRITE_WATCH=1`) in
+`libs/video/rsx_d3d12_backend.c` keeps converted indexed VP uploads
+(triangles, strips and fans; not quads). The key hashes the draw kind, index
+address, count and size, restart state, the attribute layout, every active
+slot's address, format and stride, and the constant attributes. Strips and
+fans also key the cursor they continue from. An entry is reused only if the
+watch reports its index span and each slot's referenced vertex span clean
+since the epoch armed before conversion. A strip entry's span also covers the
+held first and previous vertices. Conversion writes straight into one of two
+persistent upload-heap arenas. Arenas are bump-allocated and never rewritten
+in place. At a present with no recorded draws, when the active arena is over
+3/4 full, the renderer waits for the GPU and switches to the other arena,
+which it resets and whose entries the new generation invalidates. Switches
+stay at least 120 presents apart; until then a full arena sends fills to
+the ring, so a live set larger than an arena cannot switch every present.
+Replayed records name their buffer (ring or arena) and rebind the vertex
+buffer view when it changes. Triangle records merge only when contiguous in the same
+buffer. A run that would mix ring and arena output is emitted again into the
+ring. A draw with no arena room, or whose span the watch refuses, converts
+into the ring as before.
+
+[check_rsx_vertex_cache.py](../scripts/check_rsx_vertex_cache.py) compiles
+the production cache with the real attribute prepare and authored memory,
+watch and uploaders. It covers reuse, element, index, local-array and
+constant changes, strip cursor and held vertices, arena switch draining and
+invalidation, ring fallback and verify mode. It also rejects twelve source mutants that
+drop a guard. It uses no game data.
 
 ## Coherent surface prefetch (#322)
 
